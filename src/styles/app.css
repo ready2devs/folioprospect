@@ -86,7 +86,7 @@ html, body, #root {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 390px 1fr;
+  grid-template-columns: 440px 1fr;
   flex: 1;
   height: calc(100vh - 52px);
   overflow: hidden;
@@ -234,7 +234,7 @@ html, body, #root {
 }
 .lp-col-headers {
   display: grid;
-  grid-template-columns: 104px 58px 74px 44px 74px;
+  grid-template-columns: 120px 60px 78px 46px 86px;
   align-items: center;
   padding: 6px 12px;
   font-size: 9.5px;
@@ -252,7 +252,7 @@ html, body, #root {
 }
 .lp-row {
   display: grid;
-  grid-template-columns: 104px 58px 74px 44px 74px;
+  grid-template-columns: 120px 60px 78px 46px 86px;
   align-items: center;
   padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);

@@ -343,14 +343,15 @@ export const LeftPanel: React.FC = () => {
               </div>
 
               {/* COLUMNA 3 — Precio y Variación Diaria Apilados + Icono Circular ↑/↓ (Estilo Google Finance) */}
-              <div style={{ textAlign: 'right', minWidth: 0 }}>
+              <div style={{ textAlign: 'right', minWidth: 0, overflow: 'hidden' }}>
                 <div
                   className="mono"
                   style={{
                     fontWeight: 600,
-                    fontSize: 11,
+                    fontSize: 11.5,
                     color: 'var(--text-primary)',
                     letterSpacing: '-0.02em',
+                    lineHeight: 1.2,
                   }}
                 >
                   {formatNumber(h.lastPrice, 2)}
@@ -368,9 +369,9 @@ export const LeftPanel: React.FC = () => {
                 className="mono"
                 style={{
                   textAlign: 'right',
-                  fontWeight: 500,
-                  fontSize: 10.5,
-                  color: 'var(--text-secondary)',
+                  fontWeight: 600,
+                  fontSize: 11,
+                  color: 'var(--text-primary)',
                   letterSpacing: '-0.02em',
                 }}
               >
@@ -378,24 +379,22 @@ export const LeftPanel: React.FC = () => {
               </div>
 
               {/* COLUMNA 5 — Value (Valor Total de la Posición + P&L latente debajo) */}
-              <div style={{ textAlign: 'right', minWidth: 0 }}>
+              <div style={{ textAlign: 'right', minWidth: 0, paddingRight: 2 }}>
                 <div
                   className="mono"
                   style={{
                     fontWeight: 600,
-                    fontSize: 11,
+                    fontSize: 11.5,
                     color: 'var(--text-primary)',
                     letterSpacing: '-0.02em',
+                    lineHeight: 1.2,
                   }}
                 >
-                  {formatMoney(h.value, currency, fxRates, { decimals: 0 }).replace(
-                    ' ' + currency,
-                    ''
-                  )}
+                  {formatMoney(h.value, currency, fxRates, { decimals: 0 })}
                 </div>
                 <div
                   className={`mono ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}
-                  style={{ fontSize: 9.5, fontWeight: 500 }}
+                  style={{ fontSize: 9.5, fontWeight: 600, marginTop: 1 }}
                 >
                   {formatPct(h.unrealizedGain.p)}
                 </div>
