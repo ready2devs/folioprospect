@@ -15,7 +15,7 @@ export const App: React.FC = () => {
     refreshAll();
   }, []);
 
-  // Poll live quotes every 15 seconds when in Yahoo Live mode
+  // Poll live quotes every 15 seconds when in live mode
   useEffect(() => {
     if (pricingMode !== 'live') return;
     const id = setInterval(() => {
@@ -27,15 +27,13 @@ export const App: React.FC = () => {
   return (
     <div className="app-shell">
       <TopBar />
-      <div className="workspace-wrapper">
-        <div className="workspace-grid">
-          <LeftPanel />
-          <main className="right-panel" aria-label="Panel Dinámico Multi-Estado">
-            {rightState === 'market' && <MarketView />}
-            {rightState === 'portfolio' && <PortfolioView />}
-            {rightState === 'asset' && <AssetView />}
-          </main>
-        </div>
+      <div className="workspace-grid">
+        <LeftPanel />
+        <main className="right-panel" aria-label="Panel Dinámico Multi-Estado">
+          {rightState === 'market' && <MarketView />}
+          {rightState === 'portfolio' && <PortfolioView />}
+          {rightState === 'asset' && <AssetView />}
+        </main>
       </div>
       <SearchModal />
       <AddDialog />

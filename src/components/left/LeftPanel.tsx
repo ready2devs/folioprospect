@@ -267,8 +267,8 @@ export const LeftPanel: React.FC = () => {
         <div>Posición</div>
         <div style={{ textAlign: 'center' }}>Intradía</div>
         <div style={{ textAlign: 'right' }}>Precio / 24h</div>
-        <div style={{ textAlign: 'right' }}>Alloc %</div>
-        <div style={{ textAlign: 'right' }}>Value</div>
+        <div style={{ textAlign: 'right' }}>Alloc</div>
+        <div style={{ textAlign: 'right' }}>Valor</div>
       </div>
 
       {/* 3. LISTADO COMPACTO DE POSICIONES REALES (5 COLUMNAS EXACTAS) */}
@@ -297,8 +297,9 @@ export const LeftPanel: React.FC = () => {
                     className="mono"
                     style={{
                       fontWeight: 700,
-                      fontSize: 13,
+                      fontSize: 11.5,
                       color: 'var(--text-primary)',
+                      letterSpacing: '-0.01em',
                     }}
                   >
                     {h.ticker}
@@ -317,14 +318,16 @@ export const LeftPanel: React.FC = () => {
                 </div>
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     color: 'var(--text-secondary)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
+                    lineHeight: 1.2,
                   }}
+                  title={`${h.name} (${h.sector})`}
                 >
-                  {h.name} · {h.sector}
+                  {h.name}
                 </div>
               </div>
 
@@ -334,25 +337,26 @@ export const LeftPanel: React.FC = () => {
                   points={sp.points}
                   prevClose={sp.prevClose}
                   isPositive={isUp}
-                  width={62}
-                  height={22}
+                  width={52}
+                  height={18}
                 />
               </div>
 
               {/* COLUMNA 3 — Precio y Variación Diaria Apilados + Icono Circular ↑/↓ (Estilo Google Finance) */}
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', minWidth: 0 }}>
                 <div
                   className="mono"
                   style={{
-                    fontWeight: 700,
-                    fontSize: 12.5,
+                    fontWeight: 600,
+                    fontSize: 11,
                     color: 'var(--text-primary)',
+                    letterSpacing: '-0.02em',
                   }}
                 >
-                  {formatNumber(h.lastPrice, h.lastPrice >= 100 ? 2 : 2)}
+                  {formatNumber(h.lastPrice, 2)}
                 </div>
                 <div className={`gf-change-row ${isUp ? 'pos' : 'neg'}`}>
-                  <span>{formatPct(h.dailyGain.p)}</span>
+                  <span className="mono" style={{ fontSize: 9.5 }}>{formatPct(h.dailyGain.p)}</span>
                   <span className={`gf-arrow-circle ${isUp ? 'up' : 'down'}`}>
                     {isUp ? '↑' : '↓'}
                   </span>
@@ -364,32 +368,34 @@ export const LeftPanel: React.FC = () => {
                 className="mono"
                 style={{
                   textAlign: 'right',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  color: 'var(--text-primary)',
+                  fontWeight: 500,
+                  fontSize: 10.5,
+                  color: 'var(--text-secondary)',
+                  letterSpacing: '-0.02em',
                 }}
               >
-                {h.allocation.toFixed(2)}%
+                {h.allocation.toFixed(1)}%
               </div>
 
               {/* COLUMNA 5 — Value (Valor Total de la Posición + P&L latente debajo) */}
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', minWidth: 0 }}>
                 <div
                   className="mono"
                   style={{
-                    fontWeight: 700,
-                    fontSize: 12.5,
+                    fontWeight: 600,
+                    fontSize: 11,
                     color: 'var(--text-primary)',
+                    letterSpacing: '-0.02em',
                   }}
                 >
-                  {formatMoney(h.value, currency, fxRates, { decimals: 2 }).replace(
+                  {formatMoney(h.value, currency, fxRates, { decimals: 0 }).replace(
                     ' ' + currency,
                     ''
                   )}
                 </div>
                 <div
                   className={`mono ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}
-                  style={{ fontSize: 10.5 }}
+                  style={{ fontSize: 9.5, fontWeight: 500 }}
                 >
                   {formatPct(h.unrealizedGain.p)}
                 </div>

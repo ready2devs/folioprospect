@@ -33,15 +33,14 @@ html, body, #root {
 }
 
 .topbar {
-  height: 52px;
-  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 20px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
-  gap: 16px;
   z-index: 20;
 }
 
@@ -85,25 +84,12 @@ html, body, #root {
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-.workspace-wrapper {
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 390px 1fr;
   flex: 1;
-  width: 100%;
   height: calc(100vh - 52px);
   overflow: hidden;
-  background: var(--bg-primary);
-  display: flex;
-  justify-content: center;
-}
-
-.workspace-grid {
-  width: 100%;
-  max-width: 1560px;
-  height: 100%;
-  display: grid;
-  grid-template-columns: 360px 1fr;
-  overflow: hidden;
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
   background: var(--bg-primary);
 }
 
@@ -209,30 +195,35 @@ html, body, #root {
 .gf-change-row {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  font-family: 'JetBrains Mono', monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
-  font-weight: 600;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  margin-top: 1px;
+}
+.gf-change-row.pos {
+  color: #10B981;
+}
+.gf-change-row.neg {
+  color: #F43F5E;
 }
 .gf-arrow-circle {
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  font-size: 8.5px;
   line-height: 1;
 }
 .gf-arrow-circle.up {
-  background: var(--pos-bg);
-  color: var(--pos-bright);
+  background: rgba(16, 185, 129, 0.18);
+  color: #10B981;
 }
 .gf-arrow-circle.down {
-  background: var(--neg-bg);
-  color: var(--neg-bright);
+  background: rgba(244, 63, 94, 0.18);
+  color: #F43F5E;
 }
 
 /* Left Panel 5-Column Exact Table */
@@ -243,17 +234,17 @@ html, body, #root {
 }
 .lp-col-headers {
   display: grid;
-  grid-template-columns: 1.25fr 66px 0.95fr 52px 0.95fr;
+  grid-template-columns: 104px 58px 74px 44px 74px;
   align-items: center;
-  padding: 7px 12px;
-  font-size: 10px;
+  padding: 6px 12px;
+  font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-elevated);
-  gap: 4px;
+  gap: 6px;
 }
 .lp-list {
   flex: 1;
@@ -261,16 +252,20 @@ html, body, #root {
 }
 .lp-row {
   display: grid;
-  grid-template-columns: 1.25fr 66px 0.95fr 52px 0.95fr;
+  grid-template-columns: 104px 58px 74px 44px 74px;
   align-items: center;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
   transition: background 0.12s ease;
-  gap: 4px;
+  gap: 6px;
 }
 .lp-row:hover, .lp-row.selected {
   background: var(--bg-hover);
+}
+.lp-row.selected {
+  border-left: 3px solid var(--accent-cyan);
+  padding-left: 9px;
 }
 .lp-row.selected {
   border-left: 3px solid var(--accent-cyan);
