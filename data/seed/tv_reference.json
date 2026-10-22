@@ -1,0 +1,59 @@
+{
+ "kpis": {
+  "portfolioValue": 45865.9,
+  "cash": -134853.81,
+  "grossHoldings": 180719.71,
+  "unrealized": {
+   "v": 35697.51,
+   "p": 24.62
+  },
+  "lastDay": {
+   "v": 688.99,
+   "p": 0.38
+  },
+  "realized": 10168.39,
+  "dividends": 0,
+  "totalGain": {
+   "v": 45865.9,
+   "p": 36.11
+  },
+  "annualizedYield": 30.73
+ },
+ "periods": {
+  "1M": -3.76,
+  "3M": 4.73,
+  "6M": 10.07,
+  "YTD": 24.57,
+  "1Y": 21.5,
+  "ALL": 36.11
+ },
+ "distribution": {
+  "Stock": {
+   "value": 133433.22,
+   "alloc": 73.83,
+   "unrealized": 32728.34
+  },
+  "Dr": {
+   "value": 31684.82,
+   "alloc": 17.53,
+   "unrealized": 11188.88
+  },
+  "Crypto": {
+   "value": 15601.68,
+   "alloc": 8.63,
+   "unrealized": -8219.71
+  }
+ },
+ "formulas": {
+  "twr": "Modified Dietz por mes calendario, encadenado geométricamente (validado: abr-26 20.48% = TV 20.48%, may-26 10.65% = 10.65%)",
+  "sharpe": "(mean(r_m) - rf/12) / stdev_poblacional(r_m), r_m = retornos mensuales, rf=2% anual → 0.3150 (TV 0.31502)",
+  "sortino": "(mean(r_m) - rf/12) / sqrt( Σ min(0, r_m - rf/12)^2 / N ) → 0.8066 (TV 0.80665)",
+  "beta": "cov(r_m, b_m) / var(b_m) con benchmark SP:SPX → 1.7997 (TV 1.79966)",
+  "portfolioValue": "Σ qty·last_price + cash; cash = depósitos − compras(qty·price+comisión) + ventas(qty·price−comisión). Sin depósitos → cash negativo (max_lack_of_funds)",
+  "unrealized": "value − invested (costo promedio ponderado, comisiones incluidas en invested)",
+  "realized": "Σ ventas: (precio_venta·qty − comisión) − avg_cost·qty",
+  "totalGain": "unrealized + realized + dividends; total_gain.p = TWR acumulado (all)",
+  "annualized": "(1+TWR_all)^(365/días_desde_start_point) − 1",
+  "cryptoFx": "BINANCE *USDT invested aplica factor USDT/USD ≈ 1.0001"
+ }
+}

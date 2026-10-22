@@ -1,0 +1,1062 @@
+{
+ "source": "REA/CDP authenticated extraction — portfolio.tradingview.com/portfolio/v1",
+ "extractedAt": "2026-10-22T06:54:29.069Z",
+ "portfolioId": "2bb80f7315764422a5347e8d38503f4e",
+ "settings": {
+  "auto_adjust_splits": true,
+  "currency": "USD",
+  "risk_free_rate": 2,
+  "benchmark": "SP:SPX",
+  "title": "Personal largo plazo",
+  "description": ""
+ },
+ "summary": {
+  "data": {
+   "portfolio_value": 45822.80862648002,
+   "free_cash": -134853.81213908998,
+   "max_lack_of_funds": 134854,
+   "start_point": 1756166400000,
+   "unrealized_gain": {
+    "v": 35654.418,
+    "p": 24.585487
+   },
+   "unrealized_gain_last_day": {
+    "v": 645.89435,
+    "p": 0.35876897
+   },
+   "realized_gain": {
+    "v": 10168.392,
+    "p": 7.8420854
+   },
+   "total_gain": {
+    "v": 45822.81,
+    "p": 36.07834
+   },
+   "open_holdings": 20,
+   "annualized_yield": 30.702482,
+   "bench_ticker": "SP_DLY:SPX",
+   "dividend_gain": 0,
+   "performance_by_period": {
+    "6M": 10.045929,
+    "YTD": 24.540985,
+    "Y": 21.466211,
+    "3M": 4.707733,
+    "M": -3.7870674,
+    "all": 36.07834
+   },
+   "total_gain_by_period": {
+    "6M": 16034.997,
+    "YTD": 34556.426,
+    "Y": 31373.617,
+    "3M": 7906.8354,
+    "M": -7111.6694,
+    "all": 45822.81
+   }
+  },
+  "last_update": 1792651941934,
+  "is_up_to_date": true,
+  "portfolio_version": 81
+ },
+ "holdings": {
+  "opened": [
+   {
+    "qty": 21,
+    "avg_price": 119.01,
+    "invested": 2499.21,
+    "unrealized_gain": {
+     "v": 16687.86,
+     "p": 667.7254
+    },
+    "value": 19187.07,
+    "allocation": 10.61956434579073,
+    "daily_gain": {
+     "v": 369.6,
+     "p": 1.9641323
+    },
+    "last_price": 913.6700000000001,
+    "total_gain": {
+     "v": 25532.34,
+     "p": 701.1093
+    },
+    "symbol": "NASDAQ:MU",
+    "dividend_gain": 0,
+    "annualized_yield": 742.848
+   },
+   {
+    "qty": 46.33,
+    "avg_price": 230.87,
+    "invested": 10696.2071,
+    "unrealized_gain": {
+     "v": 9313.257,
+     "p": 87.07065
+    },
+    "value": 20009.4637,
+    "allocation": 11.07473873222508,
+    "daily_gain": {
+     "v": 315.5073,
+     "p": 1.6020514
+    },
+    "last_price": 431.89,
+    "total_gain": {
+     "v": 9313.257,
+     "p": 87.07065
+    },
+    "symbol": "NYSE:TSM",
+    "dividend_gain": 0,
+    "annualized_yield": 72.563934
+   },
+   {
+    "qty": 0.1,
+    "avg_price": 109075.2,
+    "invested": 10908.61075,
+    "unrealized_gain": {
+     "v": -2652.167,
+     "p": -24.312601
+    },
+    "value": 8256.44374677,
+    "allocation": 4.569735537329334,
+    "daily_gain": {
+     "v": -156.01253,
+     "p": -1.8545419
+    },
+    "last_price": 82532.03,
+    "total_gain": {
+     "v": -2652.167,
+     "p": -24.312601
+    },
+    "symbol": "BINANCE:BTCUSDT",
+    "dividend_gain": 0,
+    "annualized_yield": -21.637304
+   },
+   {
+    "qty": 12.235815,
+    "avg_price": 244.85,
+    "invested": 2995.939303,
+    "unrealized_gain": {
+     "v": -275.91763,
+     "p": -9.209721
+    },
+    "value": 2720.0216747500003,
+    "allocation": 1.5054641066589687,
+    "daily_gain": {
+     "v": 105.22801,
+     "p": 4.024333
+    },
+    "last_price": 222.3,
+    "total_gain": {
+     "v": -281.90762,
+     "p": -9.4096575
+    },
+    "symbol": "NASDAQ:SIMO",
+    "dividend_gain": 0,
+    "annualized_yield": -46.237637
+   },
+   {
+    "qty": 41.586,
+    "avg_price": 72.704,
+    "invested": 3023.468544,
+    "unrealized_gain": {
+     "v": -12.642144,
+     "p": -0.4181338
+    },
+    "value": 3010.8264000000004,
+    "allocation": 1.6664172637513421,
+    "daily_gain": {
+     "v": -97.7271,
+     "p": -3.1438127
+    },
+    "last_price": 72.4,
+    "total_gain": {
+     "v": -12.642144,
+     "p": -0.4181338
+    },
+    "symbol": "NASDAQ:TMDX",
+    "dividend_gain": 0,
+    "annualized_yield": -1.966623
+   },
+   {
+    "qty": 3.783,
+    "avg_price": 2472.91,
+    "invested": 9355.01853,
+    "unrealized_gain": {
+     "v": -2338.0076,
+     "p": -24.992014
+    },
+    "value": 7017.01104,
+    "allocation": 3.883740469722784,
+    "daily_gain": {
+     "v": -93.13746,
+     "p": -1.3099228
+    },
+    "last_price": 1854.88,
+    "total_gain": {
+     "v": -2338.0076,
+     "p": -24.992014
+    },
+    "symbol": "NASDAQ:MELI",
+    "dividend_gain": 0,
+    "annualized_yield": -22.159891
+   },
+   {
+    "qty": 150,
+    "avg_price": 19.98,
+    "invested": 2997,
+    "unrealized_gain": {
+     "v": -1018.5,
+     "p": -33.983982
+    },
+    "value": 1978.5,
+    "allocation": 1.0950503676771368,
+    "daily_gain": {
+     "v": -120,
+     "p": -5.7183704
+    },
+    "last_price": 13.19,
+    "total_gain": {
+     "v": -1018.5,
+     "p": -33.983982
+    },
+    "symbol": "NASDAQ:HSAI",
+    "dividend_gain": 0,
+    "annualized_yield": -36.83216
+   },
+   {
+    "qty": 20.1,
+    "avg_price": 504.1900995024876,
+    "invested": 10134.221000000001,
+    "unrealized_gain": {
+     "v": 578.074,
+     "p": 5.704178
+    },
+    "value": 10712.295000000002,
+    "allocation": 5.928987909232224,
+    "daily_gain": {
+     "v": 21.708,
+     "p": 0.20305714
+    },
+    "last_price": 532.95,
+    "total_gain": {
+     "v": 578.074,
+     "p": 5.704178
+    },
+    "symbol": "NASDAQ:MSFT",
+    "dividend_gain": 0,
+    "annualized_yield": 5.121613
+   },
+   {
+    "qty": 97.66,
+    "avg_price": 38.98,
+    "invested": 3806.7868,
+    "unrealized_gain": {
+     "v": 3170.0437,
+     "p": 83.273476
+    },
+    "value": 6976.8304,
+    "allocation": 3.8615014883704952,
+    "daily_gain": {
+     "v": 76.1748,
+     "p": 1.1038778
+    },
+    "last_price": 71.44,
+    "total_gain": {
+     "v": 3170.0437,
+     "p": 83.273476
+    },
+    "symbol": "NYSE:VIST",
+    "dividend_gain": 0,
+    "annualized_yield": 69.50862
+   },
+   {
+    "qty": 18.312309,
+    "avg_price": 206.25340199425423,
+    "invested": 3776.97603,
+    "unrealized_gain": {
+     "v": -439.00833,
+     "p": -11.623276
+    },
+    "value": 3337.9676849,
+    "allocation": 1.8474817996685096,
+    "daily_gain": {
+     "v": 197.22357,
+     "p": 6.279517
+    },
+    "last_price": 182.28,
+    "total_gain": {
+     "v": -440.00833,
+     "p": -11.649752
+    },
+    "symbol": "NASDAQ:CRDO",
+    "dividend_gain": 0,
+    "annualized_yield": -35.91435
+   },
+   {
+    "qty": 13.41,
+    "avg_price": 297.39,
+    "invested": 3987.9999,
+    "unrealized_gain": {
+     "v": 541.8981,
+     "p": 13.588218
+    },
+    "value": 4529.898,
+    "allocation": 2.507185479120509,
+    "daily_gain": {
+     "v": 45.9963,
+     "p": 1.0258098
+    },
+    "last_price": 337.8,
+    "total_gain": {
+     "v": 541.8981,
+     "p": 13.588218
+    },
+    "symbol": "NASDAQ:AVGO",
+    "dividend_gain": 0,
+    "annualized_yield": 11.738292
+   },
+   {
+    "qty": 79.06,
+    "avg_price": 213.53000000000003,
+    "invested": 16881.6818,
+    "unrealized_gain": {
+     "v": 9283.226,
+     "p": 54.989933
+    },
+    "value": 26164.906999999996,
+    "allocation": 14.481622962137013,
+    "daily_gain": {
+     "v": -430.877,
+     "p": -1.6200951
+    },
+    "last_price": 330.95,
+    "total_gain": {
+     "v": 9283.226,
+     "p": 54.989933
+    },
+    "symbol": "NASDAQ:GOOG",
+    "dividend_gain": 0,
+    "annualized_yield": 46.47972
+   },
+   {
+    "qty": 15.755997,
+    "avg_price": 88.12,
+    "invested": 1388.4184556,
+    "unrealized_gain": {
+     "v": 1314.8379,
+     "p": 94.70041
+    },
+    "value": 2703.25640525,
+    "allocation": 1.4961849484430567,
+    "daily_gain": {
+     "v": 1.8907197,
+     "p": 0.06999125
+    },
+    "last_price": 171.57,
+    "total_gain": {
+     "v": 2591,
+     "p": 128.9609
+    },
+    "symbol": "NASDAQ:NBIS",
+    "dividend_gain": 0,
+    "annualized_yield": 204.51369
+   },
+   {
+    "qty": 19.3,
+    "avg_price": 232.14,
+    "invested": 4480.302000000001,
+    "unrealized_gain": {
+     "v": 2158.705,
+     "p": 48.182133
+    },
+    "value": 6639.007000000001,
+    "allocation": 3.6745246683654718,
+    "daily_gain": {
+     "v": 86.657,
+     "p": 1.3225331
+    },
+    "last_price": 343.99,
+    "total_gain": {
+     "v": 2213.445,
+     "p": 47.674786
+    },
+    "symbol": "NASDAQ:AAPL",
+    "dividend_gain": 0,
+    "annualized_yield": 40.654484
+   },
+   {
+    "qty": 662,
+    "avg_price": 13.931812688821752,
+    "invested": 9222.86,
+    "unrealized_gain": {
+     "v": 740.24,
+     "p": 8.026144
+    },
+    "value": 9963.1,
+    "allocation": 5.514327176246693,
+    "daily_gain": {
+     "v": -26.48,
+     "p": -0.26507622
+    },
+    "last_price": 15.05,
+    "total_gain": {
+     "v": 740.24,
+     "p": 8.026144
+    },
+    "symbol": "NYSE:NU",
+    "dividend_gain": 0,
+    "annualized_yield": 9.803278
+   },
+   {
+    "qty": 3,
+    "avg_price": 4303.83,
+    "invested": 12912.78115,
+    "unrealized_gain": {
+     "v": -5610.6416,
+     "p": -43.4503
+    },
+    "value": 7302.1394539,
+    "allocation": 4.041551930160688,
+    "daily_gain": {
+     "v": -124.87877,
+     "p": -1.6814119
+    },
+    "last_price": 2432.1,
+    "total_gain": {
+     "v": -5610.6416,
+     "p": -43.4503
+    },
+    "symbol": "BINANCE:ETHUSDT",
+    "dividend_gain": 0,
+    "annualized_yield": -39.284115
+   },
+   {
+    "qty": 36.423,
+    "avg_price": 229,
+    "invested": 8340.867,
+    "unrealized_gain": {
+     "v": 1215.4355,
+     "p": 14.572052
+    },
+    "value": 9556.302510000001,
+    "allocation": 5.289174918983799,
+    "daily_gain": {
+     "v": -9.46998,
+     "p": -0.09899859
+    },
+    "last_price": 262.37,
+    "total_gain": {
+     "v": 1215.4355,
+     "p": 14.572052
+    },
+    "symbol": "NASDAQ:AMZN",
+    "dividend_gain": 0,
+    "annualized_yield": 12.580904
+   },
+   {
+    "qty": 16,
+    "avg_price": 709.1608312500001,
+    "invested": 11346.5733,
+    "unrealized_gain": {
+     "v": -186.2533,
+     "p": -1.6414938
+    },
+    "value": 11160.319999999998,
+    "allocation": 6.176958564263078,
+    "daily_gain": {
+     "v": 52.32,
+     "p": 0.47101188
+    },
+    "last_price": 697.52,
+    "total_gain": {
+     "v": -186.2533,
+     "p": -1.6414938
+    },
+    "symbol": "NASDAQ:META",
+    "dividend_gain": 0,
+    "annualized_yield": -1.6439302
+   },
+   {
+    "qty": 61.625,
+    "avg_price": 174.18,
+    "invested": 10733.8425,
+    "unrealized_gain": {
+     "v": 2945.0588,
+     "p": 27.437134
+    },
+    "value": 13678.90125,
+    "allocation": 7.57093042367033,
+    "daily_gain": {
+     "v": 338.9375,
+     "p": 2.5407677
+    },
+    "last_price": 221.97,
+    "total_gain": {
+     "v": 2945.0588,
+     "p": 27.437134
+    },
+    "symbol": "NASDAQ:NVDA",
+    "dividend_gain": 0,
+    "annualized_yield": 23.516685
+   },
+   {
+    "qty": 18.95,
+    "avg_price": 292.00211081794197,
+    "invested": 5533.44,
+    "unrealized_gain": {
+     "v": 238.9195,
+     "p": 4.317739
+    },
+    "value": 5772.3595,
+    "allocation": 3.1948569081827713,
+    "daily_gain": {
+     "v": 93.234,
+     "p": 1.6416965
+    },
+    "last_price": 304.61,
+    "total_gain": {
+     "v": 238.9195,
+     "p": 4.317739
+    },
+    "symbol": "NYSE:CLS",
+    "dividend_gain": 0,
+    "annualized_yield": 7.251861
+   }
+  ],
+  "closed": []
+ },
+ "trades": [
+  {
+   "id": 12706184,
+   "time": 1788355800000,
+   "symbol": "NASDAQ:CRDO",
+   "comment": "",
+   "is_buy": true,
+   "qty": 3.091,
+   "price": 162.14,
+   "commission": 1,
+   "auto_detect_price": false
+  },
+  {
+   "id": 12485987,
+   "time": 1787578200000,
+   "symbol": "NASDAQ:AAPL",
+   "comment": "",
+   "is_buy": false,
+   "qty": 0.7,
+   "price": 310.34,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11477737,
+   "time": 1787578200000,
+   "symbol": "NASDAQ:SIMO",
+   "comment": "",
+   "is_buy": true,
+   "qty": 12.235815,
+   "price": 244.85,
+   "commission": 5.99,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11477470,
+   "time": 1786031765000,
+   "symbol": "NYSE:CLS",
+   "comment": "",
+   "is_buy": true,
+   "qty": 3.15,
+   "price": 319.6,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11422576,
+   "time": 1785947566000,
+   "symbol": "NASDAQ:TMDX",
+   "comment": "",
+   "is_buy": true,
+   "qty": 41.586,
+   "price": 72.704,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11388280,
+   "time": 1785850200000,
+   "symbol": "NASDAQ:META",
+   "comment": "",
+   "is_buy": true,
+   "qty": 1.67,
+   "price": 587.4,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11204477,
+   "time": 1785331800000,
+   "symbol": "NASDAQ:CRDO",
+   "comment": "",
+   "is_buy": true,
+   "qty": 7.101844,
+   "price": 180.08,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11204472,
+   "time": 1781616600000,
+   "symbol": "NASDAQ:CRDO",
+   "comment": "",
+   "is_buy": true,
+   "qty": 8.119465,
+   "price": 245.94,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 11204065,
+   "time": 1781616600000,
+   "symbol": "NASDAQ:NBIS",
+   "comment": "",
+   "is_buy": false,
+   "qty": 7.044003,
+   "price": 269.29,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 9224819,
+   "time": 1780320600000,
+   "symbol": "NASDAQ:MSFT",
+   "comment": "",
+   "is_buy": true,
+   "qty": 1.1,
+   "price": 461.01,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 9224816,
+   "time": 1780320600000,
+   "symbol": "NASDAQ:META",
+   "comment": "",
+   "is_buy": true,
+   "qty": 1.67,
+   "price": 606.99,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 9224814,
+   "time": 1780320600000,
+   "symbol": "NYSE:NU",
+   "comment": "",
+   "is_buy": true,
+   "qty": 309,
+   "price": 12.94,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 9224811,
+   "time": 1780320600000,
+   "symbol": "NASDAQ:MU",
+   "comment": "",
+   "is_buy": false,
+   "qty": 9.6,
+   "price": 1040.31,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 5789836,
+   "time": 1770823386000,
+   "symbol": "NYSE:CLS",
+   "comment": "",
+   "is_buy": true,
+   "qty": 15.8,
+   "price": 286.5,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 3916552,
+   "time": 1764081000000,
+   "symbol": "NASDAQ:NBIS",
+   "comment": "",
+   "is_buy": true,
+   "qty": 22.8,
+   "price": 88.12,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 3916251,
+   "time": 1764081000000,
+   "symbol": "NASDAQ:HSAI",
+   "comment": "",
+   "is_buy": true,
+   "qty": 150,
+   "price": 19.98,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084550,
+   "time": 1756684800000,
+   "symbol": "BINANCE:BTCUSDT",
+   "comment": "",
+   "is_buy": true,
+   "qty": 0.1,
+   "price": 109075.2,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084546,
+   "time": 1756684800000,
+   "symbol": "BINANCE:ETHUSDT",
+   "comment": "",
+   "is_buy": true,
+   "qty": 3,
+   "price": 4303.83,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084966,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:MU",
+   "comment": "",
+   "is_buy": true,
+   "qty": 30.6,
+   "price": 119.01,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084918,
+   "time": 1756387800000,
+   "symbol": "NYSE:VIST",
+   "comment": "",
+   "is_buy": true,
+   "qty": 97.66,
+   "price": 38.98,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084829,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:AVGO",
+   "comment": "",
+   "is_buy": true,
+   "qty": 13.41,
+   "price": 297.39,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084797,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:AAPL",
+   "comment": "",
+   "is_buy": true,
+   "qty": 20,
+   "price": 232.14,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084787,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:AMZN",
+   "comment": "",
+   "is_buy": true,
+   "qty": 36.423,
+   "price": 229,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084776,
+   "time": 1756387800000,
+   "symbol": "NYSE:NU",
+   "comment": "",
+   "is_buy": true,
+   "qty": 353,
+   "price": 14.8,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084737,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:MELI",
+   "comment": "",
+   "is_buy": true,
+   "qty": 3.783,
+   "price": 2472.91,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084719,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:MSFT",
+   "comment": "",
+   "is_buy": true,
+   "qty": 19,
+   "price": 506.69,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084702,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:META",
+   "comment": "",
+   "is_buy": true,
+   "qty": 12.66,
+   "price": 738.7,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084631,
+   "time": 1756387800000,
+   "symbol": "NYSE:TSM",
+   "comment": "",
+   "is_buy": true,
+   "qty": 46.33,
+   "price": 230.87,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084590,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:NVDA",
+   "comment": "",
+   "is_buy": true,
+   "qty": 61.625,
+   "price": 174.18,
+   "commission": 0,
+   "auto_detect_price": false
+  },
+  {
+   "id": 2084500,
+   "time": 1756387800000,
+   "symbol": "NASDAQ:GOOG",
+   "comment": "",
+   "is_buy": true,
+   "qty": 79.06,
+   "price": 213.53,
+   "commission": 0,
+   "auto_detect_price": false
+  }
+ ],
+ "cash": [],
+ "dividends": [],
+ "splits": [],
+ "rewards": [],
+ "analysis": {
+  "analysis": {
+   "sharpe_ratio": {
+    "user": 0.31501749192833023,
+    "benchmark": 0.32666561037808206
+   },
+   "sortino_ratio": {
+    "user": 0.8066498925353758,
+    "benchmark": 0.7598730340793574
+   },
+   "beta": 1.799658839510443
+  },
+  "performance_by_period": {
+   "times": [
+    1756166400,
+    1756684800,
+    1759276800,
+    1761955200,
+    1764547200,
+    1767225600,
+    1769904000,
+    1772323200,
+    1775001600,
+    1777593600,
+    1780272000,
+    1782864000,
+    1785542400,
+    1788220800,
+    1790812800
+   ],
+   "values": [
+    {
+     "user": {
+      "v": 181.13312,
+      "p": 0.15080382
+     },
+     "bench": {
+      "v": -21.16,
+      "p": -0.32647216
+     }
+    },
+    {
+     "user": {
+      "v": 6866.4746,
+      "p": 5.7081304
+     },
+     "bench": {
+      "v": 228.22,
+      "p": 3.5326805
+     }
+    },
+    {
+     "user": {
+      "v": 7401.5835,
+      "p": 5.8207145
+     },
+     "bench": {
+      "v": 151.72,
+      "p": 2.2683814
+     }
+    },
+    {
+     "user": {
+      "v": -3747.5916,
+      "p": -2.872774
+     },
+     "bench": {
+      "v": 8.89,
+      "p": 0.12996715
+     }
+    },
+    {
+     "user": {
+      "v": 564.785,
+      "p": 0.41583502
+     },
+     "bench": {
+      "v": -3.59,
+      "p": -0.0524158
+     }
+    },
+    {
+     "user": {
+      "v": 6829.745,
+      "p": 5.007722
+     },
+     "bench": {
+      "v": 93.53,
+      "p": 1.3663011
+     }
+    },
+    {
+     "user": {
+      "v": -8663.675,
+      "p": -5.985262
+     },
+     "bench": {
+      "v": -60.13,
+      "p": -0.8665489
+     }
+    },
+    {
+     "user": {
+      "v": -6743.4243,
+      "p": -4.848697
+     },
+     "bench": {
+      "v": -350.36,
+      "p": -5.0932636
+     }
+    },
+    {
+     "user": {
+      "v": 27098.781,
+      "p": 20.477625
+     },
+     "bench": {
+      "v": 680.49,
+      "p": 10.4233265
+     }
+    },
+    {
+     "user": {
+      "v": 16984.836,
+      "p": 10.653316
+     },
+     "bench": {
+      "v": 371.03,
+      "p": 5.1467466
+     }
+    },
+    {
+     "user": {
+      "v": -3162.1426,
+      "p": -1.7924227
+     },
+     "bench": {
+      "v": -80.69,
+      "p": -1.0645049
+     }
+    },
+    {
+     "user": {
+      "v": -5694.532,
+      "p": -3.2867908
+     },
+     "bench": {
+      "v": -9.64,
+      "p": -0.1285443
+     }
+    },
+    {
+     "user": {
+      "v": 7661.8667,
+      "p": 4.568501
+     },
+     "bench": {
+      "v": 196.42,
+      "p": 2.6225278
+     }
+    },
+    {
+     "user": {
+      "v": 7356.638,
+      "p": 4.074521
+     },
+     "bench": {
+      "v": -34.6,
+      "p": -0.45016095
+     }
+    },
+    {
+     "user": {
+      "v": -7111.6694,
+      "p": -3.7870674
+     },
+     "bench": {
+      "v": 105.63,
+      "p": 1.3805064
+     }
+    }
+   ],
+   "dividends": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  }
+ }
+}

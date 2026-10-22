@@ -1,0 +1,222 @@
+{
+ "snapshotDate": "2026-10-22",
+ "source": "TradingView portfolio page (REA/CDP innerText)",
+ "earnings": [
+  {
+   "group": "today",
+   "symbol": "META",
+   "name": "Meta Platforms, Inc.",
+   "date": "2026-10-21",
+   "time": "17:03",
+   "session": "after",
+   "estimateEps": 6.54,
+   "actualEps": 3.83,
+   "surprise": -41.42,
+   "marketCap": 1780000000000
+  },
+  {
+   "group": "today",
+   "symbol": "NBIS",
+   "name": "Nebius Group N.V.",
+   "date": "2026-10-22",
+   "time": null,
+   "session": null,
+   "estimateEps": -0.71,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 46640000000
+  },
+  {
+   "group": "next30",
+   "symbol": "CLS",
+   "name": "Celestica, Inc.",
+   "date": "2026-10-26",
+   "time": null,
+   "session": null,
+   "estimateEps": 2.94,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 38410000000
+  },
+  {
+   "group": "next30",
+   "symbol": "GOOG",
+   "name": "Alphabet Inc.",
+   "date": "2026-10-28",
+   "time": null,
+   "session": null,
+   "estimateEps": 3.03,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 4070000000000
+  },
+  {
+   "group": "next30",
+   "symbol": "MSFT",
+   "name": "Microsoft Corporation",
+   "date": "2026-10-28",
+   "time": null,
+   "session": null,
+   "estimateEps": 4.71,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 3960000000000
+  },
+  {
+   "group": "next30",
+   "symbol": "SIMO",
+   "name": "Silicon Motion Technology Corporation",
+   "date": "2026-10-28",
+   "time": null,
+   "session": null,
+   "estimateEps": 3.3,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 7250000000
+  },
+  {
+   "group": "next30",
+   "symbol": "VIST",
+   "name": "Vista Energy S.A.B. de C.V.",
+   "date": "2026-10-28",
+   "time": null,
+   "session": null,
+   "estimateEps": 2.82,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 7850000000
+  },
+  {
+   "group": "next30",
+   "symbol": "AMZN",
+   "name": "Amazon.com, Inc.",
+   "date": "2026-10-29",
+   "time": null,
+   "session": null,
+   "estimateEps": 1.96,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 2830000000000
+  },
+  {
+   "group": "next30",
+   "symbol": "AAPL",
+   "name": "Apple Inc.",
+   "date": "2026-11-02",
+   "time": null,
+   "session": null,
+   "estimateEps": 1.99,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 5020000000000
+  },
+  {
+   "group": "next30",
+   "symbol": "MELI",
+   "name": "MercadoLibre, Inc.",
+   "date": "2026-11-04",
+   "time": null,
+   "session": null,
+   "estimateEps": 9.34,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 94040000000
+  },
+  {
+   "group": "next30",
+   "symbol": "TMDX",
+   "name": "TransMedics Group, Inc.",
+   "date": "2026-11-04",
+   "time": null,
+   "session": null,
+   "estimateEps": 0.3,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 2510000000
+  },
+  {
+   "group": "next30",
+   "symbol": "HSAI",
+   "name": "Hesai Group",
+   "date": "2026-11-10",
+   "time": null,
+   "session": null,
+   "estimateEps": 0.15,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 2300000000
+  },
+  {
+   "group": "next30",
+   "symbol": "NU",
+   "name": "Nu Holdings Ltd.",
+   "date": "2026-11-12",
+   "time": null,
+   "session": null,
+   "estimateEps": 0.22,
+   "actualEps": null,
+   "surprise": null,
+   "marketCap": 72700000000
+  }
+ ],
+ "dividends": [
+  {
+   "symbol": "SIMO",
+   "name": "Silicon Motion Technology Corporation",
+   "amount": 0.57,
+   "exDate": "2026-11-05",
+   "payDate": "2026-11-19",
+   "yield": 0.93
+  },
+  {
+   "symbol": "MSFT",
+   "name": "Microsoft Corporation",
+   "amount": 0.98,
+   "exDate": "2026-11-19",
+   "payDate": "2026-12-10",
+   "yield": 0.74
+  }
+ ],
+ "news": [
+  {
+   "symbol": "META",
+   "headline": "Meta approves Class C share structure, strikes deal to retain CEO Zuckerberg in California",
+   "provider": "Seeking Alpha"
+  },
+  {
+   "symbol": "META",
+   "headline": "New Mexico judge orders Meta to pay $25B over Facebook privacy claims",
+   "provider": "Seeking Alpha"
+  },
+  {
+   "symbol": "NVDA",
+   "headline": "NVDA Logs Best Day In Over A Month: Burry Spotlights Partnership Blitz — Analyst Calls Full-Stack Strategy ‘Underappreciated’",
+   "provider": "Stocktwits"
+  },
+  {
+   "symbol": "META",
+   "headline": "META: Meta Stock Rises 4% on Big Revenue Beat. New Share Class Will Help Fund AI",
+   "provider": "TradingView"
+  },
+  {
+   "symbol": "BTCUSDT",
+   "headline": "Bitcoin falls below $83,000 as AI jitters weigh on sentiment",
+   "provider": "Moneycontrol"
+  },
+  {
+   "symbol": "BTCUSDT",
+   "headline": "Bitcoin treasury companies return to profit as prices exceed $80K",
+   "provider": "Crypto Briefing"
+  },
+  {
+   "symbol": "GOOG",
+   "headline": "Google, OpenAI, and Amazon respond as critical PHP flaws spark global alarm",
+   "provider": "Seeking Alpha"
+  },
+  {
+   "symbol": "META",
+   "headline": "Mark Zuckerberg Threatened To Leave California. Meta's Board Cut Him A Deal. — WSJ",
+   "provider": "Dow Jones Newswires"
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "folioprospect-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "tsx server/index.ts",
+    "dev:web": "vite --port 5173 --host 127.0.0.1",
+    "dev": "concurrently -k -n API,WEB \"npm:dev:api\" \"npm:dev:web\"",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5173 --host 127.0.0.1",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.3",
+    "lucide-react": "^0.475.0",
+    "lightweight-charts": "^4.2.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^22.13.4",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}
