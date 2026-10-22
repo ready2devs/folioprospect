@@ -123,17 +123,29 @@ export const PortfolioView: React.FC = () => {
     setCustomProj(res);
   };
 
-  // Slice daily series according to selectedPeriod
-  const periodDaysMap: Record<typeof selectedPeriod, number> = {
-    '1M': 22,
-    '3M': 65,
-    '6M': 130,
-    YTD: 205,
-    '1Y': 252,
-    ALL: series.daily.length,
+  // Dynamically compute exact rolling window start dates so chart, header & cards have 100% mathematical parity
+  const lastDailyPt = series.daily[series.daily.length - 1];
+  const lastTime = lastDailyPt?.time || Date.now();
+
+  const getPeriodStartDate = (key: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'): string => {
+    const d = new Date(lastTime);
+    if (key === '1M') d.setMonth(d.getMonth() - 1);
+    else if (key === '3M') d.setMonth(d.getMonth() - 3);
+    else if (key === '6M') d.setMonth(d.getMonth() - 6);
+    else if (key === 'YTD') {
+      d.setMonth(0);
+      d.setDate(1);
+    } else if (key === '1Y') d.setFullYear(d.getFullYear() - 1);
+    else return series.daily[0]?.date || '1970-01-01';
+    return d.toISOString().slice(0, 10);
   };
-  const sliceCount = periodDaysMap[selectedPeriod] || series.daily.length;
-  const chartDaily = series.daily.slice(-Math.min(series.daily.length, Math.max(10, sliceCount)));
+
+  // Slice daily series according to selectedPeriod
+  const targetStartDate = getPeriodStartDate(selectedPeriod);
+  let chartDaily = series.daily.filter((p) => p.date >= targetStartDate);
+  if (chartDaily.length < 2) {
+    chartDaily = series.daily.slice(-Math.min(series.daily.length, 10));
+  }
 
   const firstPt = chartDaily[0];
   const baseCumFactor = 1 + (firstPt?.cumReturnPct || 0) / 100;
@@ -353,17 +365,27 @@ export const PortfolioView: React.FC = () => {
   };
 
   // Period buttons data (with exact TradingView reference fallback when in REA snapshot mode)
+  // Calculate each period's exact cumulative return from the daily series so card pct === chart endpoint pct
+  const calcPeriodPct = (key: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => {
+    const sDate = getPeriodStartDate(key);
+    const startPt = series.daily.find((p) => p.date >= sDate) || series.daily[0];
+    if (!startPt || !lastDailyPt) return 0;
+    const bFactor = 1 + (startPt.cumReturnPct || 0) / 100;
+    const lFactor = 1 + (lastDailyPt.cumReturnPct || 0) / 100;
+    return bFactor > 0 ? (lFactor / bFactor - 1) * 100 : 0;
+  };
+
   const periodCards: {
     key: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
     label: string;
     pct: number;
   }[] = [
-    { key: '1M', label: '1 month', pct: series.periods['1M']?.pct ?? tvReference.periods['1M'] },
-    { key: '3M', label: '3 months', pct: series.periods['3M']?.pct ?? tvReference.periods['3M'] },
-    { key: '6M', label: '6 months', pct: series.periods['6M']?.pct ?? tvReference.periods['6M'] },
-    { key: 'YTD', label: 'Year to date', pct: series.periods.YTD?.pct ?? tvReference.periods.YTD },
-    { key: '1Y', label: '1 year', pct: series.periods['1Y']?.pct ?? tvReference.periods['1Y'] },
-    { key: 'ALL', label: 'All time', pct: series.periods.ALL?.pct ?? tvReference.periods.ALL },
+    { key: '1M', label: '1 month', pct: calcPeriodPct('1M') },
+    { key: '3M', label: '3 months', pct: calcPeriodPct('3M') },
+    { key: '6M', label: '6 months', pct: calcPeriodPct('6M') },
+    { key: 'YTD', label: 'Year to date', pct: calcPeriodPct('YTD') },
+    { key: '1Y', label: '1 year', pct: calcPeriodPct('1Y') },
+    { key: 'ALL', label: 'All time', pct: calcPeriodPct('ALL') },
   ];
 
   const maxGainerPct = Math.max(...movers.gainers.map((g) => Math.abs(g.dailyGain.p)), 1);
