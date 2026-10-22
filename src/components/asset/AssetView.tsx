@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useId, useMemo } from 'react';
+import React, { useState, useEffect, useId, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
@@ -46,6 +46,28 @@ export const AssetView: React.FC = () => {
   }, [assetDetail?.symbol]);
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(1000);
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    const update = () => {
+      if (chartContainerRef.current) {
+        const w = chartContainerRef.current.clientWidth;
+        if (w > 200) setChartWidth(w);
+      }
+    };
+    update();
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 200) {
+          setChartWidth(Math.floor(entry.contentRect.width));
+        }
+      }
+    });
+    ro.observe(chartContainerRef.current);
+    return () => ro.disconnect();
+  }, [assetDetail?.symbol, selectedAssetRange]);
 
   if (!assetDetail) {
     return (
@@ -75,7 +97,7 @@ export const AssetView: React.FC = () => {
   const paddedMaxP = maxP + spanP * 0.05;
   const paddedSpanP = paddedMaxP - paddedMinP || 1;
 
-  const svgW = 820;
+  const svgW = chartWidth;
   const svgH = 260;
   const padL = 20;
   const padR = 85;

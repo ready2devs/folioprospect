@@ -43,14 +43,14 @@ interface AppState {
   setSearchOpen: (open: boolean) => void;
   openAddModal: (tab?: 'trade' | 'cash' | 'illiquid' | 'dividend' | 'csv') => void;
   closeAddModal: () => void;
-  refreshAll: () => Promise<void>;
+  refreshAll: (background?: boolean) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   theme: 'dark',
   currency: 'USD',
   fxRates: { USD: 1, ARS: 1185, EUR: 0.92 },
-  pricingMode: 'tv_snapshot',
+  pricingMode: 'live',
   portfolioScope: 'personal',
   rightState: 'market', // Estado 1 por defecto al iniciar según especificación
   portfolioTab: 'overview',
@@ -113,8 +113,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   openAddModal: (tab = 'trade') => set({ addModalOpen: true, addModalTab: tab }),
   closeAddModal: () => set({ addModalOpen: false }),
-  refreshAll: async () => {
-    set({ loading: true });
+  refreshAll: async (background = false) => {
+    if (!background) set({ loading: true });
     try {
       const [fxRates, evaluation, marketData] = await Promise.all([
         api.getFx(),

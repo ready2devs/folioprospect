@@ -30,7 +30,8 @@ export const TopBar: React.FC = () => {
 
   return (
     <header className="topbar">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+      <div className="topbar-inner">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
         <div
           className="brand"
           onClick={() => setRightState('market')}
@@ -117,7 +118,7 @@ export const TopBar: React.FC = () => {
             className={`seg-btn ${pricingMode === 'live' ? 'active' : ''}`}
             onClick={() => setPricingMode('live')}
           >
-            Yahoo Live
+            ● Live (15s)
           </button>
         </div>
 
@@ -154,6 +155,7 @@ export const TopBar: React.FC = () => {
         >
           {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>
+        </div>
       </div>
     </header>
   );

@@ -109,63 +109,140 @@ export async function fetchQuotesWithSparklines(
   let usedCacheFallback = false;
 
   if (missing.length > 0) {
-    const auth = await getYahooAuth();
-    const yahooSyms = Array.from(new Set(missing.map((s) => tvToYahooSymbol(s))));
-    const yahooResultBySym = new Map<string, any>();
+    // 1. Separate Binance crypto vs traditional equities
+    const cryptoSyms = missing.filter((s) => s.startsWith('BINANCE:') || s.endsWith('USDT'));
+    const stockSyms = missing.filter((s) => !s.startsWith('BINANCE:') && !s.endsWith('USDT'));
 
-    if (auth) {
-      try {
-        const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
-          yahooSyms.join(',')
-        )}&crumb=${encodeURIComponent(auth.crumb)}`;
-        const res = await fetch(url, {
-          headers: { 'user-agent': UA, cookie: auth.cookie },
-          signal: AbortSignal.timeout(5000),
-        });
-        if (res.ok) {
-          const data: any = await res.json();
-          for (const item of data?.quoteResponse?.result || []) {
-            yahooResultBySym.set(item.symbol, item);
+    // Fetch Binance crypto 24/7 real-time
+    await Promise.all(
+      cryptoSyms.map(async (sym) => {
+        const pair = sym.includes(':') ? sym.split(':')[1] : sym;
+        try {
+          const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`, {
+            signal: AbortSignal.timeout(3500),
+          });
+          if (res.ok) {
+            const d: any = await res.json();
+            const price = Number(d.lastPrice);
+            const prevClose = Number(d.prevClosePrice) || price;
+            const change = Number(d.priceChange);
+            const changePct = Number(d.priceChangePercent);
+            const qData: QuoteData = {
+              symbol: sym,
+              price,
+              prevClose,
+              change,
+              changePct,
+              currency: 'USD',
+              name: pair.replace('USDT', ' / TetherUS'),
+              updatedAt: now,
+            };
+            quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });
+            quotes[sym] = qData;
+
+            const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
+            const spVal = { prevClose, points: pts };
+            sparkCache.set(sym, { value: spVal, expiresAt: now + 30000 });
+            sparklines[sym] = spVal;
           }
+        } catch {
+          // fallback later
         }
-      } catch {
-        usedCacheFallback = true;
-      }
-    } else {
-      usedCacheFallback = true;
-    }
+      })
+    );
 
+    // Fetch traditional equities via Yahoo v8 chart API (works without cookies/crumbs)
+    await Promise.all(
+      stockSyms.map(async (sym) => {
+        const ySym = tvToYahooSymbol(sym);
+        try {
+          const res = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+              ySym
+            )}?interval=2m&range=1d`,
+            {
+              headers: { 'user-agent': UA },
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          if (res.ok) {
+            const data: any = await res.json();
+            const result = data?.chart?.result?.[0];
+            const meta = result?.meta;
+            if (meta?.regularMarketPrice != null) {
+              const price = meta.regularMarketPrice;
+              let prevClose = meta.chartPreviousClose || meta.previousClose || price;
+              if (prevClose <= 0) prevClose = price;
+              const change = price - prevClose;
+              const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+              // Extract real intraday minute close points if available
+              const rawCloses: (number | null)[] =
+                result?.indicators?.quote?.[0]?.close || [];
+              const validCloses = rawCloses.filter(
+                (v): v is number => typeof v === 'number' && !isNaN(v) && v > 0
+              );
+              let points: number[] = [];
+              if (validCloses.length >= 6) {
+                // downsample to ~36 points
+                const step = Math.max(1, Math.floor(validCloses.length / 36));
+                points = [prevClose];
+                for (let i = 0; i < validCloses.length; i += step) {
+                  points.push(Number(validCloses[i].toFixed(2)));
+                }
+                points.push(price);
+              } else {
+                points = buildSyntheticSparkline(sym, prevClose, price, 36);
+              }
+
+              const qData: QuoteData = {
+                symbol: sym,
+                price,
+                prevClose,
+                change,
+                changePct,
+                currency: meta.currency || 'USD',
+                name: meta.longName || meta.shortName || cleanTicker(sym),
+                marketCap: meta.marketCap,
+                updatedAt: now,
+              };
+              quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });
+              quotes[sym] = qData;
+
+              const spVal = { prevClose, points };
+              sparkCache.set(sym, { value: spVal, expiresAt: now + 30000 });
+              sparklines[sym] = spVal;
+            }
+          }
+        } catch {
+          // fallback later
+        }
+      })
+    );
+
+    // Fallback for any symbols that failed network requests
     for (const sym of missing) {
-      const ySym = tvToYahooSymbol(sym);
-      const yItem = yahooResultBySym.get(ySym);
+      if (quotes[sym]) continue;
+      usedCacheFallback = true;
       const seedH = seedHoldingMap.get(sym) || seedHoldingMap.get(cleanTicker(sym));
       const histArr = seedHistory[sym] || seedHistory[cleanTicker(sym)];
 
-      let price = yItem?.regularMarketPrice;
-      let prevClose = yItem?.regularMarketPreviousClose ?? yItem?.chartPreviousClose;
-      let changePct = yItem?.regularMarketChangePercent;
-      let change = yItem?.regularMarketChange;
+      let price = 100;
+      let prevClose = 99.5;
+      let change = 0.5;
+      let changePct = 0.5;
 
-      if (price == null && seedH) {
+      if (seedH) {
         price = seedH.last_price;
         changePct = seedH.daily_gain?.p ?? 0;
         prevClose = price / (1 + changePct / 100);
         change = price - prevClose;
-      } else if (price == null && histArr && histArr.length > 0) {
+      } else if (histArr && histArr.length > 0) {
         price = histArr[histArr.length - 1][1];
         prevClose = histArr.length > 1 ? histArr[histArr.length - 2][1] : price;
         change = price - prevClose;
         changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-      } else if (price == null) {
-        price = 100;
-        prevClose = 99.5;
-        change = 0.5;
-        changePct = 0.5;
       }
-
-      if (!prevClose || prevClose <= 0) prevClose = price;
-      if (change == null) change = price - prevClose;
-      if (changePct == null) changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
 
       const qData: QuoteData = {
         symbol: sym,
@@ -173,9 +250,8 @@ export async function fetchQuotesWithSparklines(
         prevClose,
         change,
         changePct,
-        currency: yItem?.currency || 'USD',
-        name: yItem?.longName || yItem?.shortName || cleanTicker(sym),
-        marketCap: yItem?.marketCap,
+        currency: 'USD',
+        name: cleanTicker(sym),
         updatedAt: now,
       };
       quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });

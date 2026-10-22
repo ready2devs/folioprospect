@@ -40,6 +40,28 @@ export const PortfolioView: React.FC = () => {
   const [divFilter, setDivFilter] = useState<'ex' | 'pay'>('ex');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [holdSort, setHoldSort] = useState<'value' | 'allocation' | 'unrealized' | 'daily' | 'ticker'>('value');
+  const chartContainerRef = React.useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(1000);
+
+  React.useEffect(() => {
+    if (!chartContainerRef.current) return;
+    const update = () => {
+      if (chartContainerRef.current) {
+        const w = chartContainerRef.current.clientWidth;
+        if (w > 200) setChartWidth(w);
+      }
+    };
+    update();
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 200) {
+          setChartWidth(Math.floor(entry.contentRect.width));
+        }
+      }
+    });
+    ro.observe(chartContainerRef.current);
+    return () => ro.disconnect();
+  }, [portfolioTab]);
 
   // Prospectiva 10/20Y interactive state
   const [projHorizon, setProjHorizon] = useState<10 | 20>(20);
@@ -144,10 +166,10 @@ export const PortfolioView: React.FC = () => {
 
   // Render SVG Portfolio Change Chart
   const renderPortfolioChart = () => {
-    const W = 820;
-    const H = 250;
-    const padL = 12;
-    const padR = 56;
+    const W = chartWidth;
+    const H = 260;
+    const padL = 14;
+    const padR = 64;
     const padT = 16;
     const padB = 26;
     const iW = W - padL - padR;
@@ -193,7 +215,7 @@ export const PortfolioView: React.FC = () => {
     const activePt = chartSeries[activeIdx];
 
     return (
-      <div>
+      <div ref={chartContainerRef} style={{ width: '100%' }}>
         <div
           style={{
             display: 'flex',
@@ -244,11 +266,11 @@ export const PortfolioView: React.FC = () => {
 
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          style={{ width: '100%', height: 250, display: 'block', cursor: 'crosshair' }}
+          style={{ width: '100%', height: 260, display: 'block', cursor: 'crosshair' }}
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const relX = e.clientX - rect.left;
-            const ratio = Math.max(0, Math.min(1, relX / rect.width));
+            const ratio = Math.max(0, Math.min(1, (relX - padL) / iW));
             setHoverIdx(Math.round(ratio * (chartSeries.length - 1)));
           }}
           onMouseLeave={() => setHoverIdx(null)}

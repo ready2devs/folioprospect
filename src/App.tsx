@@ -19,7 +19,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (pricingMode !== 'live') return;
     const id = setInterval(() => {
-      refreshAll();
+      refreshAll(true);
     }, 15000);
     return () => clearInterval(id);
   }, [pricingMode, refreshAll]);
@@ -27,13 +27,15 @@ export const App: React.FC = () => {
   return (
     <div className="app-shell">
       <TopBar />
-      <div className="workspace-grid">
-        <LeftPanel />
-        <main className="right-panel" aria-label="Panel Dinámico Multi-Estado">
-          {rightState === 'market' && <MarketView />}
-          {rightState === 'portfolio' && <PortfolioView />}
-          {rightState === 'asset' && <AssetView />}
-        </main>
+      <div className="workspace-wrapper">
+        <div className="workspace-grid">
+          <LeftPanel />
+          <main className="right-panel" aria-label="Panel Dinámico Multi-Estado">
+            {rightState === 'market' && <MarketView />}
+            {rightState === 'portfolio' && <PortfolioView />}
+            {rightState === 'asset' && <AssetView />}
+          </main>
+        </div>
       </div>
       <SearchModal />
       <AddDialog />

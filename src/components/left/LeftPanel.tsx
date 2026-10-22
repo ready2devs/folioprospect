@@ -334,8 +334,8 @@ export const LeftPanel: React.FC = () => {
                   points={sp.points}
                   prevClose={sp.prevClose}
                   isPositive={isUp}
-                  width={78}
-                  height={28}
+                  width={62}
+                  height={22}
                 />
               </div>
 
