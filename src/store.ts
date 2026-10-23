@@ -8,8 +8,6 @@ import type {
 import { normalizeTradingViewSymbol } from '@shared/engine';
 import {
   api,
-  loadPersistedLedger,
-  recomputeEvaluationWithPersistedLedger,
   type AssetDetailResponse,
   type MarketOverviewResponse,
   type PortfolioEvaluationResponse,
@@ -267,18 +265,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         getArgFxSafe(),
       ]);
 
-      let evaluation = rawEvaluation;
-      const persisted = loadPersistedLedger();
-      if (
-        persisted &&
-        persisted.isCustomized &&
-        ((evaluation?.portfolio?.trades?.length ?? 0) !== persisted.trades.length ||
-          (evaluation?.portfolio?.cash?.length ?? 0) !== persisted.cash.length ||
-          (evaluation?.portfolio?.dividends?.length ?? 0) !== persisted.dividends.length ||
-          (evaluation?.portfolio?.illiquid?.length ?? 0) !== persisted.illiquid.length)
-      ) {
-        evaluation = recomputeEvaluationWithPersistedLedger(evaluation, persisted);
-      }
+      // evaluatePortfolio already handles desync + live crypto patching
+      const evaluation = rawEvaluation;
 
       set({ fxRates, evaluation, marketData, argFx, loading: false });
       if (get().rightState === 'asset') {

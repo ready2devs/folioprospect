@@ -161,6 +161,150 @@ export function clearPersistedLedger(): void {
   }
 }
 
+const STABLECOIN_SYMS = new Set([
+  'BINANCE:USDTUSDT', 'BINANCE:USDCUSDT', 'BINANCE:BUSDUSDT', 'BINANCE:DAIUSDT',
+]);
+
+/**
+ * Fetch live crypto prices directly from Binance in the browser.
+ * This bypasses server-side IP blocks (Vercel/AWS) since Binance API has CORS: *.
+ */
+async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Record<string, QuoteData>> {
+  const cryptoSyms = symbols.filter(
+    (s) => (s.startsWith('BINANCE:') || s.endsWith('USDT')) && !STABLECOIN_SYMS.has(s)
+  );
+  const result: Record<string, QuoteData> = {};
+
+  // Stablecoins: always $1.00
+  for (const s of symbols) {
+    if (STABLECOIN_SYMS.has(s)) {
+      result[s] = {
+        symbol: s, price: 1.00, prevClose: 1.00,
+        change: 0, changePct: 0, currency: 'USD', marketState: 'open',
+      };
+    }
+  }
+
+  // Fetch real crypto prices from Binance (browser can reach it)
+  await Promise.all(
+    cryptoSyms.map(async (sym) => {
+      const pair = sym.includes(':') ? sym.split(':')[1] : sym;
+      try {
+        const res = await fetch(
+          `https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`,
+          { signal: AbortSignal.timeout(4000) }
+        );
+        if (res.ok) {
+          const d: any = await res.json();
+          const price = Number(d.lastPrice);
+          if (Number.isFinite(price) && price > 0) {
+            const prevClose = Number(d.prevClosePrice) || price;
+            result[sym] = {
+              symbol: sym,
+              price,
+              prevClose,
+              change: Number(d.priceChange),
+              changePct: Number(d.priceChangePercent),
+              currency: 'USD',
+              marketState: 'open',
+            };
+            return;
+          }
+        }
+      } catch { /* try coinbase */ }
+      // Fallback: Coinbase
+      try {
+        const base = pair.replace(/USDT$|USD$/, '');
+        const res = await fetch(
+          `https://api.coinbase.com/v2/prices/${base}-USD/spot`,
+          { signal: AbortSignal.timeout(3000) }
+        );
+        if (res.ok) {
+          const d: any = await res.json();
+          const price = Number(d?.data?.amount);
+          if (Number.isFinite(price) && price > 0) {
+            result[sym] = {
+              symbol: sym, price, prevClose: price,
+              change: 0, changePct: 0, currency: 'USD', marketState: 'open',
+            };
+          }
+        }
+      } catch { /* use server fallback */ }
+    })
+  );
+  return result;
+}
+
+/**
+ * Patch crypto prices in a PortfolioEvaluationResponse with live browser-fetched data.
+ */
+function patchCryptoInEvaluation(
+  evalResult: PortfolioEvaluationResponse,
+  liveQuotes: Record<string, QuoteData>
+): PortfolioEvaluationResponse {
+  if (Object.keys(liveQuotes).length === 0) return evalResult;
+
+  const patchedHoldings = evalResult.holdings.map((h) => {
+    const lq = liveQuotes[h.symbol];
+    if (!lq) return h;
+    const lastPrice = lq.price;
+    const prevClose = lq.prevClose;
+    const value = h.qty * lastPrice;
+    const prevVal = h.qty * prevClose;
+    const uVal = value - h.invested;
+    const uPct = h.invested > 0 ? (uVal / h.invested) * 100 : 0;
+    const dVal = value - prevVal;
+    const dPct = prevVal > 0 ? (dVal / prevVal) * 100 : 0;
+    return {
+      ...h,
+      lastPrice,
+      prevClose,
+      value,
+      dailyChangeAbs: lastPrice - prevClose,
+      unrealizedGain: { v: uVal, p: uPct },
+      dailyGain: { v: dVal, p: dPct },
+      totalGain: { v: uVal + h.realizedGain + h.dividendGain, p: uPct },
+      marketState: 'open' as const,
+    };
+  });
+
+  // Recalculate KPIs
+  const totalValue = patchedHoldings.reduce((s, h) => s + h.value, 0);
+  const patchedWithAlloc = patchedHoldings.map((h) => ({
+    ...h,
+    allocation: totalValue > 0 ? (h.value / totalValue) * 100 : 0,
+  }));
+
+  const totalInvested = patchedWithAlloc.reduce((s, h) => s + h.invested, 0);
+  const totalUnrealized = patchedWithAlloc.reduce((s, h) => s + h.unrealizedGain.v, 0);
+  const totalDaily = patchedWithAlloc.reduce((s, h) => s + h.dailyGain.v, 0);
+
+  const patchedSparklines = { ...(evalResult.sparklines || {}) };
+  for (const [sym, lq] of Object.entries(liveQuotes)) {
+    if (patchedSparklines[sym]) {
+      const sp = patchedSparklines[sym];
+      sp.points = [...sp.points.slice(0, -1), lq.price];
+    } else {
+      patchedSparklines[sym] = { prevClose: lq.prevClose, points: [lq.prevClose, lq.price] };
+    }
+  }
+
+  return {
+    ...evalResult,
+    holdings: patchedWithAlloc,
+    sparklines: patchedSparklines,
+    kpis: {
+      ...evalResult.kpis,
+      totalGrossPatrimony: totalValue + (evalResult.kpis.totalGrossPatrimony - evalResult.holdings.reduce((s, h) => s + h.value, 0)),
+      holdingsValue: totalValue,
+      unrealizedGainLoss: totalUnrealized,
+      unrealizedGainLossPct: totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0,
+      dailyChange: totalDaily,
+      dailyChangePct: totalValue > 0 ? (totalDaily / (totalValue - totalDaily)) * 100 : 0,
+    },
+  };
+}
+
 /**
  * Re-computes a PortfolioEvaluationResponse deterministically on the client
  * when the local/PersistedLedgerState has custom mutations that a serverless
@@ -168,7 +312,8 @@ export function clearPersistedLedger(): void {
  */
 export function recomputeEvaluationWithPersistedLedger(
   serverEval: PortfolioEvaluationResponse,
-  persisted: PersistedLedgerState
+  persisted: PersistedLedgerState,
+  liveCrypto: Record<string, QuoteData> = {}
 ): PortfolioEvaluationResponse {
   const mergedPortfolio: Portfolio = {
     ...serverEval.portfolio,
@@ -208,6 +353,7 @@ export function recomputeEvaluationWithPersistedLedger(
     }
   }
 
+  // Merge: server quotes -> server holdings -> live browser crypto -> catalog fallback
   const quotesMap: Record<string, QuoteData> = { ...(serverEval.quotes || {}) };
   for (const h of [...(serverEval.holdings || []), ...(serverEval.closedHoldings || [])]) {
     quotesMap[h.symbol] = {
@@ -226,25 +372,31 @@ export function recomputeEvaluationWithPersistedLedger(
       extSession: h.extSession,
     };
   }
+  // Override crypto prices with live browser-fetched data (server may have stale/blocked data)
+  for (const [sym, lq] of Object.entries(liveCrypto)) {
+    quotesMap[sym] = lq;
+  }
   for (const t of mergedPortfolio.trades) {
     if (!quotesMap[t.symbol]) {
-      const isStable =
-        t.symbol === 'BINANCE:USDTUSDT' ||
-        t.symbol === 'BINANCE:USDCUSDT' ||
-        t.symbol === 'BINANCE:BUSDUSDT' ||
-        t.symbol === 'BINANCE:DAIUSDT' ||
-        t.symbol.endsWith('USDTUSDT');
-      const cat = findCatalogEntry(t.symbol);
-      const px = isStable ? 1.00 : (cat?.refPrice ?? t.price);
-      quotesMap[t.symbol] = {
-        symbol: t.symbol,
-        price: px,
-        prevClose: isStable ? 1.00 : px * 0.99,
-        change: isStable ? 0 : px * 0.01,
-        changePct: isStable ? 0 : 1.01,
-        currency: 'USD',
-        marketState: t.symbol.startsWith('BINANCE:') ? 'open' : 'closed',
-      };
+      const isStable = STABLECOIN_SYMS.has(t.symbol);
+      if (isStable) {
+        quotesMap[t.symbol] = {
+          symbol: t.symbol, price: 1.00, prevClose: 1.00,
+          change: 0, changePct: 0, currency: 'USD', marketState: 'open',
+        };
+      } else {
+        const cat = findCatalogEntry(t.symbol);
+        const px = cat?.refPrice ?? t.price;
+        quotesMap[t.symbol] = {
+          symbol: t.symbol,
+          price: px,
+          prevClose: px * 0.99,
+          change: px * 0.01,
+          changePct: 1.01,
+          currency: 'USD',
+          marketState: t.symbol.startsWith('BINANCE:') ? 'open' : 'closed',
+        };
+      }
     }
   }
 
@@ -465,6 +617,16 @@ export const api = {
     const serverEval: PortfolioEvaluationResponse = await r.json();
     const persisted = loadPersistedLedger();
 
+    // Collect ALL symbols that need pricing (server + persisted trades)
+    const allSymbols = new Set<string>();
+    for (const h of serverEval.holdings || []) allSymbols.add(h.symbol);
+    if (persisted) {
+      for (const t of persisted.trades) allSymbols.add(normalizeTradingViewSymbol(t.symbol));
+    }
+
+    // Always fetch live crypto prices client-side (server may be blocked by Binance on Vercel)
+    const liveCrypto = await fetchLiveCryptoQuotes([...allSymbols]);
+
     if (!persisted) {
       savePersistedLedger({
         version: 1,
@@ -477,7 +639,7 @@ export const api = {
         illiquid: serverEval.portfolio.illiquid || [],
         customMeta: {},
       });
-      return serverEval;
+      return patchCryptoInEvaluation(serverEval, liveCrypto);
     }
 
     // Check if serverless instance cold-started and lost user mutations
@@ -494,11 +656,12 @@ export const api = {
         serverIlliqCount !== persisted.illiquid.length;
 
       if (isDesynced) {
-        return recomputeEvaluationWithPersistedLedger(serverEval, persisted);
+        const recomputed = recomputeEvaluationWithPersistedLedger(serverEval, persisted, liveCrypto);
+        return patchCryptoInEvaluation(recomputed, liveCrypto);
       }
     }
 
-    return serverEval;
+    return patchCryptoInEvaluation(serverEval, liveCrypto);
   },
   async getMarketOverview(): Promise<MarketOverviewResponse> {
     const r = await fetch('/api/market');
