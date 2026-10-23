@@ -500,12 +500,14 @@ export const MarketView: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. BLOQUE DE DOS COLUMNAS: EQUITY SECTORS + EARNINGS & NOTICIAS */}
+      {/* 4. BLOQUE AUTO-ADAPTABLE: EQUITY SECTORS + EARNINGS & NOTICIAS */}
       <div
         className="r-grid-2"
         style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : '1.05fr 1.25fr',
+          gridTemplateColumns: isMobile
+            ? '1fr'
+            : 'repeat(auto-fit, minmax(340px, 1fr))',
           gap: 16,
         }}
       >

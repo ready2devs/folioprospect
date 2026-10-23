@@ -18,17 +18,21 @@ export const MobileHeader: React.FC = () => {
   } = useAppStore();
 
   return (
-    <header className="mobile-header" aria-label="Cabecera Móvil FolioProspect">
+    <header
+      className="mobile-header"
+      aria-label="Cabecera Móvil FolioProspect"
+      style={{ padding: '0 8px', gap: 4 }}
+    >
       {/* Marca / Ir a Cartera */}
       <div
         className="brand"
         onClick={() => setMobileTab('holdings')}
         title="Ver Cartera y Posiciones"
-        style={{ gap: 7, minWidth: 0, flexShrink: 1 }}
+        style={{ gap: 6, minWidth: 0, flexShrink: 0 }}
       >
         <div
           className="brand-mark"
-          style={{ width: 25, height: 25, fontSize: 12, borderRadius: 6, flexShrink: 0 }}
+          style={{ width: 24, height: 24, fontSize: 11.5, borderRadius: 6, flexShrink: 0 }}
         >
           FP
         </div>
@@ -37,8 +41,6 @@ export const MobileHeader: React.FC = () => {
           style={{
             fontSize: 13.5,
             whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
           }}
         >
           FolioProspect
@@ -46,7 +48,7 @@ export const MobileHeader: React.FC = () => {
       </div>
 
       {/* Controles compactos sin desborde */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
         {/* Buscador rápido */}
         <button
           type="button"
@@ -54,9 +56,9 @@ export const MobileHeader: React.FC = () => {
           onClick={() => setSearchOpen(true)}
           title="Buscar acciones, CEDEARs, cripto..."
           aria-label="Buscar activo"
-          style={{ padding: '5px 7px' }}
+          style={{ padding: '4px 6px' }}
         >
-          <Search size={13} color="var(--accent-cyan)" />
+          <Search size={12} color="var(--accent-cyan)" />
         </button>
 
         {/* Selector compacto USD / ARS / EUR */}
@@ -67,7 +69,7 @@ export const MobileHeader: React.FC = () => {
               type="button"
               className={'seg-btn mono ' + (currency === c ? 'active' : '')}
               onClick={() => setCurrency(c)}
-              style={{ padding: '3px 5px', fontSize: 10 }}
+              style={{ padding: '3px 4px', fontSize: 9.5 }}
             >
               {c}
             </button>
@@ -85,17 +87,17 @@ export const MobileHeader: React.FC = () => {
               : 'Modo REA Snapshot activo (clic para cambiar a Live)'
           }
           style={{
-            padding: '4px 7px',
-            fontSize: 10.5,
+            padding: '4px 6px',
+            fontSize: 10,
             fontWeight: 700,
-            gap: 4,
+            gap: 3,
             color: pricingMode === 'live' ? 'var(--pos-bright)' : 'var(--text-secondary)',
           }}
         >
           <span
             style={{
-              width: 6,
-              height: 6,
+              width: 5,
+              height: 5,
               borderRadius: '50%',
               background: pricingMode === 'live' ? '#10B981' : '#64748B',
               boxShadow: pricingMode === 'live' ? '0 0 6px #10B981' : 'none',
@@ -112,9 +114,9 @@ export const MobileHeader: React.FC = () => {
           onClick={() => refreshAll()}
           title="Actualizar cotizaciones en vivo"
           aria-label="Actualizar cotizaciones"
-          style={{ padding: '5px 7px' }}
+          style={{ padding: '4px 6px' }}
         >
-          <RefreshCw size={13} className={loading ? 'spin' : ''} />
+          <RefreshCw size={12} className={loading ? 'spin' : ''} />
         </button>
 
         {/* Botón Tema */}
@@ -124,9 +126,9 @@ export const MobileHeader: React.FC = () => {
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Cambiar a Tema Claro' : 'Cambiar a Tema Oscuro'}
           aria-label="Cambiar tema"
-          style={{ padding: '5px 7px' }}
+          style={{ padding: '4px 6px' }}
         >
-          {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+          {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
         </button>
       </div>
     </header>

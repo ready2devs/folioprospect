@@ -228,7 +228,7 @@ export async function fetchQuotesWithSparklines(
               updatedAt: now,
               marketState: 'open',
             };
-            quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });
+            quoteCache.set(sym, { value: qData, expiresAt: now + 10000 });
             quotes[sym] = qData;
 
             const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
@@ -242,9 +242,63 @@ export async function fetchQuotesWithSparklines(
       })
     );
 
-    // Fetch traditional equities via Yahoo v8 chart API (with pre/post market candles)
-    await Promise.all(
-      stockSyms.map(async (sym) => {
+    // Fetch real-time 24/5 overnight / extended-hours prices from Robinhood bounds=24_5 in batch
+    const rhOvernightMap = new Map<string, { rawExt: number; extTime: number }>();
+    const initialMarketState = resolveUsMarketState(now);
+    const rhTickers = Array.from(
+      new Set(
+        stockSyms
+          .filter(
+            (s) =>
+              !s.startsWith('SP:') &&
+              !s.startsWith('DJ:') &&
+              !s.startsWith('CBOE:') &&
+              !s.startsWith('BCBA:') &&
+              !s.startsWith('TVC:') &&
+              !s.includes('=')
+          )
+          .map((s) => cleanTicker(s).toUpperCase())
+          .filter((t) => /^[A-Z]{1,5}$/.test(t))
+      )
+    );
+
+    const rhPromise = (async () => {
+      if (rhTickers.length === 0 || initialMarketState === 'open') return;
+      try {
+        const rhUrl = `https://api.robinhood.com/quotes/?symbols=${encodeURIComponent(
+          rhTickers.join(',')
+        )}&bounds=24_5`;
+        const rhRes = await fetch(rhUrl, {
+          headers: { 'user-agent': UA },
+          signal: AbortSignal.timeout(3500),
+        });
+        if (rhRes.ok) {
+          const rhData: any = await rhRes.json();
+          const results: any[] = Array.isArray(rhData?.results) ? rhData.results : [];
+          for (const q of results) {
+            if (!q || !q.symbol) continue;
+            const rawExt = Number(
+              q.last_extended_hours_trade_price || q.last_non_reg_trade_price
+            );
+            if (Number.isFinite(rawExt) && rawExt > 0) {
+              const extTime =
+                Date.parse(q.venue_last_non_reg_trade_time || q.updated_at) || now;
+              rhOvernightMap.set(String(q.symbol).toUpperCase(), {
+                rawExt,
+                extTime,
+              });
+            }
+          }
+        }
+      } catch {
+        // Yahoo extended candles or deterministic fallback will be used
+      }
+    })();
+
+    // Fetch traditional equities via Yahoo v8 chart API (with pre/post market candles) + Robinhood 24/5
+    await Promise.all([
+      rhPromise,
+      ...stockSyms.map(async (sym) => {
         const ySym = tvToYahooSymbol(sym);
         try {
           const res = await fetch(
@@ -277,7 +331,7 @@ export async function fetchQuotesWithSparklines(
               const rawCloses: (number | null)[] =
                 result?.indicators?.quote?.[0]?.close || [];
 
-              // Extract extended hours price when market is not open
+              // Extract extended hours price when market is not open (Yahoo first, then overridden by Robinhood 24_5 if available)
               let extPrice: number | undefined;
               let extChange: number | undefined;
               let extChangePct: number | undefined;
@@ -377,7 +431,7 @@ export async function fetchQuotesWithSparklines(
                 extTime,
                 extSession,
               };
-              quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });
+              quoteCache.set(sym, { value: qData, expiresAt: now + 10000 });
               quotes[sym] = qData;
 
               const spVal = { prevClose, points };
@@ -388,8 +442,27 @@ export async function fetchQuotesWithSparklines(
         } catch {
           // fallback later
         }
-      })
-    );
+      }),
+    ]);
+
+    // Apply Robinhood 24/5 live overnight quotes to all non-open stock quotes
+    for (const sym of stockSyms) {
+      const qData = quotes[sym];
+      if (!qData || qData.marketState === 'open') continue;
+      const rh = rhOvernightMap.get(cleanTicker(sym).toUpperCase());
+      if (rh && rh.rawExt > 0) {
+        const extPrice = Number(rh.rawExt.toFixed(2));
+        const extChange = Number((extPrice - qData.price).toFixed(2));
+        const extChangePct =
+          qData.price > 0 ? Number(((extChange / qData.price) * 100).toFixed(2)) : 0;
+        qData.extPrice = extPrice;
+        qData.extChange = extChange;
+        qData.extChangePct = extChangePct;
+        qData.extTime = rh.extTime;
+        qData.extSession = 'post';
+        quoteCache.set(sym, { value: qData, expiresAt: now + 10000 });
+      }
+    }
 
     // Fallback for any symbols that failed network requests
     const fallbackMarketState = resolveUsMarketState(now);
@@ -418,10 +491,34 @@ export async function fetchQuotesWithSparklines(
       }
 
       const marketState: MarketState = isCrypto ? 'open' : fallbackMarketState;
-      const afterHours =
-        !isCrypto && marketState !== 'open'
-          ? buildDeterministicAfterHours(sym, price, nowSec, 'post')
-          : undefined;
+      const rh = !isCrypto ? rhOvernightMap.get(cleanTicker(sym).toUpperCase()) : undefined;
+      let afterHours:
+        | {
+            extPrice: number;
+            extChange: number;
+            extChangePct: number;
+            extTime: number;
+            extSession: 'pre' | 'post';
+          }
+        | undefined;
+
+      if (!isCrypto && marketState !== 'open') {
+        if (rh && rh.rawExt > 0) {
+          const extPrice = Number(rh.rawExt.toFixed(2));
+          const extChange = Number((extPrice - price).toFixed(2));
+          const extChangePct =
+            price > 0 ? Number(((extChange / price) * 100).toFixed(2)) : 0;
+          afterHours = {
+            extPrice,
+            extChange,
+            extChangePct,
+            extTime: rh.extTime,
+            extSession: 'post',
+          };
+        } else {
+          afterHours = buildDeterministicAfterHours(sym, price, nowSec, 'post');
+        }
+      }
 
       const qData: QuoteData = {
         symbol: sym,
@@ -440,7 +537,7 @@ export async function fetchQuotesWithSparklines(
         extTime: afterHours?.extTime,
         extSession: afterHours?.extSession,
       };
-      quoteCache.set(sym, { value: qData, expiresAt: now + 15000 });
+      quoteCache.set(sym, { value: qData, expiresAt: now + 10000 });
       quotes[sym] = qData;
 
       const pts = buildSyntheticSparkline(sym, prevClose, price, 36);

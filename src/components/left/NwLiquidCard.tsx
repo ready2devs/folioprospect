@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/store';
-import { computeNwPatrimony } from '@shared/engine/nw';
+import {
+  computeNwPatrimony,
+  DEFAULT_FX_FORMULA,
+  evaluateFxFormula,
+} from '@shared/engine/nw';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
   Calculator,
@@ -8,6 +12,8 @@ import {
   ChevronUp,
   RotateCcw,
   Sparkles,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const NwLiquidCard: React.FC = () => {
@@ -44,20 +50,40 @@ export const NwLiquidCard: React.FC = () => {
     settings: nwSettings,
   });
 
+  const currentFormula = nwSettings.fxFormulaExpr ?? DEFAULT_FX_FORMULA;
+  const liveEval = evaluateFxFormula(currentFormula, {
+    Base_CCL: nw.cclBaseUsd,
+    CCL: nw.cclRate,
+    MEP: nw.mepRate,
+    c_venta: (nwSettings.sellCommPct ?? 0.5) / 100,
+    c_mep_c: (nwSettings.mepBuyCommPct ?? 0.5) / 100,
+    c_mep_v: (nwSettings.mepSellCommPct ?? 0.5) / 100,
+  });
+
   const fxDiffPositive = nw.fxDiffUsd >= 0;
   const mepBondTotalComm =
     (nwSettings.mepBuyCommPct ?? 0.5) + (nwSettings.mepSellCommPct ?? 0.5);
+  const labelStyle = nwSettings.labelStyle ?? 'clean';
+
+  const fmtUsdCompact = (v: number, signed = false) => {
+    const sign = v < -0.005 ? '-$' : signed && v > 0.005 ? '+$' : '$';
+    return `${sign}${formatNumber(Math.abs(v), 0)}`;
+  };
 
   return (
     <div
       style={{
-        padding: '10px 14px',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        padding: '10px 12px',
         background:
-          'linear-gradient(180deg, rgba(16, 185, 129, 0.07) 0%, rgba(15, 23, 42, 0.45) 100%)',
+          'linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, rgba(15, 23, 42, 0.4) 100%)',
         borderBottom: '1px solid var(--border-subtle)',
       }}
     >
-      {/* Cabecera minimalista de NW líquido */}
+      {/* Cabecera minimalista de NW LÍQUIDO */}
       <div
         style={{
           display: 'flex',
@@ -72,26 +98,16 @@ export const NwLiquidCard: React.FC = () => {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: 5,
               fontSize: 10.5,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              letterSpacing: '0.06em',
               color: '#10B981',
             }}
           >
             <Sparkles size={11} />
-            <span>NW líquido</span>
-            <span
-              style={{
-                fontSize: 9.5,
-                fontWeight: 500,
-                textTransform: 'none',
-                color: 'var(--text-muted)',
-              }}
-            >
-              (Portafolio Fin. + Reserva + FX CCL/MEP)
-            </span>
+            <span>NW LÍQUIDO</span>
           </div>
 
           <div
@@ -109,13 +125,13 @@ export const NwLiquidCard: React.FC = () => {
           </div>
         </div>
 
-        {/* Botón / Chip interactivo Celda Excel */}
+        {/* Botón minimalista fx Fórmula / Ajustar */}
         <button
           type="button"
           className="btn"
           onClick={() => setExpanded((v) => !v)}
           style={{
-            padding: '4px 8px',
+            padding: '4px 9px',
             fontSize: 10.5,
             fontWeight: 700,
             borderRadius: 6,
@@ -128,10 +144,10 @@ export const NwLiquidCard: React.FC = () => {
             color: expanded ? 'var(--accent-cyan)' : '#10B981',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
             flexShrink: 0,
           }}
-          title="Abrir o cerrar calculadora tipo celda de Excel para Diferencia de Cambio CCL/MEP, Cash Comitente y Reserva USD"
+          title="Desplegar editor de fórmula fx de Diferencia de Cambio CCL/MEP, Reserva USD y nomenclatura"
         >
           <span
             className="mono"
@@ -145,101 +161,69 @@ export const NwLiquidCard: React.FC = () => {
           >
             fx
           </span>
-          <span>Celda Excel / Ajustar</span>
+          <span>Fórmula / Ajustar</span>
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       </div>
 
-      {/* Línea sutil de desglose + cotizaciones CCL y MEP en vivo */}
+      {/* Una sola línea limpia de desglose en estado colapsado */}
       <div
+        className="mono"
         style={{
-          marginTop: 6,
+          marginTop: 5,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
-          gap: '4px 10px',
+          gap: '3px 8px',
           fontSize: 10.5,
           color: 'var(--text-secondary)',
         }}
       >
-        <div
-          className="mono"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '3px 7px',
-          }}
-        >
-          <span title="Portafolio Financiero Líquido = Tenencias Brutas + Cash Comitente">
-            Portafolio Fin.:{' '}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5 }}>
+          <span>
+            Portafolio Fin.{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
-              {formatMoney(nw.financialPortfolioLiquidUsd, currency, fxRates, {
-                decimals: 0,
-              })}
+              {fmtUsdCompact(nw.financialPortfolioLiquidUsd)}
             </strong>
           </span>
-          <span>·</span>
+          <span>+</span>
           <span
             style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
             onClick={() => openAddModal('cash', 'reserveUsd')}
-            title="Clic para editar Reserva de Efectivo USD fuera del broker"
+            title="Clic para ajustar Reserva de Efectivo USD"
           >
-            Reserva USD:{' '}
+            Reserva{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
-              {formatMoney(nw.cashReserveUsd, currency, fxRates, {
-                decimals: 0,
-              })}
+              {fmtUsdCompact(nw.cashReserveUsd)}
             </strong>
           </span>
-          <span>·</span>
+          <span>+</span>
           <span
             style={{ cursor: 'pointer' }}
             onClick={() => setExpanded((v) => !v)}
-            title="Diferencia de Cambio CCL → MEP neta de comisiones (Celda Excel)"
+            title={`CCL $${formatNumber(nw.cclRate, 0)} · MEP $${formatNumber(nw.mepRate, 0)} (${formatPct(nw.gapPct, true, 1)})`}
           >
-            Dif. Cambio CCL/MEP:{' '}
+            Dif. Cambio{' '}
             <strong className={fxDiffPositive ? 'pos' : 'neg'}>
-              {formatMoney(nw.fxDiffUsd, currency, fxRates, {
-                signed: true,
-                decimals: 0,
-              })}
+              {fmtUsdCompact(nw.fxDiffUsd, true)}
             </strong>
           </span>
         </div>
 
-        <div
-          className="mono"
-          style={{
-            fontSize: 10,
-            color: 'var(--text-muted)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <span>
-            CCL <strong>${formatNumber(nw.cclRate, 0)}</strong>
-          </span>
-          <span>·</span>
-          <span>
-            MEP <strong>${formatNumber(nw.mepRate, 0)}</strong>
-          </span>
-          <span
-            style={{
-              color: nw.gapPct >= 0 ? 'var(--accent-cyan)' : 'var(--neg-bright)',
-            }}
-          >
-            ({formatPct(nw.gapPct, true, 1)})
-          </span>
-        </div>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+          CCL ${formatNumber(nw.cclRate, 0)} · MEP ${formatNumber(nw.mepRate, 0)}
+        </span>
       </div>
 
-      {/* Tabla compacta interactiva estilo Excel */}
+      {/* Panel desplegable: Editor de Fórmula Matemática fx + Parámetros CCL/MEP + Nomenclatura */}
       {expanded && (
         <div
           style={{
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             marginTop: 10,
             padding: 10,
             borderRadius: 8,
@@ -248,40 +232,132 @@ export const NwLiquidCard: React.FC = () => {
             fontSize: 11,
           }}
         >
-          {/* Barra de fórmula estilo Excel */}
+          {/* Editor interactivo de la FÓRMULA DE DIFERENCIA DE CAMBIO */}
           <div
-            className="mono"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 6,
-              padding: '5px 8px',
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              padding: 8,
               marginBottom: 8,
-              borderRadius: 5,
+              borderRadius: 6,
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border-subtle)',
-              fontSize: 10,
-              color: 'var(--text-secondary)',
-              overflowX: 'auto',
             }}
           >
-            <div>
-              <strong style={{ color: '#10B981', marginRight: 6 }}>fx</strong>
-              <span>
-                =Base_CCL * ((CCL / MEP) * (1 - c_venta) * (1 - c_mep_c) * (1 -
-                c_mep_v) - 1)
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ padding: '2px 6px', fontSize: 10, flexShrink: 0 }}
-              onClick={resetNwSettings}
-              title="Restaurar parámetros automáticos de la celda Excel"
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 6,
+                marginBottom: 6,
+              }}
             >
-              <RotateCcw size={10} /> Reset
-            </button>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-primary)' }}>
+                FÓRMULA DIF. CAMBIO (EDITABLE)
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ padding: '2px 6px', fontSize: 9.5 }}
+                  onClick={() => setNwSettings({ fxFormulaExpr: DEFAULT_FX_FORMULA })}
+                  title="Restaurar la ecuación original de Diferencia de Cambio"
+                >
+                  <RotateCcw size={10} /> Restaurar fórmula
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ padding: '2px 6px', fontSize: 9.5 }}
+                  onClick={resetNwSettings}
+                  title="Restaurar todos los parámetros por defecto"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%' }}>
+              <span
+                className="mono"
+                style={{
+                  fontWeight: 800,
+                  color: '#10B981',
+                  fontSize: 11,
+                  flexShrink: 0,
+                  paddingTop: 5,
+                }}
+              >
+                fx =
+              </span>
+              <textarea
+                rows={2}
+                aria-label="Fórmula de Diferencia de Cambio"
+                className="input mono"
+                style={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '5px 7px',
+                  fontSize: 11,
+                  lineHeight: 1.35,
+                  wordBreak: 'break-word',
+                  resize: 'vertical',
+                  borderColor: liveEval.error ? '#EF4444' : 'var(--border-subtle)',
+                }}
+                value={currentFormula}
+                onChange={(e) => setNwSettings({ fxFormulaExpr: e.target.value })}
+              />
+            </div>
+
+            <div
+              className="mono"
+              style={{
+                marginTop: 5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 4,
+                fontSize: 9.5,
+                color: 'var(--text-muted)',
+              }}
+            >
+              <span style={{ wordBreak: 'break-word' }}>
+                Vars: <strong>Base_CCL</strong>, <strong>CCL</strong>, <strong>MEP</strong>,{' '}
+                <strong>c_venta</strong>, <strong>c_mep_c</strong>, <strong>c_mep_v</strong>
+              </span>
+              {liveEval.error ? (
+                <span
+                  style={{
+                    color: '#EF4444',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  <AlertCircle size={11} /> {liveEval.error}
+                </span>
+              ) : (
+                <span
+                  style={{
+                    color: '#10B981',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  <CheckCircle2 size={11} /> = {(liveEval.value ?? 0) >= 0 ? '+' : ''}
+                  {formatNumber(liveEval.value ?? 0, 2)} USD
+                </span>
+              )}
+            </div>
           </div>
 
           <div
@@ -289,31 +365,11 @@ export const NwLiquidCard: React.FC = () => {
               display: 'grid',
               gridTemplateColumns: '1fr',
               gap: 6,
+              width: '100%',
+              maxWidth: '100%',
             }}
           >
-            {/* Fila A1: Tenencias Brutas Portafolio Financiero (auto) */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                padding: '4px 6px',
-                borderBottom: '1px dashed var(--border-subtle)',
-              }}
-            >
-              <span style={{ color: 'var(--text-secondary)' }}>
-                <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                  A1
-                </strong>{' '}
-                Tenencias Brutas Portafolio Financiero (auto)
-              </span>
-              <span className="mono" style={{ fontWeight: 700 }}>
-                ${formatNumber(nw.grossHoldingsUsd, 2)} USD
-              </span>
-            </div>
-
-            {/* Fila A2: Base Portafolio valuada en CCL */}
+            {/* Fila Base Portafolio en CCL */}
             <div
               style={{
                 display: 'flex',
@@ -323,21 +379,23 @@ export const NwLiquidCard: React.FC = () => {
                 gap: 6,
                 padding: '4px 6px',
                 borderBottom: '1px dashed var(--border-subtle)',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 160px' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>
                   <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                    A2
+                    Base_CCL
                   </strong>{' '}
-                  Base Portafolio en CCL (USD)
+                  Base Portafolio CCL (USD)
                 </span>
                 <label
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 5,
-                    fontSize: 10,
+                    fontSize: 9.5,
                     color: 'var(--text-muted)',
                     cursor: 'pointer',
                   }}
@@ -352,20 +410,20 @@ export const NwLiquidCard: React.FC = () => {
                       })
                     }
                   />
-                  Incluir Cripto en base CCL (auto: $
-                  {formatNumber(nw.cclBaseAutoUsd, 0)})
+                  Incluir Cripto (auto: ${formatNumber(nw.cclBaseAutoUsd, 0)})
                 </label>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 120px', maxWidth: '100%' }}>
                 <input
                   type="number"
                   step="any"
                   aria-label="Base Portafolio en CCL"
                   className="input mono"
                   style={{
-                    width: 112,
-                    padding: '3px 6px',
+                    width: '100%',
+                    minWidth: 0,
+                    padding: '4px 6px',
                     fontSize: 11,
                     textAlign: 'right',
                   }}
@@ -385,7 +443,7 @@ export const NwLiquidCard: React.FC = () => {
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    style={{ padding: '2px 5px', fontSize: 10 }}
+                    style={{ padding: '2px 5px', fontSize: 10, flexShrink: 0 }}
                     onClick={() => setNwSettings({ cclBaseOverride: null })}
                     title="Volver a suma automática de tenencias"
                   >
@@ -395,17 +453,19 @@ export const NwLiquidCard: React.FC = () => {
               </div>
             </div>
 
-            {/* Fila B1 & B2: Cotización Dólar CCL y Dólar MEP */}
+            {/* Cotización Dólar CCL y Dólar MEP */}
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
                 gap: 8,
                 padding: '4px 6px',
                 borderBottom: '1px dashed var(--border-subtle)',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
                     fontSize: 10,
@@ -413,16 +473,17 @@ export const NwLiquidCard: React.FC = () => {
                     marginBottom: 3,
                     display: 'flex',
                     justifyContent: 'space-between',
+                    gap: 4,
                   }}
                 >
                   <span>
                     <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                      B1
+                      CCL
                     </strong>{' '}
-                    Dólar CCL (ARS)
+                    (ARS)
                   </span>
-                  <span className="mono" style={{ color: 'var(--text-muted)' }}>
-                    vivo: ${formatNumber(cclLive, 1)}
+                  <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 9.5 }}>
+                    vivo: ${formatNumber(cclLive, 0)}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -433,7 +494,8 @@ export const NwLiquidCard: React.FC = () => {
                     className="input mono"
                     style={{
                       width: '100%',
-                      padding: '3px 6px',
+                      minWidth: 0,
+                      padding: '4px 6px',
                       fontSize: 11,
                       textAlign: 'right',
                     }}
@@ -449,7 +511,7 @@ export const NwLiquidCard: React.FC = () => {
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      style={{ padding: '2px 5px', fontSize: 10 }}
+                      style={{ padding: '2px 5px', fontSize: 10, flexShrink: 0 }}
                       onClick={() => setNwSettings({ cclOverride: null })}
                       title="Restaurar cotización CCL en vivo"
                     >
@@ -459,7 +521,7 @@ export const NwLiquidCard: React.FC = () => {
                 </div>
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
                     fontSize: 10,
@@ -467,16 +529,17 @@ export const NwLiquidCard: React.FC = () => {
                     marginBottom: 3,
                     display: 'flex',
                     justifyContent: 'space-between',
+                    gap: 4,
                   }}
                 >
                   <span>
                     <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                      B2
+                      MEP
                     </strong>{' '}
-                    Dólar MEP (ARS)
+                    (ARS)
                   </span>
-                  <span className="mono" style={{ color: 'var(--text-muted)' }}>
-                    vivo: ${formatNumber(mepLive, 1)}
+                  <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 9.5 }}>
+                    vivo: ${formatNumber(mepLive, 0)}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -487,7 +550,8 @@ export const NwLiquidCard: React.FC = () => {
                     className="input mono"
                     style={{
                       width: '100%',
-                      padding: '3px 6px',
+                      minWidth: 0,
+                      padding: '4px 6px',
                       fontSize: 11,
                       textAlign: 'right',
                     }}
@@ -503,7 +567,7 @@ export const NwLiquidCard: React.FC = () => {
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      style={{ padding: '2px 5px', fontSize: 10 }}
+                      style={{ padding: '2px 5px', fontSize: 10, flexShrink: 0 }}
                       onClick={() => setNwSettings({ mepOverride: null })}
                       title="Restaurar cotización MEP en vivo"
                     >
@@ -514,11 +578,13 @@ export const NwLiquidCard: React.FC = () => {
               </div>
             </div>
 
-            {/* Fila C1..C3: Comisiones venta CCL (0.5%) + compra/venta bonos MEP (0.5% + 0.5% = 1.0%) */}
+            {/* Comisiones c_venta, c_mep_c, c_mep_v */}
             <div
               style={{
                 padding: '4px 6px',
                 borderBottom: '1px dashed var(--border-subtle)',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
               <div
@@ -529,13 +595,11 @@ export const NwLiquidCard: React.FC = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   flexWrap: 'wrap',
+                  gap: 4,
                 }}
               >
                 <span>
-                  <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                    C1:C3
-                  </strong>{' '}
-                  Comisiones venta CCL + operatoria bonos MEP (Total:{' '}
+                  Comisiones CCL/MEP (Total:{' '}
                   <strong className="mono">
                     {nw.totalCommPct.toFixed(2)}%
                   </strong>
@@ -549,11 +613,12 @@ export const NwLiquidCard: React.FC = () => {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))',
                   gap: 6,
+                  width: '100%',
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <label
                     style={{
                       display: 'block',
@@ -562,7 +627,7 @@ export const NwLiquidCard: React.FC = () => {
                       marginBottom: 2,
                     }}
                   >
-                    Venta CCL (%)
+                    c_venta %
                   </label>
                   <input
                     type="number"
@@ -571,7 +636,8 @@ export const NwLiquidCard: React.FC = () => {
                     className="input mono"
                     style={{
                       width: '100%',
-                      padding: '3px 5px',
+                      minWidth: 0,
+                      padding: '4px 5px',
                       fontSize: 11,
                       textAlign: 'right',
                     }}
@@ -583,7 +649,7 @@ export const NwLiquidCard: React.FC = () => {
                     }
                   />
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <label
                     style={{
                       display: 'block',
@@ -592,7 +658,7 @@ export const NwLiquidCard: React.FC = () => {
                       marginBottom: 2,
                     }}
                   >
-                    Compra Bono MEP (%)
+                    c_mep_c %
                   </label>
                   <input
                     type="number"
@@ -601,7 +667,8 @@ export const NwLiquidCard: React.FC = () => {
                     className="input mono"
                     style={{
                       width: '100%',
-                      padding: '3px 5px',
+                      minWidth: 0,
+                      padding: '4px 5px',
                       fontSize: 11,
                       textAlign: 'right',
                     }}
@@ -613,7 +680,7 @@ export const NwLiquidCard: React.FC = () => {
                     }
                   />
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <label
                     style={{
                       display: 'block',
@@ -622,7 +689,7 @@ export const NwLiquidCard: React.FC = () => {
                       marginBottom: 2,
                     }}
                   >
-                    Venta Bono MEP (%)
+                    c_mep_v %
                   </label>
                   <input
                     type="number"
@@ -631,7 +698,8 @@ export const NwLiquidCard: React.FC = () => {
                     className="input mono"
                     style={{
                       width: '100%',
-                      padding: '3px 5px',
+                      minWidth: 0,
+                      padding: '4px 5px',
                       fontSize: 11,
                       textAlign: 'right',
                     }}
@@ -646,7 +714,7 @@ export const NwLiquidCard: React.FC = () => {
               </div>
             </div>
 
-            {/* Fila D1: Celda calculada = Diferencia de Cambio (USD) */}
+            {/* Resultado = Diferencia de Cambio (USD) */}
             <div
               style={{
                 display: 'flex',
@@ -658,10 +726,12 @@ export const NwLiquidCard: React.FC = () => {
                 borderRadius: 6,
                 background: 'rgba(16, 185, 129, 0.08)',
                 border: '1px solid rgba(16, 185, 129, 0.25)',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
-              <div>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 10.5 }}>
                   <Calculator
                     size={11}
                     style={{ display: 'inline', marginRight: 4 }}
@@ -673,20 +743,21 @@ export const NwLiquidCard: React.FC = () => {
                   style={{ fontSize: 9.5, color: 'var(--text-muted)' }}
                 >
                   Auto: {nw.fxDiffAutoUsd >= 0 ? '+' : ''}
-                  {formatNumber(nw.fxDiffAutoUsd, 2)} USD (obtenidos MEP: $
+                  {formatNumber(nw.fxDiffAutoUsd, 2)} USD (MEP: $
                   {formatNumber(nw.usdMepObtained, 0)})
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 120px', maxWidth: '100%' }}>
                 <input
                   type="number"
                   step="any"
                   aria-label="Diferencia de Cambio (USD)"
                   className="input mono"
                   style={{
-                    width: 112,
-                    padding: '3px 6px',
+                    width: '100%',
+                    minWidth: 0,
+                    padding: '4px 6px',
                     fontSize: 11.5,
                     fontWeight: 700,
                     textAlign: 'right',
@@ -708,9 +779,9 @@ export const NwLiquidCard: React.FC = () => {
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    style={{ padding: '2px 5px', fontSize: 10 }}
+                    style={{ padding: '2px 5px', fontSize: 10, flexShrink: 0 }}
                     onClick={() => setNwSettings({ fxDiffOverride: null })}
-                    title="Volver al cálculo automático de la fórmula Excel"
+                    title="Volver al cálculo automático de la fórmula"
                   >
                     ↺
                   </button>
@@ -718,16 +789,19 @@ export const NwLiquidCard: React.FC = () => {
               </div>
             </div>
 
-            {/* Filas E1 y E2: Cash Comitente y Reserva de Efectivo USD */}
+            {/* Cash Comitente y Reserva de Efectivo USD */}
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
                 gap: 8,
-                padding: '4px 6px 2px 6px',
+                padding: '4px 6px',
+                borderBottom: '1px dashed var(--border-subtle)',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <label
                   style={{
                     display: 'block',
@@ -736,10 +810,7 @@ export const NwLiquidCard: React.FC = () => {
                     marginBottom: 3,
                   }}
                 >
-                  <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                    E1
-                  </strong>{' '}
-                  + Cash Comitente (USD en broker)
+                  + Cash Comitente (USD)
                 </label>
                 <input
                   type="number"
@@ -748,7 +819,8 @@ export const NwLiquidCard: React.FC = () => {
                   className="input mono"
                   style={{
                     width: '100%',
-                    padding: '3px 6px',
+                    minWidth: 0,
+                    padding: '4px 6px',
                     fontSize: 11,
                     textAlign: 'right',
                   }}
@@ -761,7 +833,7 @@ export const NwLiquidCard: React.FC = () => {
                 />
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <label
                   style={{
                     display: 'block',
@@ -770,10 +842,7 @@ export const NwLiquidCard: React.FC = () => {
                     marginBottom: 3,
                   }}
                 >
-                  <strong className="mono" style={{ color: 'var(--text-muted)' }}>
-                    E2
-                  </strong>{' '}
-                  + Reserva de Efectivo (USD fuera broker)
+                  + Reserva Efectivo (USD)
                 </label>
                 <input
                   type="number"
@@ -782,7 +851,8 @@ export const NwLiquidCard: React.FC = () => {
                   className="input mono"
                   style={{
                     width: '100%',
-                    padding: '3px 6px',
+                    minWidth: 0,
+                    padding: '4px 6px',
                     fontSize: 11,
                     textAlign: 'right',
                   }}
@@ -793,6 +863,48 @@ export const NwLiquidCard: React.FC = () => {
                     })
                   }
                 />
+              </div>
+            </div>
+
+            {/* Selector de Nomenclatura: Limpia (Sin TV) vs Con sigla TV */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '4px 6px 2px 6px',
+                width: '100%',
+                boxSizing: 'border-box',
+              }}
+            >
+              <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                Estilo de etiquetas del sistema:
+              </span>
+              <div
+                className="seg-group"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <button
+                  type="button"
+                  className={`seg-btn ${labelStyle === 'clean' ? 'active' : ''}`}
+                  style={{ padding: '4px 6px', fontSize: 10, textAlign: 'center' }}
+                  onClick={() => setNwSettings({ labelStyle: 'clean' })}
+                >
+                  Limpia (Sin TV)
+                </button>
+                <button
+                  type="button"
+                  className={`seg-btn ${labelStyle === 'tv' ? 'active' : ''}`}
+                  style={{ padding: '4px 6px', fontSize: 10, textAlign: 'center' }}
+                  onClick={() => setNwSettings({ labelStyle: 'tv' })}
+                >
+                  Con sigla TV
+                </button>
               </div>
             </div>
           </div>

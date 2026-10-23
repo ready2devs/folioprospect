@@ -278,6 +278,8 @@ export interface NwSettings {
   mepBuyCommPct: number;
   mepSellCommPct: number;
   fxDiffOverride: number | null;
+  fxFormulaExpr?: string;
+  labelStyle?: 'clean' | 'tv';
 }
 
 export interface NwComputedResult {
@@ -298,4 +300,6 @@ export interface NwComputedResult {
   nwLiquidUsd: number;
   illiquidTotalUsd: number;
   nwTotalUsd: number;
+  formulaError?: string;
+  formulaExprUsed: string;
 }

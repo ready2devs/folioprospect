@@ -118,6 +118,7 @@ export const PriceSessionCell: React.FC<PriceSessionCellProps> = ({
         alignItems: align === 'right' ? 'flex-end' : 'flex-start',
         textAlign: align,
         minWidth: 0,
+        paddingLeft: align === 'right' ? 8 : 0,
         lineHeight: 1.2,
         gap: 1.5,
         ...style,
@@ -141,7 +142,7 @@ export const PriceSessionCell: React.FC<PriceSessionCellProps> = ({
       <div
         className="mono"
         style={{
-          fontSize: 10,
+          fontSize: 10.5,
           fontWeight: 600,
           color: dayColor,
           letterSpacing: '-0.02em',
@@ -161,7 +162,7 @@ export const PriceSessionCell: React.FC<PriceSessionCellProps> = ({
             alignItems: 'center',
             justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
             gap: 3,
-            fontSize: 9.5,
+            fontSize: 10.5,
             fontWeight: 600,
             letterSpacing: '-0.02em',
             whiteSpace: 'nowrap',

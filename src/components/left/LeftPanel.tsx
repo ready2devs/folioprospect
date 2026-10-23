@@ -68,13 +68,8 @@ export const LeftPanel: React.FC = () => {
     settings: nwSettings,
   });
 
-  // Portafolio Financiero (Líquido): Tenencias Brutas + Cash Comitente líquido (o Neto Ledger TV)
+  const isTvLabel = nwSettings?.labelStyle === 'tv';
   const financialLedgerNetUsd = kpis.grossHoldingsValue + kpis.freeCash;
-  const displayedFinancialPortfolio =
-    netOrGrossMode === 'gross'
-      ? nw.financialPortfolioLiquidUsd
-      : nw.financialPortfolioLiquidUsd;
-  const showLedgerNet = netOrGrossMode === 'net' && false; // Default shows Liquid Financial Portfolio; toggle switches view
   const activeFinancialValue =
     netOrGrossMode === 'gross' ? financialLedgerNetUsd : nw.financialPortfolioLiquidUsd;
 
@@ -95,9 +90,10 @@ export const LeftPanel: React.FC = () => {
       return b.value - a.value;
     });
 
+  // 4 columnas limpias en escritorio/tablet y 3 en teléfonos angostos (<=440px)
   const gridTemplate = isCompactRow
-    ? 'minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(76px, 0.85fr)'
-    : 'minmax(0, 1.25fr) 44px minmax(0, 1.35fr) 40px minmax(72px, 0.82fr)';
+    ? 'minmax(110px, 1.2fr) minmax(135px, 1.4fr) minmax(80px, 0.9fr)'
+    : 'minmax(108px, 1.08fr) 44px minmax(146px, 1.55fr) minmax(84px, 0.92fr)';
 
   return (
     <aside
@@ -109,7 +105,7 @@ export const LeftPanel: React.FC = () => {
           : undefined
       }
     >
-      {/* 0. TARJETA MINIMALISTA NW LÍQUIDO (CON CELDA EXCEL CCL/MEP Y RESERVA USD) */}
+      {/* 0. TARJETA MINIMALISTA NW LÍQUIDO (CON EDITOR DE FÓRMULA FX CCL/MEP Y RESERVA USD) */}
       <NwLiquidCard />
 
       {/* 1. CABECERA DEL PORTAFOLIO FINANCIERO (LÍQUIDO) */}
@@ -141,7 +137,8 @@ export const LeftPanel: React.FC = () => {
                 fontWeight: 700,
                 fontSize: 12,
                 cursor: 'pointer',
-                flex: '1 1 160px',
+                flex: '1 1 150px',
+                width: isMobile ? '100%' : undefined,
                 minWidth: 0,
               }}
               value={portfolioScope}
@@ -150,29 +147,36 @@ export const LeftPanel: React.FC = () => {
                 setRightState('portfolio');
               }}
             >
-              <option value="personal">Portafolio Financiero (TV)</option>
+              <option value="personal">
+                {isTvLabel ? 'Portafolio Financiero (TV)' : 'Portafolio Financiero'}
+              </option>
               <option value="overview">Vista General Consolidada</option>
             </select>
 
-            <button
-              type="button"
-              className={`btn ${rightState === 'portfolio' ? 'btn-primary' : ''}`}
-              style={{ padding: '4px 8px', fontSize: 11.5 }}
-              onClick={() => setRightState('portfolio')}
-              title="Abrir Dashboard Completo de Portafolio Financiero (Estado 2)"
-            >
-              <Briefcase size={12} /> Panel TV <ChevronRight size={12} />
-            </button>
+            {!isMobile && (
+              <>
+                <button
+                  type="button"
+                  className={`btn ${rightState === 'portfolio' ? 'btn-primary' : ''}`}
+                  style={{ padding: '4px 8px', fontSize: 11.5 }}
+                  onClick={() => setRightState('portfolio')}
+                  title="Abrir Dashboard Completo del Portafolio Financiero (Estado 2)"
+                >
+                  <Briefcase size={12} /> {isTvLabel ? 'Panel TV' : 'Panel Principal'}{' '}
+                  <ChevronRight size={12} />
+                </button>
 
-            <button
-              type="button"
-              className={`btn ${rightState === 'market' ? 'btn-primary' : ''}`}
-              style={{ padding: '4px 8px', fontSize: 11.5 }}
-              onClick={() => setRightState('market')}
-              title="Ver Inicio / Mercado estilo Google Finance (Estado 1)"
-            >
-              <Globe size={12} /> Mercado
-            </button>
+                <button
+                  type="button"
+                  className={`btn ${rightState === 'market' ? 'btn-primary' : ''}`}
+                  style={{ padding: '4px 8px', fontSize: 11.5 }}
+                  onClick={() => setRightState('market')}
+                  title="Ver Inicio / Mercado estilo Google Finance (Estado 1)"
+                >
+                  <Globe size={12} /> Mercado
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -201,7 +205,9 @@ export const LeftPanel: React.FC = () => {
             >
               <span>
                 {netOrGrossMode === 'gross'
-                  ? 'PORTAFOLIO FINANCIERO (NETO LEDGER TV)'
+                  ? isTvLabel
+                    ? 'PORTAFOLIO FINANCIERO (NETO LEDGER TV)'
+                    : 'PORTAFOLIO FINANCIERO (NETO CONTABLE)'
                   : 'PORTAFOLIO FINANCIERO (LÍQUIDO)'}
               </span>
               <button
@@ -221,7 +227,9 @@ export const LeftPanel: React.FC = () => {
               >
                 {netOrGrossMode === 'gross'
                   ? 'Ver Líquido (Tenencias + Cash Comitente)'
-                  : 'Alternar Neto Ledger TV'}
+                  : isTvLabel
+                  ? 'Alternar Neto Ledger TV'
+                  : 'Alternar Neto Contable'}
               </button>
             </div>
             <div
@@ -256,7 +264,7 @@ export const LeftPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Desglose Tenencias Brutas · Cash Comitente · Ledger TV + Botones Rápidos con flex-wrap */}
+        {/* Desglose Tenencias Brutas · Cash Comitente · Neto Contable + Botones Rápidos */}
         <div
           style={{
             display: 'flex',
@@ -299,8 +307,8 @@ export const LeftPanel: React.FC = () => {
               </strong>
             </span>
             <span>·</span>
-            <span title="Saldo contable de caja en el Ledger de TradingView">
-              Ledger TV:{' '}
+            <span title="Saldo contable de caja en el registro histórico de operaciones">
+              {isTvLabel ? 'Ledger TV:' : 'Caja Contable:'}{' '}
               <span>
                 {formatMoney(kpis.freeCash, currency, fxRates, { decimals: 0 })}
               </span>
@@ -368,9 +376,9 @@ export const LeftPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. CABECERA DE COLUMNAS DEL PORTAFOLIO FINANCIERO */}
+      {/* 2. CABECERA DE 4 COLUMNAS DEL PORTAFOLIO FINANCIERO (SIN COLUMNA ALLOC SEPARADA) */}
       <div
-        className="lp-col-headers"
+        className={`lp-col-headers ${isCompactRow ? 'cols-3' : 'cols-4'}`}
         style={{
           gridTemplateColumns: gridTemplate,
           padding: isCompactRow ? '6px 10px' : '6px 12px',
@@ -379,13 +387,10 @@ export const LeftPanel: React.FC = () => {
         <div>Posición</div>
         {!isCompactRow && <div style={{ textAlign: 'center' }}>Intradía</div>}
         <div style={{ textAlign: 'right' }}>Precio / 24h</div>
-        {!isCompactRow && <div style={{ textAlign: 'right' }}>Alloc</div>}
-        <div style={{ textAlign: 'right' }}>
-          {isCompactRow ? 'Valor / Alloc' : 'Valor'}
-        </div>
+        <div style={{ textAlign: 'right' }}>Valor</div>
       </div>
 
-      {/* 3. LISTADO DE POSICIONES DEL PORTAFOLIO FINANCIERO + BLOQUE SEPARADO DE ACTIVOS NO LÍQUIDOS */}
+      {/* 3. LISTADO DE POSICIONES DEL PORTAFOLIO FINANCIERO (4 COLUMNAS EN PC, 3 EN MÓVIL) */}
       <div
         className="lp-list"
         style={
@@ -411,7 +416,7 @@ export const LeftPanel: React.FC = () => {
           return (
             <div
               key={h.symbol}
-              className={`lp-row ${isSelected ? 'selected' : ''}`}
+              className={`lp-row ${isCompactRow ? 'cols-3' : 'cols-4'} ${isSelected ? 'selected' : ''}`}
               style={{
                 gridTemplateColumns: gridTemplate,
                 padding: isCompactRow ? '8px 10px' : '7px 12px',
@@ -419,7 +424,7 @@ export const LeftPanel: React.FC = () => {
               onClick={() => selectAsset(h.symbol)}
               title={`Ver análisis de ${h.name}, Fair Value y Proyección 10/20 años`}
             >
-              {/* COLUMNA 1 — Posición: Fila 1 = Ticker + badge AssetType (+ alloc% en móvil). Fila 2 = MarketClock + Nombre */}
+              {/* COLUMNA 1 — Posición: Fila 1 = Ticker + badge AssetType. Fila 2 = MarketClock + Nombre */}
               <div style={{ minWidth: 0 }}>
                 <div
                   style={{
@@ -452,19 +457,6 @@ export const LeftPanel: React.FC = () => {
                   >
                     {h.assetType}
                   </span>
-                  {isCompactRow && (
-                    <span
-                      className="mono"
-                      style={{
-                        fontSize: 9,
-                        color: 'var(--accent-cyan)',
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {h.allocation.toFixed(1)}%
-                    </span>
-                  )}
                 </div>
 
                 <div
@@ -506,7 +498,7 @@ export const LeftPanel: React.FC = () => {
                     points={sp.points}
                     prevClose={sp.prevClose}
                     isPositive={isUp}
-                    width={42}
+                    width={44}
                     height={18}
                   />
                 </div>
@@ -515,24 +507,18 @@ export const LeftPanel: React.FC = () => {
               {/* COLUMNA 3 — Precio / 24h + Posmercado con Luna estilo Investing */}
               <PriceSessionCell holding={h} align="right" />
 
-              {/* COLUMNA 4 — Allocation (%) en pantallas >440px */}
-              {!isCompactRow && (
-                <div
-                  className="mono"
-                  style={{
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    fontSize: 10.5,
-                    color: 'var(--text-primary)',
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {h.allocation.toFixed(1)}%
-                </div>
-              )}
-
-              {/* COLUMNA 5 — Valor de la posición + P&L % acumulado (y Alloc % en móvil) */}
-              <div style={{ textAlign: 'right', minWidth: 0 }}>
+              {/* COLUMNA 4 — VALOR: 3 filas apiladas (Fila 1: Valor USD, Fila 2: P&L %, Fila 3: Alloc % cartera) */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  textAlign: 'right',
+                  minWidth: 0,
+                  lineHeight: 1.2,
+                  gap: 1.5,
+                }}
+              >
                 <div
                   className="mono"
                   style={{
@@ -540,7 +526,6 @@ export const LeftPanel: React.FC = () => {
                     fontSize: 11.5,
                     color: 'var(--text-primary)',
                     letterSpacing: '-0.02em',
-                    lineHeight: 1.2,
                     whiteSpace: 'nowrap',
                   }}
                 >
@@ -549,27 +534,24 @@ export const LeftPanel: React.FC = () => {
                 <div
                   className={`mono ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}
                   style={{
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: 600,
-                    marginTop: 1,
                     whiteSpace: 'nowrap',
                   }}
                 >
                   {formatPct(h.unrealizedGain.p)}
                 </div>
-                {isCompactRow && (
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 9,
-                      color: 'var(--text-muted)',
-                      marginTop: 0.5,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Alloc {h.allocation.toFixed(1)}%
-                  </div>
-                )}
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title="Participación en el Portafolio Financiero"
+                >
+                  {h.allocation.toFixed(1)}% cartera
+                </div>
               </div>
             </div>
           );

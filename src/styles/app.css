@@ -96,7 +96,7 @@ html, body, #root {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 450px 1fr;
+  grid-template-columns: 465px 1fr;
   flex: 1;
   height: calc(100vh - 52px);
   overflow: hidden;
@@ -105,7 +105,7 @@ html, body, #root {
 
 @media (min-width: 1024px) and (max-width: 1279px) {
   .workspace-grid {
-    grid-template-columns: 420px 1fr;
+    grid-template-columns: 440px 1fr;
   }
 }
 
@@ -256,7 +256,7 @@ html, body, #root {
 
 .lp-col-headers {
   display: grid;
-  grid-template-columns: minmax(100px, 1.3fr) 48px minmax(96px, 1.25fr) 40px minmax(78px, 1fr);
+  grid-template-columns: minmax(115px, 1.15fr) 50px minmax(138px, 1.45fr) minmax(82px, 0.9fr);
   align-items: center;
   padding: 6px 12px;
   font-size: 9.5px;
@@ -279,7 +279,7 @@ html, body, #root {
 
 .lp-row {
   display: grid;
-  grid-template-columns: minmax(100px, 1.3fr) 48px minmax(96px, 1.25fr) 40px minmax(78px, 1fr);
+  grid-template-columns: minmax(115px, 1.15fr) 50px minmax(138px, 1.45fr) minmax(82px, 0.9fr);
   align-items: center;
   padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);
@@ -304,15 +304,15 @@ html, body, #root {
   padding-left: 9px;
 }
 
-/* Support 4-column or 3-column variants if LeftPanel collapses columns */
+/* Support 4-column (desktop/tablet) and 3-column (mobile) variants */
 .lp-col-headers.cols-4,
 .lp-row.cols-4 {
-  grid-template-columns: minmax(105px, 1.3fr) minmax(104px, 1.3fr) 42px minmax(82px, 1fr);
+  grid-template-columns: minmax(115px, 1.15fr) 50px minmax(138px, 1.45fr) minmax(82px, 0.9fr);
 }
 
 .lp-col-headers.cols-3,
 .lp-row.cols-3 {
-  grid-template-columns: minmax(110px, 1.35fr) minmax(110px, 1.35fr) minmax(86px, 1fr);
+  grid-template-columns: minmax(110px, 1.2fr) minmax(135px, 1.4fr) minmax(80px, 0.9fr);
 }
 
 /* Cards & Responsive Grids */
@@ -719,9 +719,9 @@ html, body, #root {
 
   .lp-col-headers,
   .lp-row {
-    grid-template-columns: minmax(90px, 1.3fr) 44px minmax(98px, 1.3fr) 38px minmax(76px, 1fr);
+    grid-template-columns: minmax(115px, 1.15fr) 50px minmax(138px, 1.45fr) minmax(82px, 0.9fr);
     padding: 8px 10px;
-    gap: 5px;
+    gap: 6px;
   }
 
   .r-grid-2 {
@@ -815,9 +815,9 @@ html, body, #root {
 @media (max-width: 440px) {
   .lp-col-headers,
   .lp-row {
-    grid-template-columns: minmax(74px, 1.15fr) 34px minmax(98px, 1.38fr) 32px minmax(70px, 1fr);
-    padding: 7px 8px;
-    gap: 4px;
+    grid-template-columns: minmax(110px, 1.2fr) minmax(135px, 1.4fr) minmax(80px, 0.9fr);
+    padding: 7px 10px;
+    gap: 6px;
   }
 
   .lp-row.selected {
