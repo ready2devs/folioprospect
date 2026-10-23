@@ -1,6 +1,7 @@
 import type { MarketState, QuoteData } from '../shared/engine/types.js';
 import type { FundamentalInput } from '../shared/engine/fairvalue.js';
 import { cleanTicker, tvToYahooSymbol } from '../shared/engine/format.js';
+import { findCatalogEntry } from '../shared/engine/symbolCatalog.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
 
 const UA =
@@ -206,13 +207,21 @@ export async function fetchQuotesWithSparklines(
     // Stablecoins pegged to $1.00 — no API call needed (USDTUSDT, USDCUSDT, BUSDUSDT, DAIUSDT)
     const STABLECOIN_TICKERS = new Set(['USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'DAIUSDT', 'TUSDUSDT', 'FDUSDUSDT']);
 
-    // Fetch Binance crypto 24/7 real-time
+    // Fetch Binance / Crypto 24/7 real-time with resilient multi-tier fallbacks (Binance Global -> Binance US -> Yahoo -> Coinbase)
     await Promise.all(
       cryptoSyms.map(async (sym) => {
         const pair = sym.includes(':') ? sym.split(':')[1] : sym;
+        const upperPair = pair.toUpperCase();
 
-        // Handle stablecoins: they're always ~$1.00, no API call needed
-        if (STABLECOIN_TICKERS.has(pair.toUpperCase())) {
+        // 1. Handle stablecoins: they are pegged ~$1.00 USD, no external call needed
+        if (
+          STABLECOIN_TICKERS.has(upperPair) ||
+          upperPair === 'USDT' ||
+          upperPair === 'USDC' ||
+          upperPair === 'DAI' ||
+          upperPair === 'BUSD' ||
+          upperPair.endsWith('USDTUSDT')
+        ) {
           const stablePrice = 1.00;
           const qData: QuoteData = {
             symbol: sym,
@@ -221,11 +230,11 @@ export async function fetchQuotesWithSparklines(
             change: 0,
             changePct: 0,
             currency: 'USD',
-            name: pair.replace('USDT', '') + ' (Stablecoin)',
+            name: upperPair.replace(/USDT$|USD$/, '') + ' (Stablecoin)',
             updatedAt: now,
             marketState: 'open',
           };
-          quoteCache.set(sym, { value: qData, expiresAt: now + 120000 }); // 2 min cache
+          quoteCache.set(sym, { value: qData, expiresAt: now + 120000 });
           quotes[sym] = qData;
           const pts = Array(36).fill(stablePrice);
           sparkCache.set(sym, { value: { prevClose: stablePrice, points: pts }, expiresAt: now + 300000 });
@@ -233,6 +242,10 @@ export async function fetchQuotesWithSparklines(
           return;
         }
 
+        const base = upperPair.replace(/USDT$|USD$/, '');
+        const ySym = `${base}-USD`;
+
+        // Tier 1: Binance Public API (Global)
         try {
           const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`, {
             signal: AbortSignal.timeout(3500),
@@ -240,30 +253,162 @@ export async function fetchQuotesWithSparklines(
           if (res.ok) {
             const d: any = await res.json();
             const price = Number(d.lastPrice);
-            const prevClose = Number(d.prevClosePrice) || price;
-            const change = Number(d.priceChange);
-            const changePct = Number(d.priceChangePercent);
-            const qData: QuoteData = {
-              symbol: sym,
-              price,
-              prevClose,
-              change,
-              changePct,
-              currency: 'USD',
-              name: pair.replace('USDT', ' / TetherUS'),
-              updatedAt: now,
-              marketState: 'open',
-            };
-            quoteCache.set(sym, { value: qData, expiresAt: now + 25000 }); // 25s cache to reduce flicker with 15s polling
-            quotes[sym] = qData;
+            if (Number.isFinite(price) && price > 0) {
+              const prevClose = Number(d.prevClosePrice) || price;
+              const change = Number(d.priceChange);
+              const changePct = Number(d.priceChangePercent);
+              const qData: QuoteData = {
+                symbol: sym,
+                price,
+                prevClose,
+                change,
+                changePct,
+                currency: 'USD',
+                name: base + ' / TetherUS',
+                updatedAt: now,
+                marketState: 'open',
+              };
+              quoteCache.set(sym, { value: qData, expiresAt: now + 25000 });
+              quotes[sym] = qData;
 
-            const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
-            const spVal = { prevClose, points: pts };
-            sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 }); // 1 min sparkline cache
-            sparklines[sym] = spVal;
+              const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
+              const spVal = { prevClose, points: pts };
+              sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 });
+              sparklines[sym] = spVal;
+              return;
+            }
           }
         } catch {
-          // fallback later
+          // fallback to Tier 2
+        }
+
+        // Tier 2: Binance US API (unrestricted for cloud/serverless IPs)
+        try {
+          const res = await fetch(`https://api.binance.us/api/v3/ticker/24hr?symbol=${pair}`, {
+            signal: AbortSignal.timeout(3500),
+          });
+          if (res.ok) {
+            const d: any = await res.json();
+            const price = Number(d.lastPrice);
+            if (Number.isFinite(price) && price > 0) {
+              const prevClose = Number(d.prevClosePrice) || price;
+              const change = Number(d.priceChange);
+              const changePct = Number(d.priceChangePercent);
+              const qData: QuoteData = {
+                symbol: sym,
+                price,
+                prevClose,
+                change,
+                changePct,
+                currency: 'USD',
+                name: base + ' / TetherUS',
+                updatedAt: now,
+                marketState: 'open',
+              };
+              quoteCache.set(sym, { value: qData, expiresAt: now + 25000 });
+              quotes[sym] = qData;
+
+              const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
+              const spVal = { prevClose, points: pts };
+              sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 });
+              sparklines[sym] = spVal;
+              return;
+            }
+          }
+        } catch {
+          // fallback to Tier 3
+        }
+
+        // Tier 3: Yahoo Finance (v8 chart for crypto, e.g. BTC-USD, ETH-USD, SOL-USD, BNB-USD)
+        try {
+          const res = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=5m&range=1d`,
+            {
+              headers: { 'user-agent': UA },
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          if (res.ok) {
+            const data: any = await res.json();
+            const meta = data?.chart?.result?.[0]?.meta;
+            if (meta?.regularMarketPrice != null) {
+              const price = Number(meta.regularMarketPrice);
+              let prevClose = Number(meta.previousClose ?? meta.chartPreviousClose ?? price);
+              if (!Number.isFinite(prevClose) || prevClose <= 0) prevClose = price;
+              const change = price - prevClose;
+              const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+              const rawCloses: (number | null)[] = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+              const validCloses = rawCloses.filter(
+                (v): v is number => typeof v === 'number' && !isNaN(v) && v > 0
+              );
+              let points: number[] = [];
+              if (validCloses.length >= 6) {
+                const step = Math.max(1, Math.floor(validCloses.length / 36));
+                points = [prevClose];
+                for (let i = 0; i < validCloses.length; i += step) {
+                  points.push(Number(validCloses[i].toFixed(2)));
+                }
+                points.push(price);
+              } else {
+                points = buildSyntheticSparkline(sym, prevClose, price, 36);
+              }
+
+              const qData: QuoteData = {
+                symbol: sym,
+                price,
+                prevClose,
+                change,
+                changePct,
+                currency: 'USD',
+                name: meta.shortName || base + ' / USD',
+                updatedAt: now,
+                marketState: 'open',
+              };
+              quoteCache.set(sym, { value: qData, expiresAt: now + 25000 });
+              quotes[sym] = qData;
+              const spVal = { prevClose, points };
+              sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 });
+              sparklines[sym] = spVal;
+              return;
+            }
+          }
+        } catch {
+          // fallback to Tier 4
+        }
+
+        // Tier 4: Coinbase Spot Price API
+        try {
+          const res = await fetch(`https://api.coinbase.com/v2/prices/${base}-USD/spot`, {
+            signal: AbortSignal.timeout(3500),
+          });
+          if (res.ok) {
+            const d: any = await res.json();
+            const price = Number(d?.data?.amount);
+            if (Number.isFinite(price) && price > 0) {
+              const prevClose = price;
+              const qData: QuoteData = {
+                symbol: sym,
+                price,
+                prevClose,
+                change: 0,
+                changePct: 0,
+                currency: 'USD',
+                name: base + ' / USD (Coinbase)',
+                updatedAt: now,
+                marketState: 'open',
+              };
+              quoteCache.set(sym, { value: qData, expiresAt: now + 25000 });
+              quotes[sym] = qData;
+              const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
+              const spVal = { prevClose, points: pts };
+              sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 });
+              sparklines[sym] = spVal;
+              return;
+            }
+          }
+        } catch {
+          // final fallback handled below
         }
       })
     );
@@ -504,7 +649,13 @@ export async function fetchQuotesWithSparklines(
       let change = 0.5;
       let changePct = 0.5;
 
-      if (seedH) {
+      const catEntry = findCatalogEntry(sym);
+      if (isCrypto && catEntry?.refPrice != null) {
+        price = catEntry.refPrice;
+        prevClose = price;
+        change = 0;
+        changePct = 0;
+      } else if (seedH) {
         price = seedH.last_price;
         changePct = seedH.daily_gain?.p ?? 0;
         prevClose = price / (1 + changePct / 100);
@@ -514,6 +665,11 @@ export async function fetchQuotesWithSparklines(
         prevClose = histArr.length > 1 ? histArr[histArr.length - 2][1] : price;
         change = price - prevClose;
         changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+      } else if (catEntry?.refPrice != null) {
+        price = catEntry.refPrice;
+        prevClose = price;
+        change = 0;
+        changePct = 0;
       }
 
       const marketState: MarketState = isCrypto ? 'open' : fallbackMarketState;

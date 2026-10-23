@@ -118,6 +118,11 @@ export function registerRoutes(app: Express): void {
           extSession: isCrypto ? undefined : lq?.extSession,
         };
       }
+      for (const s of symbols) {
+        if (!quotesMap[s] && liveQuotes[s]) {
+          quotesMap[s] = liveQuotes[s];
+        }
+      }
     } else {
       const qRes = await fetchQuotesWithSparklines(symbols);
       quotesMap = qRes.quotes;
@@ -174,6 +179,7 @@ export function registerRoutes(app: Express): void {
 
     res.json({
       portfolio,
+      quotes: quotesMap,
       kpis: ledger.kpis,
       holdings: ledger.holdings,
       closedHoldings: ledger.closedHoldings,

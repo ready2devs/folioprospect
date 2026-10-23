@@ -208,7 +208,7 @@ export function recomputeEvaluationWithPersistedLedger(
     }
   }
 
-  const quotesMap: Record<string, QuoteData> = {};
+  const quotesMap: Record<string, QuoteData> = { ...(serverEval.quotes || {}) };
   for (const h of [...(serverEval.holdings || []), ...(serverEval.closedHoldings || [])]) {
     quotesMap[h.symbol] = {
       symbol: h.symbol,
@@ -228,14 +228,20 @@ export function recomputeEvaluationWithPersistedLedger(
   }
   for (const t of mergedPortfolio.trades) {
     if (!quotesMap[t.symbol]) {
+      const isStable =
+        t.symbol === 'BINANCE:USDTUSDT' ||
+        t.symbol === 'BINANCE:USDCUSDT' ||
+        t.symbol === 'BINANCE:BUSDUSDT' ||
+        t.symbol === 'BINANCE:DAIUSDT' ||
+        t.symbol.endsWith('USDTUSDT');
       const cat = findCatalogEntry(t.symbol);
-      const px = cat?.refPrice ?? t.price;
+      const px = isStable ? 1.00 : (cat?.refPrice ?? t.price);
       quotesMap[t.symbol] = {
         symbol: t.symbol,
         price: px,
-        prevClose: px * 0.99,
-        change: px * 0.01,
-        changePct: 1.01,
+        prevClose: isStable ? 1.00 : px * 0.99,
+        change: isStable ? 0 : px * 0.01,
+        changePct: isStable ? 0 : 1.01,
         currency: 'USD',
         marketState: t.symbol.startsWith('BINANCE:') ? 'open' : 'closed',
       };
@@ -449,7 +455,7 @@ export const api = {
   async evaluatePortfolio(
     id = '2bb80f7315764422a5347e8d38503f4e',
     benchmark = 'SP:SPX',
-    mode: 'live' | 'tv_snapshot' = 'tv_snapshot'
+    mode: 'live' | 'tv_snapshot' = 'live'
   ): Promise<PortfolioEvaluationResponse> {
     const r = await fetch(
       `/api/portfolios/${encodeURIComponent(id)}/evaluate?benchmark=${encodeURIComponent(

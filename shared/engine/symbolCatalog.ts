@@ -54,9 +54,9 @@ export const TRADINGVIEW_CATALOG: CatalogSymbolEntry[] = [
   { symbol: 'NASDAQ:META', ticker: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Communication Services', yahoo: 'META', refPrice: 751.63 },
   { symbol: 'NYSE:NU', ticker: 'NU', name: 'Nu Holdings Ltd.', exchange: 'NYSE', type: 'Stock', sector: 'Financial Services', yahoo: 'NU', refPrice: 15.86 },
   { symbol: 'NASDAQ:AMZN', ticker: 'AMZN', name: 'Amazon.com, Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Consumer Cyclical', yahoo: 'AMZN', refPrice: 230.30 },
-  { symbol: 'BINANCE:BTCUSDT', ticker: 'BTCUSDT', name: 'Bitcoin / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BTC-USD', refPrice: 112582.0 },
+  { symbol: 'BINANCE:BTCUSDT', ticker: 'BTCUSDT', name: 'Bitcoin / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BTC-USD', refPrice: 81200.0 },
   { symbol: 'NYSE:VIST', ticker: 'VIST', name: 'Vista Energy, S.A.B. de C.V.', exchange: 'NYSE', type: 'Dr', sector: 'Energy', yahoo: 'VIST', refPrice: 50.82 },
-  { symbol: 'BINANCE:ETHUSDT', ticker: 'ETHUSDT', name: 'Ethereum / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'ETH-USD', refPrice: 4012.5 },
+  { symbol: 'BINANCE:ETHUSDT', ticker: 'ETHUSDT', name: 'Ethereum / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'ETH-USD', refPrice: 2385.0 },
   { symbol: 'NASDAQ:MELI', ticker: 'MELI', name: 'MercadoLibre, Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Consumer Cyclical', yahoo: 'MELI', refPrice: 2389.0 },
   { symbol: 'NASDAQ:AAPL', ticker: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Technology', yahoo: 'AAPL', refPrice: 269.0 },
   { symbol: 'NYSE:CLS', ticker: 'CLS', name: 'Celestica Inc.', exchange: 'NYSE', type: 'Stock', sector: 'Technology', yahoo: 'CLS', refPrice: 302.38 },
@@ -68,8 +68,8 @@ export const TRADINGVIEW_CATALOG: CatalogSymbolEntry[] = [
   { symbol: 'NASDAQ:HSAI', ticker: 'HSAI', name: 'Hesai Group', exchange: 'NASDAQ', type: 'Dr', sector: 'Consumer Cyclical', yahoo: 'HSAI', refPrice: 23.8 },
 
   // Major Crypto on BINANCE
-  { symbol: 'BINANCE:SOLUSDT', ticker: 'SOLUSDT', name: 'Solana / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'SOL-USD', refPrice: 200.0 },
-  { symbol: 'BINANCE:BNBUSDT', ticker: 'BNBUSDT', name: 'BNB / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BNB-USD', refPrice: 660.0 },
+  { symbol: 'BINANCE:SOLUSDT', ticker: 'SOLUSDT', name: 'Solana / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'SOL-USD', refPrice: 103.50 },
+  { symbol: 'BINANCE:BNBUSDT', ticker: 'BNBUSDT', name: 'BNB / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BNB-USD', refPrice: 741.00 },
   { symbol: 'BINANCE:XRPUSDT', ticker: 'XRPUSDT', name: 'XRP / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'XRP-USD', refPrice: 2.45 },
   { symbol: 'BINANCE:ADAUSDT', ticker: 'ADAUSDT', name: 'Cardano / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'ADA-USD', refPrice: 0.82 },
   { symbol: 'BINANCE:DOGEUSDT', ticker: 'DOGEUSDT', name: 'Dogecoin / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'DOGE-USD', refPrice: 0.24 },
@@ -239,11 +239,33 @@ export function normalizeTradingViewSymbol(rawInput: string): string {
     .replace(/\s+/g, '');
   if (!cleaned) return 'NASDAQ:NVDA';
 
+  // Stablecoin canonical check
+  if (
+    cleaned === 'USDT' ||
+    cleaned === 'USDTUSDT' ||
+    cleaned === 'BINANCE:USDT' ||
+    cleaned === 'BINANCE:USDTUSDT'
+  ) {
+    return 'BINANCE:USDTUSDT';
+  }
+  if (
+    cleaned === 'USDC' ||
+    cleaned === 'USDCUSDT' ||
+    cleaned === 'BINANCE:USDC' ||
+    cleaned === 'BINANCE:USDCUSDT'
+  ) {
+    return 'BINANCE:USDCUSDT';
+  }
+
   if (cleaned.includes(':')) {
     const [rawEx, rawTicker] = cleaned.split(':');
     const fixedEx = EXCHANGE_TYPO_MAP[rawEx] || rawEx || 'NASDAQ';
     let fixedTicker = rawTicker || 'NVDA';
-    if (fixedEx === 'BINANCE' && !fixedTicker.endsWith('USDT') && !fixedTicker.endsWith('USD')) {
+    if (fixedEx === 'BINANCE' && fixedTicker === 'USDT') {
+      fixedTicker = 'USDTUSDT';
+    } else if (fixedEx === 'BINANCE' && fixedTicker === 'USDC') {
+      fixedTicker = 'USDCUSDT';
+    } else if (fixedEx === 'BINANCE' && !fixedTicker.endsWith('USDT') && !fixedTicker.endsWith('USD')) {
       fixedTicker = fixedTicker + 'USDT';
     }
     const candidate = `${fixedEx}:${fixedTicker}`;
