@@ -5,8 +5,11 @@ import type {
   CurrencyCode,
   NwSettings,
 } from '@shared/engine/types';
+import { normalizeTradingViewSymbol } from '@shared/engine';
 import {
   api,
+  loadPersistedLedger,
+  recomputeEvaluationWithPersistedLedger,
   type AssetDetailResponse,
   type MarketOverviewResponse,
   type PortfolioEvaluationResponse,
@@ -94,6 +97,7 @@ export interface AppState {
   addModalOpen: boolean;
   addModalTab: AddModalTab;
   cashModalTarget: CashModalTarget;
+  addModalSymbol: string;
   loading: boolean;
   evaluation: PortfolioEvaluationResponse | null;
   marketData: MarketOverviewResponse | null;
@@ -113,7 +117,7 @@ export interface AppState {
   setNwSettings: (patch: Partial<NwSettings>) => void;
   resetNwSettings: () => void;
   setSearchOpen: (open: boolean) => void;
-  openAddModal: (tab?: AddModalTab, cashTarget?: CashModalTarget) => void;
+  openAddModal: (tab?: AddModalTab, cashTarget?: CashModalTarget, symbol?: string) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -138,6 +142,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addModalOpen: false,
   addModalTab: 'trade',
   cashModalTarget: 'ledger',
+  addModalSymbol: '',
   loading: false,
   evaluation: null,
   marketData: null,
@@ -179,9 +184,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     scrollTopOnMobile();
   },
   selectAsset: async (symbol, range) => {
+    const normSym = normalizeTradingViewSymbol(symbol);
     const r = range || get().selectedAssetRange || '1Y';
     set({
-      selectedSymbol: symbol,
+      selectedSymbol: normSym,
       selectedAssetRange: r,
       rightState: 'asset',
       mobileTab: 'right',
@@ -189,7 +195,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     scrollTopOnMobile();
     try {
-      const assetDetail = await api.getAssetDetail(symbol, r);
+      const assetDetail = await api.getAssetDetail(normSym, r);
       set({ assetDetail, loading: false });
     } catch {
       set({ loading: false });
@@ -216,10 +222,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ nwSettings: next });
   },
   setSearchOpen: (searchOpen) => set({ searchOpen }),
-  openAddModal: (tab = 'trade', cashTarget = 'ledger') =>
-    set({ addModalOpen: true, addModalTab: tab, cashModalTarget: cashTarget }),
+  openAddModal: (tab = 'trade', cashTarget = 'ledger', symbol) =>
+    set({
+      addModalOpen: true,
+      addModalTab: tab,
+      cashModalTarget: cashTarget,
+      addModalSymbol: symbol ? normalizeTradingViewSymbol(symbol) : '',
+    }),
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
-  closeAddModal: () => set({ addModalOpen: false }),
+  closeAddModal: () => set({ addModalOpen: false, addModalSymbol: '' }),
   refreshAll: async (background = false) => {
     if (!background) set({ loading: true });
     try {
@@ -245,7 +256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return get().argFx ?? DEFAULT_ARG_FX;
       };
 
-      const [fxRates, evaluation, marketData, argFx] = await Promise.all([
+      const [fxRates, rawEvaluation, marketData, argFx] = await Promise.all([
         api.getFx(),
         api.evaluatePortfolio(
           '2bb80f7315764422a5347e8d38503f4e',
@@ -255,6 +266,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         api.getMarketOverview(),
         getArgFxSafe(),
       ]);
+
+      let evaluation = rawEvaluation;
+      const persisted = loadPersistedLedger();
+      if (
+        persisted &&
+        persisted.isCustomized &&
+        ((evaluation?.portfolio?.trades?.length ?? 0) !== persisted.trades.length ||
+          (evaluation?.portfolio?.cash?.length ?? 0) !== persisted.cash.length ||
+          (evaluation?.portfolio?.dividends?.length ?? 0) !== persisted.dividends.length ||
+          (evaluation?.portfolio?.illiquid?.length ?? 0) !== persisted.illiquid.length)
+      ) {
+        evaluation = recomputeEvaluationWithPersistedLedger(evaluation, persisted);
+      }
+
       set({ fxRates, evaluation, marketData, argFx, loading: false });
       if (get().rightState === 'asset') {
         const assetDetail = await api.getAssetDetail(

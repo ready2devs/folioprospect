@@ -704,12 +704,57 @@ export async function fetchFundamentals(
   };
 }
 
+/**
+ * Normaliza el nombre del exchange de Yahoo Finance al estilo TradingView.
+ */
+function normalizeYahooExchange(rawExchange: string, ticker: string): string {
+  const upper = (rawExchange || '').toUpperCase().trim();
+  const map: Record<string, string> = {
+    NMS: 'NASDAQ', NGM: 'NASDAQ', NCM: 'NASDAQ', NASDAQGS: 'NASDAQ',
+    NASDAQGM: 'NASDAQ', NASDAQCM: 'NASDAQ', NASDAQ: 'NASDAQ',
+    NYQ: 'NYSE', NYSE: 'NYSE',
+    PCX: 'AMEX', ASE: 'AMEX', NYSEARCA: 'AMEX', ARCA: 'AMEX', BATS: 'AMEX', AMEX: 'AMEX',
+    CCC: 'BINANCE', CRYPTO: 'BINANCE',
+    BUE: 'BCBA', BCBA: 'BCBA', BYMA: 'BCBA',
+    LSE: 'LSE', HKSE: 'HKSE', TSE: 'TSE',
+  };
+  const resolved = map[upper] || upper || 'NASDAQ';
+
+  // For crypto from Yahoo (e.g. BTC-USD), convert to BINANCE:BTCUSDT style
+  if (resolved === 'BINANCE' || upper === 'CCC') {
+    return 'BINANCE';
+  }
+  return resolved;
+}
+
+function yahooTickerToTvSymbol(yahooTicker: string, exchange: string): string {
+  const tvExchange = normalizeYahooExchange(exchange, yahooTicker);
+  let ticker = yahooTicker;
+
+  // Convert Yahoo crypto format (BTC-USD -> BTCUSDT)
+  if (tvExchange === 'BINANCE') {
+    ticker = yahooTicker.replace(/-USD$/, 'USDT');
+    if (!ticker.endsWith('USDT') && !ticker.endsWith('USD')) {
+      ticker = ticker + 'USDT';
+    }
+  }
+  return `${tvExchange}:${ticker}`;
+}
+
+function mapYahooQuoteType(quoteType: string): string {
+  const map: Record<string, string> = {
+    EQUITY: 'Stock', MUTUALFUND: 'ETF', ETF: 'ETF',
+    CRYPTOCURRENCY: 'Crypto', INDEX: 'Index', FUTURE: 'Index',
+  };
+  return map[(quoteType || '').toUpperCase()] || 'Stock';
+}
+
 export async function searchSymbols(query: string): Promise<any[]> {
   if (!query || !query.trim()) return [];
   try {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
       query.trim()
-    )}&quotesCount=10&newsCount=0`;
+    )}&quotesCount=12&newsCount=0`;
     const res = await fetch(url, {
       headers: { 'user-agent': UA },
       signal: AbortSignal.timeout(4000),
@@ -718,19 +763,23 @@ export async function searchSymbols(query: string): Promise<any[]> {
       const j: any = await res.json();
       return (j.quotes || [])
         .filter((q: any) => q.symbol)
-        .map((q: any) => ({
-          symbol: q.exchDisp
-            ? `${q.exchDisp.toUpperCase()}:${q.symbol}`
-            : `NASDAQ:${q.symbol}`,
-          ticker: q.symbol,
-          name: q.longname || q.shortname || q.symbol,
-          exchange: q.exchDisp || q.exchange || 'NASDAQ',
-          type: q.quoteType || 'EQUITY',
-          sector: q.sectorDisp || q.sector || 'Technology',
-        }));
+        .map((q: any) => {
+          const rawExchange = q.exchDisp || q.exchange || 'NASDAQ';
+          const tvSymbol = yahooTickerToTvSymbol(q.symbol, rawExchange);
+          const tvExchange = normalizeYahooExchange(rawExchange, q.symbol);
+          const tvTicker = tvSymbol.includes(':') ? tvSymbol.split(':')[1] : q.symbol;
+          return {
+            symbol: tvSymbol,
+            ticker: tvTicker,
+            name: q.longname || q.shortname || q.symbol,
+            exchange: tvExchange,
+            type: mapYahooQuoteType(q.quoteType || ''),
+            sector: q.sectorDisp || q.sector || '',
+          };
+        });
     }
   } catch {
-    // ignore
+    // Yahoo search unavailable — caller falls back to local catalog
   }
   return [];
 }

@@ -851,3 +851,205 @@ html, body, #root {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ==========================================================================
+   TRADINGVIEW SYMBOL AUTOCOMPLETE & HYBRID MOBILE DATE PICKER
+   ========================================================================== */
+.tv-autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.tv-autocomplete-cats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tv-autocomplete-cats::-webkit-scrollbar {
+  display: none;
+}
+
+.tv-cat-pill {
+  padding: 3px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tv-cat-pill.active,
+.tv-cat-pill:hover {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--accent-cyan);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.tv-autocomplete-list {
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.tv-autocomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s ease;
+}
+
+.tv-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.tv-autocomplete-item.active,
+.tv-autocomplete-item:hover {
+  background: var(--bg-hover);
+}
+
+.tv-badge-exchange {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.tv-badge-type {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.tv-price-suggest-btn {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-cyan);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-price-suggest-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.tv-date-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.tv-date-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tv-date-chip:hover {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.tv-calendar-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(290px, 92vw);
+  z-index: 130;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
+}
+
+.tv-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tv-calendar-grid-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.tv-calendar-wd {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.tv-calendar-grid-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.tv-calendar-day {
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tv-calendar-day.empty {
+  background: transparent;
+  cursor: default;
+}
+
+.tv-calendar-day:not(.empty):hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.tv-calendar-day.selected {
+  background: var(--accent-cyan);
+  color: #0b0f17;
+  font-weight: 800;
+}

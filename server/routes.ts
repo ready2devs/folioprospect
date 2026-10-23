@@ -23,6 +23,9 @@ import {
   runPortfolioProjection,
   cleanTicker,
   resolveAssetMeta,
+  searchLocalCatalog,
+  normalizeTradingViewSymbol,
+  findCatalogEntry,
 } from '../shared/engine/index.js';
 import type {
   CashTx,
@@ -527,36 +530,52 @@ export function registerRoutes(app: Express): void {
   });
 
   app.get('/api/search', async (req: Request, res: Response) => {
-    const q = String(req.query.q || '').trim().toLowerCase();
-    const localMatches = Object.values(db.assetMeta)
-      .filter(
-        (m) =>
-          !q ||
-          m.ticker.toLowerCase().includes(q) ||
-          m.name.toLowerCase().includes(q) ||
-          m.sector.toLowerCase().includes(q)
-      )
-      .slice(0, 12)
-      .map((m) => ({
-        symbol: m.symbol,
-        ticker: m.ticker,
-        name: m.name,
-        exchange: m.exchange,
-        type: m.assetType,
-        sector: m.sector,
-        inPortfolio: true,
-      }));
+    const q = String(req.query.q || '').trim();
+    const category = String(req.query.category || 'ALL') as any;
+
+    // 1. Portfolio symbols set
+    const portfolioSymbols = new Set(
+      db.portfolios.flatMap((p) => p.trades.map((t) => t.symbol))
+    );
+
+    // 2. Instant offline catalog search (always works, including typo correction)
+    const catalogResults = searchLocalCatalog(
+      q,
+      db.assetMeta,
+      portfolioSymbols,
+      category,
+      20
+    );
+
+    // 3. If query is long enough, also try Yahoo Finance remote search
+    const results: any[] = catalogResults.map((c) => ({
+      symbol: c.symbol,
+      ticker: c.ticker,
+      name: c.name,
+      exchange: c.exchange,
+      type: c.type,
+      sector: c.sector,
+      inPortfolio: c.inPortfolio,
+      refPrice: c.refPrice,
+    }));
 
     if (q.length >= 2) {
-      const remote = await searchSymbols(q);
-      const seen = new Set(localMatches.map((m) => m.ticker));
-      for (const r of remote) {
-        if (!seen.has(r.ticker)) {
-          seen.add(r.ticker);
-          localMatches.push({ ...r, inPortfolio: false });
+      try {
+        const remote = await searchSymbols(q);
+        const seen = new Set(results.map((m) => m.symbol));
+        for (const r of remote) {
+          if (!seen.has(r.symbol)) {
+            seen.add(r.symbol);
+            results.push({
+              ...r,
+              inPortfolio: portfolioSymbols.has(r.symbol),
+            });
+          }
         }
+      } catch {
+        // Yahoo unavailable — catalog results are sufficient
       }
     }
-    res.json(localMatches.slice(0, 15));
+    res.json(results.slice(0, 25));
   });
 }

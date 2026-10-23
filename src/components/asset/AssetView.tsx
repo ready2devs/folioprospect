@@ -670,9 +670,9 @@ export const AssetView: React.FC = () => {
           <button
             className="btn btn-primary"
             style={{ padding: '5px 12px', fontSize: 12 }}
-            onClick={() => openAddModal('trade')}
+            onClick={() => openAddModal('trade', 'ledger', assetDetail.symbol)}
           >
-            <Plus size={13} /> + Operar este activo
+            <Plus size={13} /> + Operar {meta.ticker}
           </button>
         </div>
 
@@ -872,9 +872,9 @@ export const AssetView: React.FC = () => {
             </div>
             <button
               className="btn btn-primary"
-              onClick={() => openAddModal('trade')}
+              onClick={() => openAddModal('trade', 'ledger', assetDetail.symbol)}
             >
-              <Plus size={13} /> + Abrir Posición en Cartera
+              <Plus size={13} /> + Abrir Posición en Cartera ({meta.ticker})
             </button>
           </div>
         )}

@@ -30,7 +30,20 @@ export function buildPortfolioSeries(
   benchmarkSymbol: string = portfolio.benchmark || 'SP:SPX'
 ): SeriesBuildResult {
   const trades = [...portfolio.trades].sort((a, b) => a.time - b.time);
-  const startDate = toDateStr(portfolio.startPoint || (trades[0]?.time ?? Date.now()));
+
+  // Dynamically adjust startDate: use the earlier of portfolio.startPoint and the earliest trade
+  const earliestTradeTime = trades.length > 0 ? trades[0].time : Date.now();
+  const portfolioStart = portfolio.startPoint || earliestTradeTime;
+  const effectiveStart = Math.min(portfolioStart, earliestTradeTime);
+  const startDate = toDateStr(effectiveStart);
+
+  // Build a map of each symbol's first known trade price for back-fill
+  const firstTradePriceMap: Record<string, { date: string; price: number }> = {};
+  for (const tr of trades) {
+    if (!firstTradePriceMap[tr.symbol] && tr.price > 0) {
+      firstTradePriceMap[tr.symbol] = { date: toDateStr(tr.time), price: tr.price };
+    }
+  }
 
   // Collect all calendar trading dates from non-crypto symbols (or all symbols if only crypto)
   const dateSet = new Set<string>();
@@ -41,13 +54,19 @@ export function buildPortfolioSeries(
       dateSet.add(toDateStr(t));
     }
   }
+
+  // Also inject trade dates that may predate the history map
+  for (const tr of trades) {
+    dateSet.add(toDateStr(tr.time));
+  }
+
   const allSortedDates = Array.from(dateSet).sort();
   const activeDates = allSortedDates.filter((d) => d >= startDate);
   if (activeDates.length === 0) {
     activeDates.push(toDateStr(Date.now()));
   }
 
-  // Forward-filled price table per symbol
+  // Forward-filled price table per symbol, with back-fill from first trade price
   const symbols = Array.from(new Set([...trades.map((t) => t.symbol), benchmarkSymbol]));
   const pxTable: Record<string, Record<string, number>> = {};
 
@@ -63,6 +82,22 @@ export function buildPortfolioSeries(
         byDay[toDateStr(t)] = c;
       }
     }
+
+    // Back-fill: if the first trade date for this symbol precedes the earliest history data,
+    // use the trade's fill price for all dates from the trade date to the first history point
+    const tradeInfo = firstTradePriceMap[sym];
+    if (tradeInfo && tradeInfo.price > 0) {
+      const firstHistDate = Object.keys(byDay).sort()[0];
+      if (!firstHistDate || tradeInfo.date < firstHistDate) {
+        // Fill from trade date to (firstHistDate - 1) or today with trade price
+        for (const d of allSortedDates) {
+          if (d >= tradeInfo.date && (!firstHistDate || d < firstHistDate)) {
+            byDay[d] = tradeInfo.price;
+          }
+        }
+      }
+    }
+
     let lastKnown: number | null = null;
     pxTable[sym] = {};
     for (const d of allSortedDates) {
