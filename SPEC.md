@@ -100,3 +100,9 @@ Fuente: `data/seed/tv_reference.json#formulas`.
 - AC-3 Los 3 estados del panel derecho conmutan desde el panel izquierdo y el buscador.
 - AC-4 Agregar una transacción/efectivo/ilíquido persiste (sobrevive a recargar) y recalcula KPIs.
 - AC-5 `npm run build` (tsc + vite build) termina sin errores.
+
+## 5. Especificación 2 (SPEC-002) — Rediseño Mobile-First, Seguimiento Posmercado (Investing) y Arquitectura Patrimonial NW Líquido
+- Ver documento completo: `docs/specs/SPEC-002-mobile-session-nw.md`.
+- **FP-100..109**: Layout responsive mobile-first (`<=1023px`), scroll nativo completo sin recorte de posiciones, `MobileHeader` y `MobileNav` inferior.
+- **FP-120..126**: Reloj de sesión (`MarketClock` verde abierto / rojo cerrado antes del nombre del activo) y `PriceSessionCell` estilo Investing con 3ra fila de Luna posmercado cuando el mercado está cerrado (excepto cripto 24/7).
+- **FP-130..138**: Tarjeta minimalista `NW líquido` arriba del Portafolio Financiero (`NW Líquido = Portafolio Financiero + Reserva de Efectivo USD + Diferencia de Cambio CCL/MEP`), con calculadora interactiva estilo celda de Excel con CCL y MEP en tiempo real, Cash Comitente líquido editable y separación estricta de los Activos No Líquidos fuera de la tabla y métricas del Portafolio Financiero.

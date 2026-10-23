@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   BarChart3,
   Briefcase,
+  Moon,
   Plus,
   ShieldAlert,
   ShieldCheck,
@@ -13,6 +14,48 @@ import {
 } from 'lucide-react';
 
 const TIMEFRAMES = ['1D', '5D', '1M', '6M', 'YTD', '1Y', '5Y', 'MAX'] as const;
+
+function useLocalIsMobile(maxWidth = 1023): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= maxWidth : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: ' + maxWidth + 'px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [maxWidth]);
+  return isMobile;
+}
+
+const InlineMarketClock: React.FC<{ isOpen: boolean; label?: string }> = ({ isOpen, label }) => {
+  const color = isOpen ? '#10B981' : '#EF4444';
+  return (
+    <span
+      title={label || (isOpen ? 'Mercado Abierto' : 'Mercado Cerrado')}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        fontSize: 11.5,
+        fontWeight: 600,
+        padding: '2px 8px',
+        borderRadius: 999,
+        background: isOpen ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+        border: '1px solid ' + (isOpen ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'),
+        color,
+      }}
+    >
+      <svg width={12} height={12} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+        <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.6" />
+        <path d="M8 4.5V8L10.4 9.6" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span>{label || (isOpen ? 'Mercado Abierto' : 'Mercado Cerrado')}</span>
+    </span>
+  );
+};
 
 export const AssetView: React.FC = () => {
   const {
@@ -26,6 +69,7 @@ export const AssetView: React.FC = () => {
     setRightState,
   } = useAppStore();
 
+  const isMobile = useLocalIsMobile(1023);
   const chartGradId = useId();
 
   useEffect(() => {
@@ -54,13 +98,13 @@ export const AssetView: React.FC = () => {
     const update = () => {
       if (chartContainerRef.current) {
         const w = chartContainerRef.current.clientWidth;
-        if (w > 200) setChartWidth(w);
+        if (w > 120) setChartWidth(w);
       }
     };
     update();
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect.width > 200) {
+        if (entry.contentRect.width > 120) {
           setChartWidth(Math.floor(entry.contentRect.width));
         }
       }
@@ -82,6 +126,40 @@ export const AssetView: React.FC = () => {
   const { meta, quote, fairValue, holding, trades, chart } = assetDetail;
   const isUp = (quote?.changePct ?? 0) >= 0;
 
+  // Determine market state & post-market session info (FP-120 / FP-121 / FP-122)
+  const isCrypto =
+    meta.assetType === 'Crypto' ||
+    meta.symbol.startsWith('BINANCE:') ||
+    meta.ticker.endsWith('USDT');
+  const qAny = quote as any;
+  const hAny = holding as any;
+  const rawMarketState: string =
+    isCrypto
+      ? 'open'
+      : qAny?.marketState || hAny?.marketState || (() => {
+          const now = new Date();
+          const nyStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+          const ny = new Date(nyStr);
+          const day = ny.getDay();
+          const mins = ny.getHours() * 60 + ny.getMinutes();
+          if (day >= 1 && day <= 5 && mins >= 9 * 60 + 30 && mins < 16 * 60) return 'open';
+          return 'closed';
+        })();
+
+  const isMarketOpen = isCrypto || rawMarketState === 'open';
+  const extPrice: number | undefined = !isMarketOpen
+    ? (qAny?.extPrice ?? hAny?.extPrice)
+    : undefined;
+  const extChange: number =
+    extPrice != null
+      ? (qAny?.extChange ?? hAny?.extChange ?? extPrice - quote.price)
+      : 0;
+  const extChangePct: number =
+    extPrice != null
+      ? (qAny?.extChangePct ?? hAny?.extChangePct ?? (quote.price > 0 ? (extChange / quote.price) * 100 : 0))
+      : 0;
+  const extIsUp = extChange >= 0;
+
   const chartPoints = chart?.points && chart.points.length >= 2
     ? chart.points
     : ([
@@ -99,11 +177,11 @@ export const AssetView: React.FC = () => {
 
   const svgW = chartWidth;
   const svgH = 260;
-  const padL = 20;
-  const padR = 85;
+  const padL = isMobile ? 10 : 20;
+  const padR = isMobile ? 68 : 85;
   const padT = 20;
   const padB = 30;
-  const innerW = svgW - padL - padR;
+  const innerW = Math.max(40, svgW - padL - padR);
   const innerH = svgH - padT - padB;
 
   const getX = (idx: number) => padL + (idx / (chartPoints.length - 1)) * innerW;
@@ -200,22 +278,30 @@ export const AssetView: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* 1. CABECERA DEL ACTIVO: TICKER, NOMBRE, BADGES, PRECIO EN VIVO & BOTONERA */}
-      <div className="card" style={{ padding: '20px 22px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: '100%', overflowX: 'hidden' }}>
+      {/* 1. CABECERA DEL ACTIVO: TICKER, NOMBRE, BADGES, ESTADO DE SESIÓN, PRECIO EN VIVO & POSMERCADO */}
+      <div className="card" style={{ padding: isMobile ? '14px 14px' : '20px 22px' }}>
         <div
           style={{
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: 14,
-            marginBottom: 16,
+            gap: 12,
+            marginBottom: 14,
           }}
         >
           {/* Identidad del activo */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 6,
+                flexWrap: 'wrap',
+              }}
+            >
               <button
                 className="btn btn-ghost"
                 style={{ padding: '3px 8px', fontSize: 11 }}
@@ -224,13 +310,17 @@ export const AssetView: React.FC = () => {
               >
                 <ArrowLeft size={13} /> Volver
               </button>
-              <h1 className="mono" style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>
+              <h1 className="mono" style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, margin: 0 }}>
                 {meta.ticker}
               </h1>
+              <InlineMarketClock
+                isOpen={isMarketOpen}
+                label={isCrypto ? 'Mercado Abierto (24/7)' : isMarketOpen ? 'Mercado Abierto' : 'Mercado Cerrado'}
+              />
               <span
                 style={{
-                  fontSize: 11.5,
-                  padding: '2px 8px',
+                  fontSize: 11,
+                  padding: '2px 7px',
                   borderRadius: 4,
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--border-subtle)',
@@ -242,8 +332,8 @@ export const AssetView: React.FC = () => {
               </span>
               <span
                 style={{
-                  fontSize: 11.5,
-                  padding: '2px 8px',
+                  fontSize: 11,
+                  padding: '2px 7px',
                   borderRadius: 4,
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--border-subtle)',
@@ -255,8 +345,8 @@ export const AssetView: React.FC = () => {
               </span>
               <span
                 style={{
-                  fontSize: 11.5,
-                  padding: '2px 8px',
+                  fontSize: 11,
+                  padding: '2px 7px',
                   borderRadius: 4,
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--border-subtle)',
@@ -266,17 +356,37 @@ export const AssetView: React.FC = () => {
                 {meta.sector}
               </span>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {meta.name} · {meta.industry} ({meta.country})
+            <div
+              style={{
+                fontSize: 12.5,
+                color: 'var(--text-secondary)',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>{meta.name} · {meta.industry} ({meta.country})</span>
             </div>
           </div>
 
           {/* Botonera de Temporalidad Google Finance */}
-          <div className="seg-group" aria-label="Rango temporal del gráfico">
+          <div
+            className="seg-group"
+            aria-label="Rango temporal del gráfico"
+            style={{
+              maxWidth: '100%',
+              overflowX: 'auto',
+              whiteSpace: 'nowrap',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
             {TIMEFRAMES.map((rng) => (
               <button
                 key={rng}
-                className={"seg-btn " + (selectedAssetRange === rng ? 'active' : '')}
+                className={'seg-btn ' + (selectedAssetRange === rng ? 'active' : '')}
+                style={{ flexShrink: 0 }}
                 onClick={() => selectAsset(assetDetail.symbol, rng)}
               >
                 {rng}
@@ -285,51 +395,93 @@ export const AssetView: React.FC = () => {
           </div>
         </div>
 
-        {/* Precio en vivo grande tabular & Variación diaria */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 14,
-            flexWrap: 'wrap',
-          }}
-        >
+        {/* Precio en vivo grande tabular & Variación diaria + Fila Posmercado con Luna */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div
-            className="mono tabular"
-            style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)' }}
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
           >
-            {formatMoney(quote.price, currency, fxRates, { decimals: quote.price >= 100 ? 2 : 4 })}
-          </div>
-          <div
-            className={"gf-change-row " + (isUp ? 'pos' : 'neg')}
-            style={{ fontSize: 15, fontWeight: 700 }}
-          >
-            <span>
-              {isUp ? '+' : '−'}
-              {formatMoney(Math.abs(quote.change), currency, fxRates, { decimals: 2 })} (
-              {formatPct(quote.changePct)})
-            </span>
-            <span
-              className={"gf-arrow-circle " + (isUp ? 'up' : 'down')}
-              style={{ width: 18, height: 18, fontSize: 11 }}
+            <div
+              className="mono tabular"
+              style={{ fontSize: isMobile ? 26 : 32, fontWeight: 800, color: 'var(--text-primary)' }}
             >
-              {isUp ? '↑' : '↓'}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
-              Hoy en mercado
-            </span>
+              {formatMoney(quote.price, currency, fxRates, { decimals: quote.price >= 100 ? 2 : 4 })}
+            </div>
+            <div
+              className={'gf-change-row ' + (isUp ? 'pos' : 'neg')}
+              style={{ fontSize: isMobile ? 13.5 : 15, fontWeight: 700 }}
+            >
+              <span className="mono">
+                {isUp ? '+' : '−'}
+                {formatMoney(Math.abs(quote.change), currency, fxRates, { decimals: 2 })} (
+                {formatPct(quote.changePct)})
+              </span>
+              <span
+                className={'gf-arrow-circle ' + (isUp ? 'up' : 'down')}
+                style={{ width: 18, height: 18, fontSize: 11 }}
+              >
+                {isUp ? '↑' : '↓'}
+              </span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 400 }}>
+                {isMarketOpen ? 'En rueda activa' : 'Al cierre regular'}
+              </span>
+            </div>
           </div>
+
+          {/* Fila 3 estilo Investing: Precio Posmercado con icono de Luna (SOLO mercado cerrado y no cripto) */}
+          {!isMarketOpen && !isCrypto && extPrice != null && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                padding: '5px 10px',
+                borderRadius: 6,
+                background: 'rgba(96, 165, 250, 0.08)',
+                border: '1px solid rgba(96, 165, 250, 0.22)',
+                alignSelf: 'flex-start',
+                fontSize: 12.5,
+              }}
+            >
+              <Moon size={13} color="#60A5FA" style={{ flexShrink: 0 }} />
+              <span style={{ color: '#60A5FA', fontWeight: 600, fontSize: 11.5 }}>
+                Posmercado:
+              </span>
+              <span className="mono tabular" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                {formatMoney(extPrice, currency, fxRates, { decimals: 2 })}
+              </span>
+              <span
+                className={'mono tabular ' + (extIsUp ? 'pos' : 'neg')}
+                style={{ fontWeight: 600 }}
+              >
+                {extIsUp ? '+' : '−'}
+                {formatMoney(Math.abs(extChange), currency, fxRates, { decimals: 2 })} (
+                {formatPct(extChangePct)})
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 2. GRÁFICO INTERACTIVO SVG DE EVOLUCIÓN DE PRECIO CON FAIR VALUE & TOOLTIP */}
-      <div className="card" style={{ padding: '16px 18px', position: 'relative' }}>
+      <div
+        ref={chartContainerRef}
+        className="card"
+        style={{ padding: isMobile ? '14px 12px' : '16px 18px', position: 'relative' }}
+      >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: 10,
+            flexWrap: 'wrap',
+            gap: 8,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -365,13 +517,14 @@ export const AssetView: React.FC = () => {
         {/* Floating Tooltip info bar */}
         <div
           style={{
-            height: 24,
+            minHeight: 24,
             display: 'flex',
             alignItems: 'center',
-            gap: 14,
+            gap: 12,
             fontSize: 12,
             marginBottom: 6,
             color: 'var(--text-secondary)',
+            flexWrap: 'wrap',
           }}
         >
           {activePoint ? (
@@ -393,7 +546,7 @@ export const AssetView: React.FC = () => {
             </>
           ) : (
             <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
-              Desliza el cursor sobre el gráfico para inspeccionar precio y fecha en cada punto.
+              Desliza el cursor o toca sobre el gráfico para inspeccionar precio y fecha.
             </span>
           )}
         </div>
@@ -401,7 +554,7 @@ export const AssetView: React.FC = () => {
         {/* SVG Graphic */}
         <div style={{ width: '100%', overflow: 'hidden' }}>
           <svg
-            viewBox={"0 0 " + svgW + " " + svgH}
+            viewBox={'0 0 ' + svgW + ' ' + svgH}
             style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}
             onMouseMove={handleSvgMouseMove}
             onMouseLeave={() => setHoverIndex(null)}
@@ -430,7 +583,7 @@ export const AssetView: React.FC = () => {
             })}
 
             {/* Área degradada */}
-            <path d={areaD} fill={"url(#" + chartGradId + ")"} />
+            <path d={areaD} fill={'url(#' + chartGradId + ')'} />
 
             {/* Línea horizontal punteada de Fair Value si existe */}
             {fvY !== null && (
@@ -445,14 +598,14 @@ export const AssetView: React.FC = () => {
                   strokeDasharray="4,4"
                 />
                 <text
-                  x={svgW - padR + 6}
+                  x={svgW - padR + 5}
                   y={fvY + 4}
                   fill="#F59E0B"
-                  fontSize="10"
+                  fontSize="9.5"
                   fontFamily="JetBrains Mono"
                   fontWeight="600"
                 >
-                  FV ${fairValue.fairValue?.toFixed(2)}
+                  {'FV $' + (fairValue.fairValue?.toFixed(1) ?? '')}
                 </text>
               </>
             )}
@@ -468,14 +621,14 @@ export const AssetView: React.FC = () => {
               strokeDasharray="2,2"
             />
             <text
-              x={svgW - padR + 6}
+              x={svgW - padR + 5}
               y={currentY + 4}
               fill="var(--text-secondary)"
-              fontSize="10"
+              fontSize="9.5"
               fontFamily="JetBrains Mono"
               fontWeight="600"
             >
-              ${quote.price.toFixed(2)}
+              {'$' + quote.price.toFixed(1)}
             </text>
 
             {/* Curva principal */}
@@ -510,7 +663,7 @@ export const AssetView: React.FC = () => {
 
       {/* 3. BLOQUE 'TU POSICIÓN EN CARTERA & HISTORIAL DE TRANSACCIONES' */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <Briefcase size={16} color="var(--accent-cyan)" /> Tu Posición en Cartera & Historial de Transacciones
           </span>
@@ -529,7 +682,7 @@ export const AssetView: React.FC = () => {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(140px, 1fr))',
                 gap: 10,
                 marginBottom: 16,
               }}
@@ -610,8 +763,8 @@ export const AssetView: React.FC = () => {
                   P&L no realizado
                 </div>
                 <div
-                  className={"mono " + (holding.unrealizedGain.v >= 0 ? 'pos' : 'neg')}
-                  style={{ fontWeight: 700, fontSize: 14 }}
+                  className={'mono ' + (holding.unrealizedGain.v >= 0 ? 'pos' : 'neg')}
+                  style={{ fontWeight: 700, fontSize: 13 }}
                 >
                   {formatMoney(holding.unrealizedGain.v, currency, fxRates, { signed: true })} (
                   {formatPct(holding.unrealizedGain.p)})
@@ -641,56 +794,61 @@ export const AssetView: React.FC = () => {
                 Historial de Operaciones ({trades.length} registradas)
               </div>
               {trades.length > 0 ? (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Tipo</th>
-                      <th className="num-col">Cantidad</th>
-                      <th className="num-col">Precio</th>
-                      <th className="num-col">Comisión</th>
-                      <th className="num-col">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trades.map((t: any) => {
-                      const totalVal = t.qty * t.price;
-                      return (
-                        <tr key={t.id}>
-                          <td className="mono" style={{ fontSize: 12 }}>
-                            {new Date(t.time).toLocaleDateString('es-AR', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: '2-digit',
-                            })}
-                          </td>
-                          <td>
-                            <span
-                              style={{
-                                fontSize: 11,
-                                fontWeight: 700,
-                                padding: '2px 7px',
-                                borderRadius: 4,
-                                background: t.isBuy ? 'var(--pos-bg)' : 'var(--neg-bg)',
-                                color: t.isBuy ? 'var(--pos-bright)' : 'var(--neg-bright)',
-                              }}
-                            >
-                              {t.isBuy ? 'COMPRA' : 'VENTA'}
-                            </span>
-                          </td>
-                          <td className="num-col">{formatNumber(t.qty, t.qty % 1 === 0 ? 0 : 4)}</td>
-                          <td className="num-col">{formatMoney(t.price, currency, fxRates)}</td>
-                          <td className="num-col">
-                            {t.commission > 0 ? formatMoney(t.commission, currency, fxRates) : '$0.00'}
-                          </td>
-                          <td className="num-col mono" style={{ fontWeight: 600 }}>
-                            {formatMoney(totalVal, currency, fxRates)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div
+                  className="table-scroll"
+                  style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+                >
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th className="num-col">Cantidad</th>
+                        <th className="num-col">Precio</th>
+                        <th className="num-col">Comisión</th>
+                        <th className="num-col">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trades.map((t: any) => {
+                        const totalVal = t.qty * t.price;
+                        return (
+                          <tr key={t.id}>
+                            <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                              {new Date(t.time).toLocaleDateString('es-AR', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: '2-digit',
+                              })}
+                            </td>
+                            <td>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  padding: '2px 7px',
+                                  borderRadius: 4,
+                                  background: t.isBuy ? 'var(--pos-bg)' : 'var(--neg-bg)',
+                                  color: t.isBuy ? 'var(--pos-bright)' : 'var(--neg-bright)',
+                                }}
+                              >
+                                {t.isBuy ? 'COMPRA' : 'VENTA'}
+                              </span>
+                            </td>
+                            <td className="num-col">{formatNumber(t.qty, t.qty % 1 === 0 ? 0 : 4)}</td>
+                            <td className="num-col">{formatMoney(t.price, currency, fxRates)}</td>
+                            <td className="num-col">
+                              {t.commission > 0 ? formatMoney(t.commission, currency, fxRates) : '$0.00'}
+                            </td>
+                            <td className="num-col mono" style={{ fontWeight: 600 }}>
+                              {formatMoney(totalVal, currency, fxRates)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', padding: 8 }}>
                   No hay transacciones registradas para este activo.
@@ -724,7 +882,7 @@ export const AssetView: React.FC = () => {
 
       {/* 4. MÓDULO DE FAIR VALUE EN VIVO (ESTILO MORNINGSTAR) */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <Sparkles size={16} color="var(--accent-amber)" /> Fair Value en Vivo (Estilo Morningstar)
           </span>
@@ -745,7 +903,7 @@ export const AssetView: React.FC = () => {
         {/* Comparativa Visual Horizontal: Precio Actual vs Fair Value */}
         <div
           style={{
-            padding: '16px 18px',
+            padding: isMobile ? '12px 12px' : '16px 18px',
             borderRadius: 8,
             background: 'var(--bg-primary)',
             border: '1px solid var(--border-subtle)',
@@ -755,25 +913,25 @@ export const AssetView: React.FC = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 14,
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 12,
               marginBottom: 16,
             }}
           >
             <div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Precio Actual de Mercado
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800 }}>
+              <div className="mono" style={{ fontSize: isMobile ? 17 : 22, fontWeight: 800 }}>
                 {formatMoney(quote.price, currency, fxRates)}
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Fair Value Estimado (Intrínseco)
               </div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: '#F59E0B' }}>
+              <div className="mono" style={{ fontSize: isMobile ? 17 : 22, fontWeight: 800, color: '#F59E0B' }}>
                 {fairValue.fairValue != null
                   ? formatMoney(fairValue.fairValue, currency, fxRates)
                   : 'N/A'}
@@ -781,13 +939,13 @@ export const AssetView: React.FC = () => {
             </div>
 
             <div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Price / Fair Value (P/FV)
               </div>
               <div
                 className="mono"
                 style={{
-                  fontSize: 22,
+                  fontSize: isMobile ? 17 : 22,
                   fontWeight: 800,
                   color:
                     fairValue.priceToFairValue == null
@@ -806,13 +964,13 @@ export const AssetView: React.FC = () => {
             </div>
 
             <div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Potencial Upside / Descuento
               </div>
               <div
                 className="mono"
                 style={{
-                  fontSize: 22,
+                  fontSize: isMobile ? 17 : 22,
                   fontWeight: 800,
                   color: (fairValue.upsidePct ?? 0) >= 0 ? 'var(--pos-bright)' : 'var(--neg-bright)',
                 }}
@@ -829,9 +987,11 @@ export const AssetView: React.FC = () => {
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  fontSize: 10.5,
+                  fontSize: 10,
                   color: 'var(--text-muted)',
                   marginBottom: 6,
+                  flexWrap: 'wrap',
+                  gap: 4,
                 }}
               >
                 <span>Subvaluado (&lt; 0.90x)</span>
@@ -876,8 +1036,8 @@ export const AssetView: React.FC = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 12,
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: 10,
               marginTop: 14,
               paddingTop: 12,
               borderTop: '1px solid var(--border-subtle)',
@@ -904,7 +1064,7 @@ export const AssetView: React.FC = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
             gap: 14,
             marginBottom: 16,
           }}
@@ -924,6 +1084,8 @@ export const AssetView: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 marginBottom: 6,
+                flexWrap: 'wrap',
+                gap: 6,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}>
@@ -979,6 +1141,8 @@ export const AssetView: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 marginBottom: 6,
+                flexWrap: 'wrap',
+                gap: 6,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}>
@@ -1021,7 +1185,7 @@ export const AssetView: React.FC = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
               gap: 8,
             }}
           >
@@ -1061,7 +1225,7 @@ export const AssetView: React.FC = () => {
 
       {/* 5. MINI-PROYECTOR A 10 / 20 AÑOS DEL ACTIVO */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <BarChart3 size={16} color="var(--accent-cyan)" /> Mini-Proyector a 10 / 20 años del Activo
           </span>
@@ -1074,7 +1238,7 @@ export const AssetView: React.FC = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))',
             gap: 14,
             padding: '14px 16px',
             borderRadius: 8,
@@ -1144,14 +1308,14 @@ export const AssetView: React.FC = () => {
             </div>
             <div className="seg-group" style={{ width: '100%', display: 'flex' }}>
               <button
-                className={"seg-btn " + (projHorizon === 10 ? 'active' : '')}
+                className={'seg-btn ' + (projHorizon === 10 ? 'active' : '')}
                 style={{ flex: 1 }}
                 onClick={() => setProjHorizon(10)}
               >
                 10 Años
               </button>
               <button
-                className={"seg-btn " + (projHorizon === 20 ? 'active' : '')}
+                className={'seg-btn ' + (projHorizon === 20 ? 'active' : '')}
                 style={{ flex: 1 }}
                 onClick={() => setProjHorizon(20)}
               >
@@ -1165,7 +1329,7 @@ export const AssetView: React.FC = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))',
             gap: 12,
             marginBottom: 16,
           }}
@@ -1251,7 +1415,7 @@ export const AssetView: React.FC = () => {
               .join(' ');
 
             return (
-              <svg viewBox={"0 0 " + pW + " " + pH} style={{ width: '100%', height: 'auto', display: 'block' }}>
+              <svg viewBox={'0 0 ' + pW + ' ' + pH} style={{ width: '100%', height: 'auto', display: 'block' }}>
                 {/* Baseline grid */}
                 <line x1={30} y1={pH - 24} x2={pW - 30} y2={pH - 24} stroke="var(--border-subtle)" />
                 {/* Invested capital dashed curve */}

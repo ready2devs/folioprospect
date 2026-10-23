@@ -145,6 +145,19 @@ export function evaluateLedger(
 
     const lastPrice = q?.price ?? fb?.last ?? avgPrice;
     const prevClose = q?.prevClose ?? fb?.prev ?? lastPrice;
+    const dailyChangeAbs = lastPrice - prevClose;
+    const isCrypto =
+      meta.assetType === 'Crypto' ||
+      symbol.startsWith('BINANCE:') ||
+      symbol.endsWith('USDT');
+
+    const marketState = isCrypto ? 'open' : q?.marketState;
+    const regularMarketTime = isCrypto ? undefined : q?.regularMarketTime;
+    const extPrice = isCrypto ? undefined : q?.extPrice;
+    const extChange = isCrypto ? undefined : q?.extChange;
+    const extChangePct = isCrypto ? undefined : q?.extChangePct;
+    const extTime = isCrypto ? undefined : q?.extTime;
+    const extSession = isCrypto ? undefined : q?.extSession;
 
     if (st.qty > 1e-7) {
       const value = st.qty * lastPrice;
@@ -187,6 +200,14 @@ export function evaluateLedger(
         totalGain: { v: totVal, p: totPct },
         annualizedYield: annYield,
         firstBuyTime: st.firstBuyTime,
+        marketState,
+        regularMarketTime,
+        extPrice,
+        extChange,
+        extChangePct,
+        extTime,
+        extSession,
+        dailyChangeAbs,
       });
     } else {
       closedRaw.push({
@@ -210,6 +231,14 @@ export function evaluateLedger(
         totalGain: { v: st.realized - st.commissions + st.dividends, p: 0 },
         annualizedYield: 0,
         firstBuyTime: st.firstBuyTime,
+        marketState,
+        regularMarketTime,
+        extPrice,
+        extChange,
+        extChangePct,
+        extTime,
+        extSession,
+        dailyChangeAbs,
       });
     }
   }

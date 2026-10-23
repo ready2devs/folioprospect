@@ -37,8 +37,8 @@ export const SearchModal: React.FC = () => {
   return (
     <div className="modal-backdrop" onClick={() => setSearchOpen(false)}>
       <div
-        className="modal-card"
-        style={{ width: 620, padding: 0, overflow: 'hidden' }}
+        className="modal-card search-modal-card"
+        style={{ width: 'min(620px, 100%)', padding: 0, overflow: 'hidden' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -50,12 +50,12 @@ export const SearchModal: React.FC = () => {
             borderBottom: '1px solid var(--border-subtle)',
           }}
         >
-          <Search size={16} color="var(--accent-cyan)" />
+          <Search size={16} color="var(--accent-cyan)" style={{ flexShrink: 0 }} />
           <input
             autoFocus
             className="input"
-            style={{ border: 'none', flex: 1, background: 'transparent', fontSize: 14 }}
-            placeholder="Escribe un ticker o empresa (ej. NVDA, MELI, TSM, MSFT, BTC, AAPL, VIST)..."
+            style={{ border: 'none', flex: 1, background: 'transparent', fontSize: 16, minWidth: 0 }}
+            placeholder="Escribe un ticker o empresa (ej. NVDA, MELI, TSM, MSFT, BTC)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -63,7 +63,7 @@ export const SearchModal: React.FC = () => {
             <X size={15} />
           </button>
         </div>
-        <div style={{ maxHeight: 380, overflowY: 'auto', padding: '8px 0' }}>
+        <div style={{ maxHeight: '65dvh', overflowY: 'auto', padding: '8px 0' }}>
           {results.map((item) => (
             <div
               key={item.symbol}
@@ -75,6 +75,7 @@ export const SearchModal: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: 10,
                 padding: '10px 16px',
                 cursor: 'pointer',
                 borderBottom: '1px solid var(--border-subtle)',
@@ -82,10 +83,10 @@ export const SearchModal: React.FC = () => {
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                 <div className="ticker-avatar">{item.ticker.slice(0, 1)}</div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span className="mono" style={{ fontWeight: 700 }}>
                       {item.ticker}
                     </span>
@@ -98,7 +99,15 @@ export const SearchModal: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
                     {item.name} — {item.sector}
                   </div>
                 </div>
@@ -110,9 +119,10 @@ export const SearchModal: React.FC = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 4,
+                  flexShrink: 0,
                 }}
               >
-                Analizar Fair Value <ArrowUpRight size={13} />
+                Fair Value <ArrowUpRight size={13} />
               </span>
             </div>
           ))}

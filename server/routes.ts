@@ -14,6 +14,7 @@ import {
   searchSymbols,
   fetchLiveFxRates,
 } from './yahoo.js';
+import { fetchArgFxRates } from './argFx.js';
 import {
   evaluateLedger,
   buildPortfolioSeries,
@@ -57,6 +58,11 @@ export function registerRoutes(app: Express): void {
     res.json(rates);
   });
 
+  app.get('/api/fx/ar', async (_req: Request, res: Response) => {
+    const argFx = await fetchArgFxRates();
+    res.json(argFx);
+  });
+
   app.get('/api/portfolios', (_req: Request, res: Response) => {
     res.json(
       db.portfolios.map((p) => ({
@@ -87,10 +93,12 @@ export function registerRoutes(app: Express): void {
     let cached = false;
 
     if (mode === 'tv_snapshot') {
-      const { sparklines } = await fetchQuotesWithSparklines(symbols);
+      const { quotes: liveQuotes, sparklines } = await fetchQuotesWithSparklines(symbols);
       sparklinesMap = sparklines;
       for (const h of seedExtract.holdings?.opened || []) {
         const prev = h.last_price - h.daily_gain.v / h.qty;
+        const lq = liveQuotes[h.symbol];
+        const isCrypto = h.symbol.startsWith('BINANCE:') || h.symbol.endsWith('USDT');
         quotesMap[h.symbol] = {
           symbol: h.symbol,
           price: h.last_price,
@@ -98,6 +106,13 @@ export function registerRoutes(app: Express): void {
           change: h.last_price - prev,
           changePct: h.daily_gain.p,
           currency: 'USD',
+          marketState: isCrypto ? 'open' : (lq?.marketState ?? 'closed'),
+          regularMarketTime: isCrypto ? undefined : lq?.regularMarketTime,
+          extPrice: isCrypto ? undefined : lq?.extPrice,
+          extChange: isCrypto ? undefined : lq?.extChange,
+          extChangePct: isCrypto ? undefined : lq?.extChangePct,
+          extTime: isCrypto ? undefined : lq?.extTime,
+          extSession: isCrypto ? undefined : lq?.extSession,
         };
       }
     } else {

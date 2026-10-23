@@ -5,3 +5,4 @@ export * from './series.js';
 export * from './risk.js';
 export * from './fairvalue.js';
 export * from './projection.js';
+export * from './nw.js';

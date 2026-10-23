@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import { api } from '@/api';
 import { Donut } from '@/components/ui/Donut';
@@ -11,13 +11,50 @@ import {
   Sun,
   Moon,
   Trash2,
-  TrendingUp,
   ShieldAlert,
   Sparkles,
   Upload,
+  Layers,
 } from 'lucide-react';
 
+function useLocalIsMobile(maxWidth = 1023): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= maxWidth : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: ' + maxWidth + 'px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [maxWidth]);
+  return isMobile;
+}
+
+const HoldingMarketClock: React.FC<{ isOpen: boolean }> = ({ isOpen }) => {
+  const color = isOpen ? '#10B981' : '#EF4444';
+  return (
+    <span
+      title={isOpen ? 'Mercado Abierto' : 'Mercado Cerrado'}
+      style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}
+    >
+      <svg width={11} height={11} viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.7" />
+        <path
+          d="M8 4.5V8L10.4 9.6"
+          stroke={color}
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+};
+
 export const PortfolioView: React.FC = () => {
+  const store = useAppStore() as any;
   const {
     evaluation,
     currency,
@@ -31,7 +68,9 @@ export const PortfolioView: React.FC = () => {
     selectAsset,
     openAddModal,
     refreshAll,
-  } = useAppStore();
+  } = store;
+
+  const isMobile = useLocalIsMobile(1023);
 
   const [tipsOpen, setTipsOpen] = useState(false);
   const [changeMode, setChangeMode] = useState<'value' | 'performance'>('performance');
@@ -48,13 +87,13 @@ export const PortfolioView: React.FC = () => {
     const update = () => {
       if (chartContainerRef.current) {
         const w = chartContainerRef.current.clientWidth;
-        if (w > 200) setChartWidth(w);
+        if (w > 120) setChartWidth(w);
       }
     };
     update();
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect.width > 200) {
+        if (entry.contentRect.width > 120) {
           setChartWidth(Math.floor(entry.contentRect.width));
         }
       }
@@ -63,7 +102,7 @@ export const PortfolioView: React.FC = () => {
     return () => ro.disconnect();
   }, [portfolioTab]);
 
-  // Prospectiva 10/20Y interactive state
+  // Prospectiva 10/20Y interactive state (FP-134)
   const [projHorizon, setProjHorizon] = useState<10 | 20>(20);
   const [projMonthly, setProjMonthly] = useState<number>(1000);
   const [projCagr, setProjCagr] = useState<number>(12.0);
@@ -71,6 +110,7 @@ export const PortfolioView: React.FC = () => {
   const [projInflation, setProjInflation] = useState<number>(3.0);
   const [projConverge, setProjConverge] = useState<boolean>(true);
   const [projShowReal, setProjShowReal] = useState<boolean>(false);
+  const [includeFixedPatrimonyInProj, setIncludeFixedPatrimonyInProj] = useState<boolean>(false);
   const [customProj, setCustomProj] = useState<ProjectionResult | null>(null);
 
   if (!evaluation) {
@@ -90,9 +130,54 @@ export const PortfolioView: React.FC = () => {
     risk,
     movers,
     calendar,
-    tvReference,
     defaultProjection,
   } = evaluation;
+
+  // Read NW Settings & Arg FX from store (with localStorage fallback) for FP-134
+  const nwSettings = (() => {
+    if (store.nwSettings) return store.nwSettings;
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('fp.nwSettings.v1') : null;
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return {
+      brokerCashUsd: 0,
+      cashReserveUsd: 0,
+      includeCryptoInCcl: false,
+      cclOverride: null,
+      mepOverride: null,
+      cclBaseOverride: null,
+      sellCommPct: 0.5,
+      mepBuyCommPct: 0.5,
+      mepSellCommPct: 0.5,
+      fxDiffOverride: null,
+    };
+  })();
+
+  const argFx = store.argFx || { cclRate: 1637.9, mepRate: 1553.6 };
+  const brokerCashUsd = Number(nwSettings.brokerCashUsd) || 0;
+  const cashReserveUsd = Number(nwSettings.cashReserveUsd) || 0;
+  const cclRate = Number(nwSettings.cclOverride ?? argFx.cclRate) || 1637.9;
+  const mepRate = Number(nwSettings.mepOverride ?? argFx.mepRate) || 1553.6;
+  const sellCommPct = Number(nwSettings.sellCommPct ?? 0.5);
+  const mepBuyCommPct = Number(nwSettings.mepBuyCommPct ?? 0.5);
+  const mepSellCommPct = Number(nwSettings.mepSellCommPct ?? 0.5);
+
+  const cclBaseAuto = holdings
+    .filter((h: any) => nwSettings.includeCryptoInCcl || h.assetType !== 'Crypto')
+    .reduce((acc: number, h: any) => acc + h.value, 0);
+  const baseCclUsd = nwSettings.cclBaseOverride != null ? Number(nwSettings.cclBaseOverride) : cclBaseAuto;
+  const commFactor =
+    (1 - sellCommPct / 100) * (1 - mepBuyCommPct / 100) * (1 - mepSellCommPct / 100);
+  const fxDiffAuto = mepRate > 0 ? baseCclUsd * ((cclRate / mepRate) * commFactor - 1) : 0;
+  const fxDiffUsd = nwSettings.fxDiffOverride != null ? Number(nwSettings.fxDiffOverride) : fxDiffAuto;
+  const illiquidFixedUsd =
+    kpis.illiquidValue ??
+    (portfolio.illiquid || []).reduce((acc: number, item: any) => acc + (item.currentValue || 0), 0);
+  const financialPortfolioLiquidUsd = kpis.grossHoldingsValue + brokerCashUsd;
+  const fixedImmutablePatrimonyUsd = cashReserveUsd + fxDiffUsd + illiquidFixedUsd;
 
   const activeProj = customProj || defaultProjection;
 
@@ -112,7 +197,7 @@ export const PortfolioView: React.FC = () => {
     const conv = overrides.convergeToFairValue ?? projConverge;
     const res = await api.runProjection({
       horizonYears: h,
-      initialCapital: kpis.totalGrossPatrimony,
+      initialCapital: financialPortfolioLiquidUsd,
       monthlyContribution: m,
       baseCagrPct: c,
       annualVolatilityPct: v,
@@ -123,7 +208,6 @@ export const PortfolioView: React.FC = () => {
     setCustomProj(res);
   };
 
-  // Dynamically compute exact rolling window start dates so chart, header & cards have 100% mathematical parity
   const lastDailyPt = series.daily[series.daily.length - 1];
   const lastTime = lastDailyPt?.time || Date.now();
 
@@ -140,9 +224,8 @@ export const PortfolioView: React.FC = () => {
     return d.toISOString().slice(0, 10);
   };
 
-  // Slice daily series according to selectedPeriod
   const targetStartDate = getPeriodStartDate(selectedPeriod);
-  let chartDaily = series.daily.filter((p) => p.date >= targetStartDate);
+  let chartDaily = series.daily.filter((p: any) => p.date >= targetStartDate);
   if (chartDaily.length < 2) {
     chartDaily = series.daily.slice(-Math.min(series.daily.length, 10));
   }
@@ -151,7 +234,7 @@ export const PortfolioView: React.FC = () => {
   const baseCumFactor = 1 + (firstPt?.cumReturnPct || 0) / 100;
   const baseBenchFactor = 1 + (firstPt?.benchmarkPct || 0) / 100;
 
-  const chartSeries = chartDaily.map((pt) => {
+  const chartSeries = chartDaily.map((pt: any) => {
     const val =
       netOrGrossMode === 'gross' ? pt.grossValue : pt.portfolioValue;
     const rebasedPortPct =
@@ -166,7 +249,6 @@ export const PortfolioView: React.FC = () => {
     };
   });
 
-  // Distribution active rows
   const distRows =
     distTab === 'assets'
       ? distribution.assets
@@ -176,24 +258,23 @@ export const PortfolioView: React.FC = () => {
       ? distribution.currency
       : distribution.assetTypes;
 
-  // Render SVG Portfolio Change Chart
   const renderPortfolioChart = () => {
     const W = chartWidth;
     const H = 260;
-    const padL = 14;
-    const padR = 64;
+    const padL = isMobile ? 8 : 14;
+    const padR = isMobile ? 54 : 64;
     const padT = 16;
     const padB = 26;
-    const iW = W - padL - padR;
+    const iW = Math.max(40, W - padL - padR);
     const iH = H - padT - padB;
 
     if (chartSeries.length < 2) return null;
 
-    const primaryVals = chartSeries.map((p) =>
+    const primaryVals = chartSeries.map((p: any) =>
       changeMode === 'value' ? p.value : p.portPct
     );
     const benchVals =
-      changeMode === 'performance' ? chartSeries.map((p) => p.benchPct) : [];
+      changeMode === 'performance' ? chartSeries.map((p: any) => p.benchPct) : [];
     const allV = [...primaryVals, ...benchVals];
     const minV = Math.min(...allV);
     const maxV = Math.max(...allV);
@@ -203,7 +284,7 @@ export const PortfolioView: React.FC = () => {
     const toY = (v: number) => padT + (1 - (v - minV) / span) * iH;
 
     const mainPath = chartSeries
-      .map((p, i) => {
+      .map((p: any, i: number) => {
         const v = changeMode === 'value' ? p.value : p.portPct;
         return `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`;
       })
@@ -217,7 +298,7 @@ export const PortfolioView: React.FC = () => {
       changeMode === 'performance'
         ? chartSeries
             .map(
-              (p, i) =>
+              (p: any, i: number) =>
                 `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(p.benchPct).toFixed(1)}`
             )
             .join(' ')
@@ -235,9 +316,11 @@ export const PortfolioView: React.FC = () => {
             justifyContent: 'space-between',
             marginBottom: 8,
             fontSize: 12,
+            flexWrap: 'wrap',
+            gap: 8,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span
                 style={{
@@ -308,10 +391,10 @@ export const PortfolioView: React.FC = () => {
                   strokeDasharray="3,3"
                 />
                 <text
-                  x={W - padR + 6}
+                  x={W - padR + 5}
                   y={y + 4}
                   fill="var(--text-muted)"
-                  fontSize="10"
+                  fontSize="9.5"
                   fontFamily="JetBrains Mono, monospace"
                 >
                   {changeMode === 'value'
@@ -341,7 +424,6 @@ export const PortfolioView: React.FC = () => {
             strokeLinejoin="round"
           />
 
-          {/* Hover vertical line & dot */}
           <line
             x1={toX(activeIdx)}
             y1={padT}
@@ -364,11 +446,9 @@ export const PortfolioView: React.FC = () => {
     );
   };
 
-  // Period buttons data (with exact TradingView reference fallback when in REA snapshot mode)
-  // Calculate each period's exact cumulative return from the daily series so card pct === chart endpoint pct
   const calcPeriodPct = (key: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => {
     const sDate = getPeriodStartDate(key);
-    const startPt = series.daily.find((p) => p.date >= sDate) || series.daily[0];
+    const startPt = series.daily.find((p: any) => p.date >= sDate) || series.daily[0];
     if (!startPt || !lastDailyPt) return 0;
     const bFactor = 1 + (startPt.cumReturnPct || 0) / 100;
     const lFactor = 1 + (lastDailyPt.cumReturnPct || 0) / 100;
@@ -388,14 +468,21 @@ export const PortfolioView: React.FC = () => {
     { key: 'ALL', label: 'All time', pct: calcPeriodPct('ALL') },
   ];
 
-  const maxGainerPct = Math.max(...movers.gainers.map((g) => Math.abs(g.dailyGain.p)), 1);
-  const maxLoserPct = Math.max(...movers.losers.map((l) => Math.abs(l.dailyGain.p)), 1);
+  const maxGainerPct = Math.max(...movers.gainers.map((g: any) => Math.abs(g.dailyGain.p)), 1);
+  const maxLoserPct = Math.max(...movers.losers.map((l: any) => Math.abs(l.dailyGain.p)), 1);
 
   const todayEarnings = calendar.earnings.filter((e: any) => e.group === 'today');
   const next30Earnings = calendar.earnings.filter((e: any) => e.group === 'next30');
 
+  const lastProjPoint = activeProj.points[activeProj.points.length - 1];
+  const proj10FinVal = projShowReal ? activeProj.summary10Y.realBase : activeProj.summary10Y.base;
+  const projEndFinVal = projShowReal ? lastProjPoint.realBase : lastProjPoint.base;
+  const proj10TotalNw = proj10FinVal + fixedImmutablePatrimonyUsd;
+  const projEndTotalNw = projEndFinVal + fixedImmutablePatrimonyUsd;
+  const fixedOffset = includeFixedPatrimonyInProj ? fixedImmutablePatrimonyUsd : 0;
+
   return (
-    <div>
+    <div style={{ maxWidth: '100%', overflowX: 'hidden' }}>
       {/* 1. CABECERA DEL PORTAFOLIO */}
       <div
         style={{
@@ -404,23 +491,23 @@ export const PortfolioView: React.FC = () => {
           justifyContent: 'space-between',
           marginBottom: 14,
           flexWrap: 'wrap',
-          gap: 12,
+          gap: 10,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Portfolios /</span>
           <select
             className="input"
-            style={{ fontSize: 18, fontWeight: 700, padding: '6px 12px' }}
+            style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700, padding: '6px 12px' }}
             value={portfolio.id}
             onChange={() => {}}
           >
             <option value={portfolio.id}>{portfolio.title}</option>
           </select>
-          <span className="brand-badge">SIN LÍMITES DE HOLDINGS NI TRANSACCIONES</span>
+          <span className="brand-badge">PORTAFOLIO FINANCIERO LÍQUIDO</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button
             className="btn btn-primary"
             onClick={() => openAddModal('trade')}
@@ -455,15 +542,23 @@ export const PortfolioView: React.FC = () => {
           <strong style={{ color: 'var(--text-primary)' }}>
             FolioProspect SDD Engine (Réplica Superadora de TradingView Portfolios):
           </strong>{' '}
-          Este portafolio contiene las 20 posiciones y las 30 transacciones históricas reales extraídas por REA, pero elimina el límite de operaciones de TradingView. Puedes cargar compras, ventas, dividendos, efectivo (Cash) y activos no líquidos ilimitados, comparar contra cualquier índice y proyectar a 10 y 20 años con simulación Monte Carlo y convergencia a Fair Value.
+          Este portafolio contiene las 20 posiciones líquidas y las 30 transacciones históricas reales extraídas por REA, separando limpiamente los Activos No Líquidos y las Reservas de Efectivo USD fuera del broker.
         </div>
       )}
 
       {/* 2. FILA DE 4 TARJETAS KPI SUPERIORES */}
-      <div className="kpi-grid-4">
+      <div
+        className="kpi-grid-4"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, 1fr)',
+          gap: isMobile ? 10 : 12,
+          marginBottom: 16,
+        }}
+      >
         {/* Tarjeta 1 — Portfolio value */}
-        <div className="kpi-card">
-          <div className="kpi-label">
+        <div className="kpi-card" style={{ minWidth: 0, padding: isMobile ? '11px 12px' : undefined }}>
+          <div className="kpi-label" style={{ flexWrap: 'wrap', gap: 4 }}>
             <span>Portfolio value</span>
             <button
               onClick={() => setNetOrGrossMode(netOrGrossMode === 'net' ? 'gross' : 'net')}
@@ -476,82 +571,82 @@ export const PortfolioView: React.FC = () => {
                 fontWeight: 600,
               }}
             >
-              {netOrGrossMode === 'net' ? 'Ver Bruto (180.7k)' : 'Ver Neto TV (45.8k)'}
+              {netOrGrossMode === 'net' ? 'Ver Bruto' : 'Ver Neto TV'}
             </button>
           </div>
-          <div className="kpi-main">
+          <div className="kpi-main" style={{ fontSize: isMobile ? 16 : 19 }}>
             {formatMoney(
-              netOrGrossMode === 'gross' ? kpis.totalGrossPatrimony : kpis.portfolioValue,
+              netOrGrossMode === 'gross' ? kpis.grossHoldingsValue + brokerCashUsd : kpis.portfolioValue,
               currency,
               fxRates
             )}
           </div>
-          <div className="kpi-sub">
+          <div className="kpi-sub" style={{ flexWrap: 'wrap', gap: 4 }}>
             <span>Cash</span>
             <strong className={kpis.freeCash >= 0 ? 'pos' : 'neg'}>
               {formatMoney(kpis.freeCash, currency, fxRates)}
             </strong>
-            <span style={{ color: 'var(--text-muted)' }}>
-              (Holdings: {formatMoney(kpis.grossHoldingsValue, currency, fxRates)})
+            <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>
+              (Holdings: {formatMoney(kpis.grossHoldingsValue, currency, fxRates, { compact: isMobile })})
             </span>
           </div>
         </div>
 
         {/* Tarjeta 2 — Unrealized gain */}
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ minWidth: 0, padding: isMobile ? '11px 12px' : undefined }}>
           <div className="kpi-label">
             <span>Unrealized gain</span>
           </div>
-          <div className="kpi-main">
+          <div className="kpi-main" style={{ fontSize: isMobile ? 16 : 19 }}>
             <span className={kpis.unrealizedGain.v >= 0 ? 'pos' : 'neg'}>
-              {formatMoney(kpis.unrealizedGain.v, currency, fxRates, { signed: true })}
+              {formatMoney(kpis.unrealizedGain.v, currency, fxRates, { signed: true, compact: isMobile })}
             </span>
             <span
               className={kpis.unrealizedGain.p >= 0 ? 'pos' : 'neg'}
-              style={{ fontSize: 13 }}
+              style={{ fontSize: isMobile ? 11.5 : 13 }}
             >
               {formatPct(kpis.unrealizedGain.p)}
             </span>
           </div>
-          <div className="kpi-sub">
+          <div className="kpi-sub" style={{ flexWrap: 'wrap', gap: 4 }}>
             <span>Last day</span>
             <span className={kpis.lastDayGain.v >= 0 ? 'pos' : 'neg'}>
-              {formatMoney(kpis.lastDayGain.v, currency, fxRates, { signed: true })} (
+              {formatMoney(kpis.lastDayGain.v, currency, fxRates, { signed: true, compact: isMobile })} (
               {formatPct(kpis.lastDayGain.p)})
             </span>
           </div>
         </div>
 
         {/* Tarjeta 3 — Realized gain */}
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ minWidth: 0, padding: isMobile ? '11px 12px' : undefined }}>
           <div className="kpi-label">
             <span>Realized gain</span>
           </div>
-          <div className="kpi-main">
+          <div className="kpi-main" style={{ fontSize: isMobile ? 16 : 19 }}>
             <span className={kpis.realizedGain.v >= 0 ? 'pos' : 'neg'}>
-              {formatMoney(kpis.realizedGain.v, currency, fxRates, { signed: true })}
+              {formatMoney(kpis.realizedGain.v, currency, fxRates, { signed: true, compact: isMobile })}
             </span>
           </div>
-          <div className="kpi-sub">
+          <div className="kpi-sub" style={{ flexWrap: 'wrap', gap: 4 }}>
             <span>Total dividends</span>
             <strong>{formatMoney(kpis.dividendGain, currency, fxRates)}</strong>
           </div>
         </div>
 
         {/* Tarjeta 4 — Total gain */}
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ minWidth: 0, padding: isMobile ? '11px 12px' : undefined }}>
           <div className="kpi-label">
             <span>Total gain</span>
           </div>
-          <div className="kpi-main">
+          <div className="kpi-main" style={{ fontSize: isMobile ? 16 : 19 }}>
             <span className={kpis.totalGain.v >= 0 ? 'pos' : 'neg'}>
-              {formatMoney(kpis.totalGain.v, currency, fxRates, { signed: true })}
+              {formatMoney(kpis.totalGain.v, currency, fxRates, { signed: true, compact: isMobile })}
             </span>
-            <span className={kpis.totalGain.p >= 0 ? 'pos' : 'neg'} style={{ fontSize: 13 }}>
+            <span className={kpis.totalGain.p >= 0 ? 'pos' : 'neg'} style={{ fontSize: isMobile ? 11.5 : 13 }}>
               {formatPct(kpis.totalGain.p)}
             </span>
           </div>
-          <div className="kpi-sub">
+          <div className="kpi-sub" style={{ flexWrap: 'wrap', gap: 4 }}>
             <span>Annualized yield</span>
             <strong className={kpis.annualizedYield >= 0 ? 'pos' : 'neg'}>
               {formatPct(kpis.annualizedYield, false)}
@@ -560,8 +655,16 @@ export const PortfolioView: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. BARRA DE PESTAÑAS DEL PORTAFOLIO */}
-      <div className="tv-tabs">
+      {/* 3. BARRA DE PESTAÑAS DEL PORTAFOLIO (Scrolleable horizontalmente en móvil) */}
+      <div
+        className="tv-tabs"
+        style={{
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          flexWrap: 'nowrap',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
         {(
           [
             ['overview', 'Overview'],
@@ -574,6 +677,7 @@ export const PortfolioView: React.FC = () => {
           <button
             key={key}
             className={`tv-tab ${portfolioTab === key ? 'active' : ''}`}
+            style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
             onClick={() => setPortfolioTab(key)}
           >
             {label}
@@ -586,10 +690,10 @@ export const PortfolioView: React.FC = () => {
          ===================================================================== */}
       {portfolioTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* 4. SECCIÓN "PORTFOLIO CHANGE" */}
+          {/* 4. SECCIÓN 'PORTFOLIO CHANGE' */}
           <div className="card">
-            <div className="card-title">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span>Portfolio change</span>
                 <div className="seg-group">
                   <button
@@ -607,7 +711,7 @@ export const PortfolioView: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                   Compare / Benchmark:
                 </span>
@@ -628,11 +732,12 @@ export const PortfolioView: React.FC = () => {
 
             {renderPortfolioChart()}
 
-            {/* Botonera inferior de 6 períodos con sus rendimientos reales */}
+            {/* Botonera inferior de 6 períodos: 3 cols en móvil, 6 cols en desktop */}
             <div
+              className="r-period-grid"
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(6, 1fr)',
+                gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)',
                 gap: 8,
                 marginTop: 12,
               }}
@@ -645,7 +750,7 @@ export const PortfolioView: React.FC = () => {
                     key={p.key}
                     onClick={() => setSelectedPeriod(p.key)}
                     style={{
-                      padding: '8px 10px',
+                      padding: '8px 6px',
                       borderRadius: 8,
                       border: isAct
                         ? '1px solid var(--accent-cyan)'
@@ -653,6 +758,7 @@ export const PortfolioView: React.FC = () => {
                       background: isAct ? 'var(--bg-hover)' : 'var(--bg-primary)',
                       cursor: 'pointer',
                       textAlign: 'center',
+                      minWidth: 0,
                     }}
                   >
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -660,7 +766,7 @@ export const PortfolioView: React.FC = () => {
                     </div>
                     <div
                       className={`mono ${up ? 'pos' : 'neg'}`}
-                      style={{ fontSize: 13.5, fontWeight: 700, marginTop: 2 }}
+                      style={{ fontSize: isMobile ? 12.5 : 13.5, fontWeight: 700, marginTop: 2 }}
                     >
                       {formatPct(p.pct)}
                     </div>
@@ -670,15 +776,22 @@ export const PortfolioView: React.FC = () => {
             </div>
           </div>
 
-          {/* 5. SECCIÓN DOBLE "DAILY GAINERS" Y "DAILY LOSERS" */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div className="card">
+          {/* 5. SECCIÓN DOBLE 'DAILY GAINERS' Y 'DAILY LOSERS' (1 col en móvil, 2 en desktop) */}
+          <div
+            className="r-grid-2"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: 16,
+            }}
+          >
+            <div className="card" style={{ minWidth: 0 }}>
               <div className="card-title">
                 <span>Daily gainers</span>
                 <span style={{ fontSize: 11, color: 'var(--pos-bright)' }}>Top 5 Subas</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {movers.gainers.map((g) => {
+                {movers.gainers.map((g: any) => {
                   const widthPct = Math.max(12, (Math.abs(g.dailyGain.p) / maxGainerPct) * 100);
                   return (
                     <div
@@ -686,13 +799,13 @@ export const PortfolioView: React.FC = () => {
                       onClick={() => selectAsset(g.symbol)}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '110px 1fr 72px',
+                        gridTemplateColumns: isMobile ? '92px 1fr 64px' : '110px 1fr 72px',
                         alignItems: 'center',
-                        gap: 10,
+                        gap: 8,
                         cursor: 'pointer',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span className="ticker-avatar">{g.ticker[0]}</span>
                         <span className="ticker-pill">{g.ticker}</span>
                       </div>
@@ -713,7 +826,7 @@ export const PortfolioView: React.FC = () => {
                           }}
                         />
                       </div>
-                      <div className="mono pos" style={{ textAlign: 'right', fontWeight: 700 }}>
+                      <div className="mono pos" style={{ textAlign: 'right', fontWeight: 700, fontSize: 12 }}>
                         {formatPct(g.dailyGain.p)}
                       </div>
                     </div>
@@ -722,13 +835,13 @@ export const PortfolioView: React.FC = () => {
               </div>
             </div>
 
-            <div className="card">
+            <div className="card" style={{ minWidth: 0 }}>
               <div className="card-title">
                 <span>Daily losers</span>
                 <span style={{ fontSize: 11, color: 'var(--neg-bright)' }}>Top 5 Bajas</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {movers.losers.map((l) => {
+                {movers.losers.map((l: any) => {
                   const widthPct = Math.max(12, (Math.abs(l.dailyGain.p) / maxLoserPct) * 100);
                   return (
                     <div
@@ -736,13 +849,13 @@ export const PortfolioView: React.FC = () => {
                       onClick={() => selectAsset(l.symbol)}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '110px 1fr 72px',
+                        gridTemplateColumns: isMobile ? '92px 1fr 64px' : '110px 1fr 72px',
                         alignItems: 'center',
-                        gap: 10,
+                        gap: 8,
                         cursor: 'pointer',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span className="ticker-avatar">{l.ticker[0]}</span>
                         <span className="ticker-pill">{l.ticker}</span>
                       </div>
@@ -763,7 +876,7 @@ export const PortfolioView: React.FC = () => {
                           }}
                         />
                       </div>
-                      <div className="mono neg" style={{ textAlign: 'right', fontWeight: 700 }}>
+                      <div className="mono neg" style={{ textAlign: 'right', fontWeight: 700, fontSize: 12 }}>
                         {formatPct(l.dailyGain.p)}
                       </div>
                     </div>
@@ -773,11 +886,19 @@ export const PortfolioView: React.FC = () => {
             </div>
           </div>
 
-          {/* 6. SECCIÓN "PORTFOLIO DISTRIBUTION" (Gráfico Donut + Tabla Desglosada) */}
+          {/* 6. SECCIÓN 'PORTFOLIO DISTRIBUTION' (Gráfico Donut + Tabla Desglosada) */}
           <div className="card">
-            <div className="card-title">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
               <span>Portfolio distribution</span>
-              <div className="seg-group">
+              <div
+                className="seg-group"
+                style={{
+                  maxWidth: '100%',
+                  overflowX: 'auto',
+                  whiteSpace: 'nowrap',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
                 {(
                   [
                     ['assets', 'Assets'],
@@ -789,6 +910,7 @@ export const PortfolioView: React.FC = () => {
                   <button
                     key={k}
                     className={`seg-btn ${distTab === k ? 'active' : ''}`}
+                    style={{ flexShrink: 0 }}
                     onClick={() => setDistTab(k)}
                   >
                     {lbl}
@@ -798,64 +920,207 @@ export const PortfolioView: React.FC = () => {
             </div>
 
             <div
+              className="r-split-dist"
               style={{
                 display: 'grid',
-                gridTemplateColumns: '220px 1fr',
+                gridTemplateColumns: isMobile ? '1fr' : '220px 1fr',
                 alignItems: 'center',
-                gap: 24,
+                gap: isMobile ? 16 : 24,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <Donut
                   rows={distRows}
-                  totalCount={kpis.totalAssetsCount}
-                  centerSubtitle="Total assets"
+                  totalCount={holdings.length}
+                  centerSubtitle="Liquid assets"
                 />
               </div>
 
+              <div
+                className="table-scroll"
+                style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', minWidth: 0 }}
+              >
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>
+                        {distTab === 'assets'
+                          ? 'Asset'
+                          : distTab === 'sectors'
+                          ? 'Sector'
+                          : distTab === 'currency'
+                          ? 'Currency'
+                          : 'Asset type'}
+                      </th>
+                      <th className="num-col">Holding value</th>
+                      <th className="num-col">Allocation</th>
+                      <th className="num-col">Unrealized gain</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {distRows.map((r: any) => (
+                      <tr key={r.key}>
+                        <td>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <span
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: 3,
+                                background: r.color,
+                                display: 'inline-block',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <strong>{r.label}</strong>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              ({r.count})
+                            </span>
+                          </span>
+                        </td>
+                        <td className="num-col">
+                          {formatMoney(r.value, currency, fxRates)}
+                        </td>
+                        <td className="num-col">{r.allocation.toFixed(2)}%</td>
+                        <td className={`num-col ${r.unrealizedGain >= 0 ? 'pos' : 'neg'}`}>
+                          {formatMoney(r.unrealizedGain, currency, fxRates, { signed: true })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* 7. SECCIÓN 'UPCOMING EARNINGS' */}
+          <div className="card">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 6 }}>
+              <span>Upcoming earnings</span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                Calendario de Resultados de la Cartera
+              </span>
+            </div>
+
+            <div
+              className="table-scroll"
+              style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+            >
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>
-                      {distTab === 'assets'
-                        ? 'Asset'
-                        : distTab === 'sectors'
-                        ? 'Sector'
-                        : distTab === 'currency'
-                        ? 'Currency'
-                        : 'Asset type'}
-                    </th>
-                    <th className="num-col">Holding value</th>
-                    <th className="num-col">Allocation</th>
-                    <th className="num-col">Unrealized gain</th>
+                    <th>Symbol</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th className="num-col">Estimate EPS</th>
+                    <th className="num-col">Actual EPS</th>
+                    <th className="num-col">Surprise</th>
+                    <th className="num-col">Market cap</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {distRows.map((r) => (
-                    <tr key={r.key}>
+                  <tr>
+                    <td
+                      colSpan={7}
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: 'var(--accent-cyan)',
+                        background: 'var(--bg-elevated)',
+                        padding: '5px 10px',
+                      }}
+                    >
+                      TODAY & YESTERDAY
+                    </td>
+                  </tr>
+                  {todayEarnings.map((e: any) => (
+                    <tr
+                      key={e.symbol}
+                      onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <td>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <span
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 3,
-                              background: r.color,
-                              display: 'inline-block',
-                            }}
-                          />
-                          <strong>{r.label}</strong>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            ({r.count})
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="ticker-avatar">{e.symbol[0]}</span>
+                          <div>
+                            <span className="ticker-pill">{e.symbol}</span>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {e.name}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.date}</td>
+                      <td className="mono">
+                        {e.time ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Moon size={12} color="var(--accent-amber)" /> {e.time}
                           </span>
-                        </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="num-col">
-                        {formatMoney(r.value, currency, fxRates)}
+                        {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
                       </td>
-                      <td className="num-col">{r.allocation.toFixed(2)}%</td>
-                      <td className={`num-col ${r.unrealizedGain >= 0 ? 'pos' : 'neg'}`}>
-                        {formatMoney(r.unrealizedGain, currency, fxRates, { signed: true })}
+                      <td className="num-col">
+                        {e.actualEps != null ? `${e.actualEps.toFixed(2)} USD` : '—'}
+                      </td>
+                      <td
+                        className={`num-col ${
+                          e.surprise == null ? '' : e.surprise >= 0 ? 'pos' : 'neg'
+                        }`}
+                      >
+                        {e.surprise != null ? formatPct(e.surprise) : '—'}
+                      </td>
+                      <td className="num-col">
+                        {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
+                      </td>
+                    </tr>
+                  ))}
+
+                  <tr>
+                    <td
+                      colSpan={7}
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: 'var(--accent-cyan)',
+                        background: 'var(--bg-elevated)',
+                        padding: '5px 10px',
+                      }}
+                    >
+                      NEXT 30 DAYS
+                    </td>
+                  </tr>
+                  {next30Earnings.map((e: any) => (
+                    <tr
+                      key={e.symbol}
+                      onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="ticker-avatar">{e.symbol[0]}</span>
+                          <div>
+                            <span className="ticker-pill">{e.symbol}</span>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {e.name}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.date}</td>
+                      <td className="mono">
+                        <Sun size={12} color="var(--text-muted)" />
+                      </td>
+                      <td className="num-col">
+                        {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
+                      </td>
+                      <td className="num-col">—</td>
+                      <td className="num-col">—</td>
+                      <td className="num-col">
+                        {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
                       </td>
                     </tr>
                   ))}
@@ -864,140 +1129,9 @@ export const PortfolioView: React.FC = () => {
             </div>
           </div>
 
-          {/* 7. SECCIÓN "UPCOMING EARNINGS" */}
+          {/* 8. SECCIÓN 'UPCOMING DIVIDENDS' */}
           <div className="card">
-            <div className="card-title">
-              <span>Upcoming earnings</span>
-              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                Calendario de Resultados de la Cartera
-              </span>
-            </div>
-
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th className="num-col">Estimate EPS</th>
-                  <th className="num-col">Actual EPS</th>
-                  <th className="num-col">Surprise</th>
-                  <th className="num-col">Market cap</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      color: 'var(--accent-cyan)',
-                      background: 'var(--bg-elevated)',
-                      padding: '5px 10px',
-                    }}
-                  >
-                    TODAY & YESTERDAY
-                  </td>
-                </tr>
-                {todayEarnings.map((e: any) => (
-                  <tr
-                    key={e.symbol}
-                    onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="ticker-avatar">{e.symbol[0]}</span>
-                        <div>
-                          <span className="ticker-pill">{e.symbol}</span>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {e.name}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="mono">{e.date}</td>
-                    <td className="mono">
-                      {e.time ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <Moon size={12} color="var(--accent-amber)" /> {e.time}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="num-col">
-                      {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
-                    </td>
-                    <td className="num-col">
-                      {e.actualEps != null ? `${e.actualEps.toFixed(2)} USD` : '—'}
-                    </td>
-                    <td
-                      className={`num-col ${
-                        e.surprise == null ? '' : e.surprise >= 0 ? 'pos' : 'neg'
-                      }`}
-                    >
-                      {e.surprise != null ? formatPct(e.surprise) : '—'}
-                    </td>
-                    <td className="num-col">
-                      {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
-                    </td>
-                  </tr>
-                ))}
-
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      color: 'var(--accent-cyan)',
-                      background: 'var(--bg-elevated)',
-                      padding: '5px 10px',
-                    }}
-                  >
-                    NEXT 30 DAYS
-                  </td>
-                </tr>
-                {next30Earnings.map((e: any) => (
-                  <tr
-                    key={e.symbol}
-                    onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="ticker-avatar">{e.symbol[0]}</span>
-                        <div>
-                          <span className="ticker-pill">{e.symbol}</span>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {e.name}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="mono">{e.date}</td>
-                    <td className="mono">
-                      <Sun size={12} color="var(--text-muted)" />
-                    </td>
-                    <td className="num-col">
-                      {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
-                    </td>
-                    <td className="num-col">—</td>
-                    <td className="num-col">—</td>
-                    <td className="num-col">
-                      {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 8. SECCIÓN "UPCOMING DIVIDENDS" */}
-          <div className="card">
-            <div className="card-title">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
               <span>Upcoming dividends</span>
               <div className="seg-group">
                 <button
@@ -1015,110 +1149,123 @@ export const PortfolioView: React.FC = () => {
               </div>
             </div>
 
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th className="num-col">Amount</th>
-                  <th>Ex-dividend date</th>
-                  <th>Payment date</th>
-                  <th className="num-col">Dividend yield</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td
-                    colSpan={5}
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      color: 'var(--accent-cyan)',
-                      background: 'var(--bg-elevated)',
-                      padding: '5px 10px',
-                    }}
-                  >
-                    NEXT 30 DAYS
-                  </td>
-                </tr>
-                {calendar.dividends.map((d: any) => (
-                  <tr
-                    key={d.symbol}
-                    onClick={() => selectAsset(`NASDAQ:${d.symbol}`)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="ticker-avatar">{d.symbol[0]}</span>
-                        <div>
-                          <span className="ticker-pill">{d.symbol}</span>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {d.name}
+            <div
+              className="table-scroll"
+              style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+            >
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th className="num-col">Amount</th>
+                    <th>Ex-dividend date</th>
+                    <th>Payment date</th>
+                    <th className="num-col">Dividend yield</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td
+                      colSpan={5}
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: 'var(--accent-cyan)',
+                        background: 'var(--bg-elevated)',
+                        padding: '5px 10px',
+                      }}
+                    >
+                      NEXT 30 DAYS
+                    </td>
+                  </tr>
+                  {calendar.dividends.map((d: any) => (
+                    <tr
+                      key={d.symbol}
+                      onClick={() => selectAsset(`NASDAQ:${d.symbol}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="ticker-avatar">{d.symbol[0]}</span>
+                          <div>
+                            <span className="ticker-pill">{d.symbol}</span>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {d.name}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="num-col">{d.amount.toFixed(2)} USD</td>
-                    <td className="mono">{d.exDate}</td>
-                    <td className="mono">{d.payDate}</td>
-                    <td className="num-col pos">{d.yield.toFixed(2)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td className="num-col">{d.amount.toFixed(2)} USD</td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{d.exDate}</td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{d.payDate}</td>
+                      <td className="num-col pos">{d.yield.toFixed(2)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* 9. SECCIÓN "NEWS" */}
+          {/* 9. SECCIÓN 'NEWS' */}
           <div className="card">
-            <div className="card-title">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 6 }}>
               <span>News</span>
               <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
                 Filtrado por activos del portafolio
               </span>
             </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Instrument</th>
-                  <th>Headline</th>
-                  <th>Provider</th>
-                </tr>
-              </thead>
-              <tbody>
-                {calendar.news.map((n: any, idx: number) => (
-                  <tr
-                    key={idx}
-                    onClick={() => selectAsset(n.symbol)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="mono" style={{ color: 'var(--text-muted)', width: 90 }}>
-                      {idx + 1}h ago
-                    </td>
-                    <td style={{ width: 110 }}>
-                      <span className="ticker-pill">{n.symbol}</span>
-                    </td>
-                    <td style={{ fontWeight: 500 }}>{n.headline}</td>
-                    <td style={{ color: 'var(--text-secondary)', width: 150 }}>{n.provider}</td>
+            <div
+              className="table-scroll"
+              style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+            >
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Instrument</th>
+                    <th>Headline</th>
+                    <th>Provider</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {calendar.news.map((n: any, idx: number) => (
+                    <tr
+                      key={idx}
+                      onClick={() => selectAsset(n.symbol)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="mono" style={{ color: 'var(--text-muted)', width: 90, whiteSpace: 'nowrap' }}>
+                        {idx + 1}h ago
+                      </td>
+                      <td style={{ width: 110 }}>
+                        <span className="ticker-pill">{n.symbol}</span>
+                      </td>
+                      <td style={{ fontWeight: 500, minWidth: 200 }}>{n.headline}</td>
+                      <td style={{ color: 'var(--text-secondary)', width: 150, whiteSpace: 'nowrap' }}>{n.provider}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {/* =====================================================================
-          PESTAÑA 2: HOLDINGS (Tabla completa ordenable de las 20+ posiciones)
+          PESTAÑA 2: HOLDINGS (Tabla completa ordenable de las 20+ posiciones líquidas)
          ===================================================================== */}
       {portfolioTab === 'holdings' && (
         <div className="card">
-          <div className="card-title">
-            <span>Holdings Abiertos ({holdings.length} posiciones sin límites)</span>
+          <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <span>Holdings Abiertos del Portafolio Financiero ({holdings.length} posiciones líquidas)</span>
             <button className="btn btn-primary" onClick={() => openAddModal('trade')}>
               <Plus size={14} /> Agregar Posición
             </button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div
+            className="table-scroll"
+            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+          >
             <table className="data-table">
               <thead>
                 <tr>
@@ -1126,7 +1273,7 @@ export const PortfolioView: React.FC = () => {
                   <th>Type</th>
                   <th className="num-col">Qty</th>
                   <th className="num-col">Avg Price</th>
-                  <th className="num-col">Last Price</th>
+                  <th className="num-col">Precio / Sesión 24h</th>
                   <th className="num-col">Invested Cost</th>
                   <th className="num-col" onClick={() => setHoldSort('value')}>
                     Holding Value
@@ -1145,56 +1292,108 @@ export const PortfolioView: React.FC = () => {
               </thead>
               <tbody>
                 {[...holdings]
-                  .sort((a, b) => {
+                  .sort((a: any, b: any) => {
                     if (holdSort === 'ticker') return a.ticker.localeCompare(b.ticker);
                     if (holdSort === 'allocation') return b.allocation - a.allocation;
                     if (holdSort === 'unrealized') return b.unrealizedGain.v - a.unrealizedGain.v;
                     if (holdSort === 'daily') return b.dailyGain.p - a.dailyGain.p;
                     return b.value - a.value;
                   })
-                  .map((h) => (
-                    <tr
-                      key={h.symbol}
-                      onClick={() => selectAsset(h.symbol)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="ticker-avatar">{h.ticker[0]}</span>
-                          <div>
-                            <div className="mono" style={{ fontWeight: 700 }}>
-                              {h.ticker}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              {h.name}
+                  .map((h: any) => {
+                    const isCrypto =
+                      h.assetType === 'Crypto' ||
+                      h.symbol.startsWith('BINANCE:') ||
+                      h.ticker.endsWith('USDT');
+                    const isMarketOpen = isCrypto || h.marketState === 'open';
+                    const dailyDiff = h.dailyChangeAbs ?? h.lastPrice - h.prevClose;
+                    const dailyPct = h.dailyGain?.p ?? (h.prevClose > 0 ? (dailyDiff / h.prevClose) * 100 : 0);
+                    const showPost = !isMarketOpen && !isCrypto && h.extPrice != null;
+                    const extDiff = showPost ? (h.extChange ?? h.extPrice - h.lastPrice) : 0;
+                    const extPct = showPost ? (h.extChangePct ?? (h.lastPrice > 0 ? (extDiff / h.lastPrice) * 100 : 0)) : 0;
+
+                    return (
+                      <tr
+                        key={h.symbol}
+                        onClick={() => selectAsset(h.symbol)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className="ticker-avatar">{h.ticker[0]}</span>
+                            <div>
+                              <div className="mono" style={{ fontWeight: 700 }}>
+                                {h.ticker}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: 'var(--text-secondary)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                }}
+                              >
+                                <HoldingMarketClock isOpen={isMarketOpen} />
+                                <span>{h.name}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="ticker-pill">{h.assetType}</span>
-                      </td>
-                      <td className="num-col">{formatNumber(h.qty, h.qty % 1 === 0 ? 0 : 4)}</td>
-                      <td className="num-col">{formatNumber(h.avgPrice, 2)}</td>
-                      <td className="num-col">{formatNumber(h.lastPrice, 2)}</td>
-                      <td className="num-col">{formatMoney(h.invested, currency, fxRates)}</td>
-                      <td className="num-col" style={{ fontWeight: 700 }}>
-                        {formatMoney(h.value, currency, fxRates)}
-                      </td>
-                      <td className="num-col">{h.allocation.toFixed(2)}%</td>
-                      <td className={`num-col ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}>
-                        {formatMoney(h.unrealizedGain.v, currency, fxRates, { signed: true })} (
-                        {formatPct(h.unrealizedGain.p)})
-                      </td>
-                      <td className={`num-col ${h.dailyGain.v >= 0 ? 'pos' : 'neg'}`}>
-                        {formatMoney(h.dailyGain.v, currency, fxRates, { signed: true })} (
-                        {formatPct(h.dailyGain.p)})
-                      </td>
-                      <td className={`num-col ${h.annualizedYield >= 0 ? 'pos' : 'neg'}`}>
-                        {formatPct(h.annualizedYield)}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>
+                          <span className="ticker-pill">{h.assetType}</span>
+                        </td>
+                        <td className="num-col">{formatNumber(h.qty, h.qty % 1 === 0 ? 0 : 4)}</td>
+                        <td className="num-col">{formatNumber(h.avgPrice, 2)}</td>
+                        <td className="num-col" style={{ whiteSpace: 'nowrap' }}>
+                          <div className="mono" style={{ fontWeight: 700 }}>
+                            {formatNumber(h.lastPrice, 2)}
+                          </div>
+                          <div
+                            className={`mono ${dailyDiff >= 0 ? 'pos' : 'neg'}`}
+                            style={{ fontSize: 10.5 }}
+                          >
+                            {dailyDiff >= 0 ? '+' : ''}
+                            {dailyDiff.toFixed(2)} ({formatPct(dailyPct)})
+                          </div>
+                          {showPost && (
+                            <div
+                              className="mono"
+                              style={{
+                                fontSize: 10,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
+                              <Moon size={10} color="#60A5FA" />
+                              <span>{formatNumber(h.extPrice, 2)}</span>
+                              <span className={extDiff >= 0 ? 'pos' : 'neg'}>
+                                {extDiff >= 0 ? '+' : ''}
+                                {extDiff.toFixed(2)} ({formatPct(extPct)})
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="num-col">{formatMoney(h.invested, currency, fxRates)}</td>
+                        <td className="num-col" style={{ fontWeight: 700 }}>
+                          {formatMoney(h.value, currency, fxRates)}
+                        </td>
+                        <td className="num-col">{h.allocation.toFixed(2)}%</td>
+                        <td className={`num-col ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}>
+                          {formatMoney(h.unrealizedGain.v, currency, fxRates, { signed: true })} (
+                          {formatPct(h.unrealizedGain.p)})
+                        </td>
+                        <td className={`num-col ${h.dailyGain.v >= 0 ? 'pos' : 'neg'}`}>
+                          {formatMoney(h.dailyGain.v, currency, fxRates, { signed: true })} (
+                          {formatPct(h.dailyGain.p)})
+                        </td>
+                        <td className={`num-col ${h.annualizedYield >= 0 ? 'pos' : 'neg'}`}>
+                          {formatPct(h.annualizedYield)}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -1206,11 +1405,11 @@ export const PortfolioView: React.FC = () => {
          ===================================================================== */}
       {portfolioTab === 'transactions' && (
         <div className="card">
-          <div className="card-title">
+          <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
             <span>
               Libro Mayor de Transacciones ({portfolio.trades.length} operaciones registradas)
             </span>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn" onClick={() => openAddModal('csv')}>
                 <Upload size={13} /> Importar CSV
               </button>
@@ -1220,66 +1419,71 @@ export const PortfolioView: React.FC = () => {
             </div>
           </div>
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th className="num-col">Qty</th>
-                <th className="num-col">Fill Price</th>
-                <th className="num-col">Total Value</th>
-                <th className="num-col">Commission</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...portfolio.trades]
-                .sort((a, b) => b.time - a.time)
-                .map((t) => (
-                  <tr key={t.id}>
-                    <td className="mono">
-                      {new Date(t.time).toISOString().slice(0, 10)}
-                    </td>
-                    <td>
-                      <span
-                        className="ticker-pill"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => selectAsset(t.symbol)}
-                      >
-                        {t.symbol}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={t.isBuy ? 'pos mono' : 'neg mono'}
-                        style={{ fontWeight: 700 }}
-                      >
-                        {t.isBuy ? 'BUY' : 'SELL'}
-                      </span>
-                    </td>
-                    <td className="num-col">{formatNumber(t.qty, t.qty % 1 === 0 ? 0 : 6)}</td>
-                    <td className="num-col">{formatNumber(t.price, 2)} USD</td>
-                    <td className="num-col">
-                      {formatMoney(t.qty * t.price, currency, fxRates)}
-                    </td>
-                    <td className="num-col">{formatNumber(t.commission, 2)} USD</td>
-                    <td>
-                      <button
-                        className="btn btn-ghost"
-                        onClick={async () => {
-                          await api.deleteTrade(portfolio.id, t.id);
-                          await refreshAll();
-                        }}
-                        title="Eliminar transacción"
-                      >
-                        <Trash2 size={13} color="var(--neg-bright)" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <div
+            className="table-scroll"
+            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+          >
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th>Side</th>
+                  <th className="num-col">Qty</th>
+                  <th className="num-col">Fill Price</th>
+                  <th className="num-col">Total Value</th>
+                  <th className="num-col">Commission</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...portfolio.trades]
+                  .sort((a: any, b: any) => b.time - a.time)
+                  .map((t: any) => (
+                    <tr key={t.id}>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        {new Date(t.time).toISOString().slice(0, 10)}
+                      </td>
+                      <td>
+                        <span
+                          className="ticker-pill"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => selectAsset(t.symbol)}
+                        >
+                          {t.symbol}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={t.isBuy ? 'pos mono' : 'neg mono'}
+                          style={{ fontWeight: 700 }}
+                        >
+                          {t.isBuy ? 'BUY' : 'SELL'}
+                        </span>
+                      </td>
+                      <td className="num-col">{formatNumber(t.qty, t.qty % 1 === 0 ? 0 : 6)}</td>
+                      <td className="num-col" style={{ whiteSpace: 'nowrap' }}>{formatNumber(t.price, 2)} USD</td>
+                      <td className="num-col">
+                        {formatMoney(t.qty * t.price, currency, fxRates)}
+                      </td>
+                      <td className="num-col" style={{ whiteSpace: 'nowrap' }}>{formatNumber(t.commission, 2)} USD</td>
+                      <td>
+                        <button
+                          className="btn btn-ghost"
+                          onClick={async () => {
+                            await api.deleteTrade(portfolio.id, t.id);
+                            await refreshAll();
+                          }}
+                          title="Eliminar transacción"
+                        >
+                          <Trash2 size={13} color="var(--neg-bright)" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1288,7 +1492,14 @@ export const PortfolioView: React.FC = () => {
          ===================================================================== */}
       {portfolioTab === 'analysis' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="kpi-grid-4">
+          <div
+            className="kpi-grid-4"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, 1fr)',
+              gap: isMobile ? 10 : 12,
+            }}
+          >
             <div className="kpi-card">
               <div className="kpi-label">Sharpe Ratio (Mensual)</div>
               <div className="kpi-main">{risk.sharpeRatio.user.toFixed(2)}</div>
@@ -1320,59 +1531,64 @@ export const PortfolioView: React.FC = () => {
           </div>
 
           <div className="card">
-            <div className="card-title">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
               <span>
                 Evolución Mensual Comparada (Modified Dietz vs {benchmark}) — Paridad REA TradingView
               </span>
               <ShieldAlert size={16} color="var(--accent-cyan)" />
             </div>
 
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Mes Calendario</th>
-                  <th className="num-col">Ganancia Mensual Portafolio</th>
-                  <th className="num-col">Retorno Portafolio (%)</th>
-                  <th className="num-col">Retorno Benchmark ({benchmark})</th>
-                  <th className="num-col">Alpha Mensual (Exceso)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {series.monthly.map((m) => {
-                  const alpha = m.userReturnPct - m.benchReturnPct;
-                  return (
-                    <tr key={m.month}>
-                      <td className="mono" style={{ fontWeight: 700 }}>
-                        {m.month}
-                      </td>
-                      <td className={`num-col ${m.userGain >= 0 ? 'pos' : 'neg'}`}>
-                        {formatMoney(m.userGain, currency, fxRates, { signed: true })}
-                      </td>
-                      <td className={`num-col ${m.userReturnPct >= 0 ? 'pos' : 'neg'}`}>
-                        {formatPct(m.userReturnPct)}
-                      </td>
-                      <td className={`num-col ${m.benchReturnPct >= 0 ? 'pos' : 'neg'}`}>
-                        {formatPct(m.benchReturnPct)}
-                      </td>
-                      <td className={`num-col ${alpha >= 0 ? 'pos' : 'neg'}`}>
-                        {formatPct(alpha)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div
+              className="table-scroll"
+              style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+            >
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Mes Calendario</th>
+                    <th className="num-col">Ganancia Mensual Portafolio</th>
+                    <th className="num-col">Retorno Portafolio (%)</th>
+                    <th className="num-col">Retorno Benchmark ({benchmark})</th>
+                    <th className="num-col">Alpha Mensual (Exceso)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {series.monthly.map((m: any) => {
+                    const alpha = m.userReturnPct - m.benchReturnPct;
+                    return (
+                      <tr key={m.month}>
+                        <td className="mono" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {m.month}
+                        </td>
+                        <td className={`num-col ${m.userGain >= 0 ? 'pos' : 'neg'}`}>
+                          {formatMoney(m.userGain, currency, fxRates, { signed: true })}
+                        </td>
+                        <td className={`num-col ${m.userReturnPct >= 0 ? 'pos' : 'neg'}`}>
+                          {formatPct(m.userReturnPct)}
+                        </td>
+                        <td className={`num-col ${m.benchReturnPct >= 0 ? 'pos' : 'neg'}`}>
+                          {formatPct(m.benchReturnPct)}
+                        </td>
+                        <td className={`num-col ${alpha >= 0 ? 'pos' : 'neg'}`}>
+                          {formatPct(alpha)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {/* =====================================================================
-          PESTAÑA 5: PROSPECTIVA 10/20 AÑOS (Diferencial FolioProspect Monte Carlo)
+          PESTAÑA 5: PROSPECTIVA 10/20 AÑOS (FP-134: Exclusiva sobre Portafolio Financiero + Toggle NW Fijo)
          ===================================================================== */}
       {portfolioTab === 'prospectiva' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="card">
-            <div className="card-title">
+            <div className="card-title" style={{ flexWrap: 'wrap', gap: 10 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <Sparkles size={16} color="var(--accent-cyan)" />
                 Motor de Prospectiva Patrimonial a 10 y 20 Años (Escenarios + Monte Carlo 1,000 Sim.)
@@ -1399,11 +1615,92 @@ export const PortfolioView: React.FC = () => {
               </div>
             </div>
 
-            {/* Controles interactivos de simulación */}
+            {/* FP-134 Banner explícito de aislamiento del Portafolio Financiero + Toggle de Patrimonio Fijo Inmutable */}
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: 8,
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(99, 102, 241, 0.08))',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                marginBottom: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5 }}>
+                <Layers size={16} color="var(--accent-cyan)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong style={{ color: 'var(--accent-cyan)' }}>
+                    Aislamiento de Proyección (FP-134):
+                  </strong>{' '}
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                    El motor de proyección, CAGR, convergencia a Fair Value y Monte Carlo se calcula exclusivamente sobre la evolución del Portafolio Financiero Líquido
+                  </span>{' '}
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    ({formatMoney(financialPortfolioLiquidUsd, currency, fxRates)} = Tenencias Líquidas{' '}
+                    {formatMoney(kpis.grossHoldingsValue, currency, fxRates)} + Cash Comitente{' '}
+                    {formatMoney(brokerCashUsd, currency, fxRates)}). Las reservas de efectivo fuera del broker y los activos no líquidos no se capitalizan con la volatilidad bursátil.
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  paddingTop: 8,
+                  borderTop: '1px solid rgba(56, 189, 248, 0.2)',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={includeFixedPatrimonyInProj}
+                    onChange={(e) => setIncludeFixedPatrimonyInProj(e.target.checked)}
+                    style={{ width: 15, height: 15, accentColor: 'var(--accent-cyan)' }}
+                  />
+                  <span>
+                    Sumar al patrimonio proyectado los montos fijos inmutables (Reserva de Efectivo USD + Dif. Cambio CCL/MEP + Activos No Líquidos)
+                  </span>
+                </label>
+
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>Reserva USD: <strong>{formatMoney(cashReserveUsd, currency, fxRates)}</strong></span>
+                  <span>· Dif. FX CCL/MEP: <strong className={fxDiffUsd >= 0 ? 'pos' : 'neg'}>{formatMoney(fxDiffUsd, currency, fxRates, { signed: true })}</strong></span>
+                  <span>· No Líquidos Fijos: <strong>{formatMoney(illiquidFixedUsd, currency, fxRates)}</strong></span>
+                  <span>= Base Fija: <strong className="amber">{formatMoney(fixedImmutablePatrimonyUsd, currency, fxRates)}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Controles interactivos de simulación: responsive grid */}
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(5, 1fr)',
+                gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
                 gap: 12,
                 padding: 12,
                 borderRadius: 8,
@@ -1467,7 +1764,7 @@ export const PortfolioView: React.FC = () => {
                   }}
                 />
               </div>
-              <div className="form-field">
+              <div className="form-field" style={{ gridColumn: isMobile ? '1 / -1' : undefined }}>
                 <label>Opciones de Valoración</label>
                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                   <button
@@ -1492,12 +1789,100 @@ export const PortfolioView: React.FC = () => {
               </div>
             </div>
 
+            {/* Desglose comparativo separado: Portafolio Financiero Proyectado vs NW Patrimonial Total Proyectado */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent-cyan)', marginBottom: 6 }}>
+                  1. Portafolio Financiero Proyectado (10a / 20a) — Solo Activos Líquidos
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>En 10 Años</div>
+                    <div className="mono cyan" style={{ fontSize: 17, fontWeight: 800 }}>
+                      {formatMoney(proj10FinVal, currency, fxRates, { compact: true })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>En {projHorizon} Años</div>
+                    <div className="mono pos" style={{ fontSize: 17, fontWeight: 800 }}>
+                      {formatMoney(projEndFinVal, currency, fxRates, { compact: true })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Base Inicial Financiera</div>
+                    <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
+                      {formatMoney(financialPortfolioLiquidUsd, currency, fxRates)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  background: includeFixedPatrimonyInProj ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-primary)',
+                  border: includeFixedPatrimonyInProj
+                    ? '1px solid rgba(16, 185, 129, 0.35)'
+                    : '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#10B981', marginBottom: 6 }}>
+                  2. NW Patrimonial Total Proyectado (con reservas y no líquidos fijos)
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>NW Total 10 Años</div>
+                    <div className="mono" style={{ fontSize: 17, fontWeight: 800, color: '#10B981' }}>
+                      {formatMoney(proj10TotalNw, currency, fxRates, { compact: true })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>NW Total {projHorizon} Años</div>
+                    <div className="mono" style={{ fontSize: 17, fontWeight: 800, color: '#F59E0B' }}>
+                      {formatMoney(projEndTotalNw, currency, fxRates, { compact: true })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>+ Fijo Inmutable</div>
+                    <div className="mono amber" style={{ fontSize: 14, fontWeight: 700 }}>
+                      +{formatMoney(fixedImmutablePatrimonyUsd, currency, fxRates)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Tarjetas resumen a 10 y 20 años */}
-            <div className="kpi-grid-4">
+            <div
+              className="kpi-grid-4"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, 1fr)',
+                gap: isMobile ? 10 : 12,
+                marginBottom: 16,
+              }}
+            >
               <div className="kpi-card">
-                <div className="kpi-label">Capital Inicial (Tenencias Brutas)</div>
-                <div className="kpi-main">
-                  {formatMoney(activeProj.initialCapital, currency, fxRates)}
+                <div className="kpi-label">
+                  {includeFixedPatrimonyInProj ? 'Capital Inicial + Fijos' : 'Capital Inicial (Portafolio Fin.)'}
+                </div>
+                <div className="kpi-main" style={{ fontSize: isMobile ? 16 : 19 }}>
+                  {formatMoney(financialPortfolioLiquidUsd + fixedOffset, currency, fxRates)}
                 </div>
                 <div className="kpi-sub">
                   Aporte anual: {formatMoney(projMonthly * 12, currency, fxRates)}
@@ -1505,110 +1890,92 @@ export const PortfolioView: React.FC = () => {
               </div>
               <div className="kpi-card">
                 <div className="kpi-label">Proyección Base a 10 Años</div>
-                <div className="kpi-main cyan">
-                  {formatMoney(
-                    projShowReal ? activeProj.summary10Y.realBase : activeProj.summary10Y.base,
-                    currency,
-                    fxRates,
-                    { compact: true }
-                  )}
+                <div className="kpi-main cyan" style={{ fontSize: isMobile ? 16 : 19 }}>
+                  {formatMoney(proj10FinVal + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
                 <div className="kpi-sub">
-                  MC P10–P90: {formatMoney(activeProj.summary10Y.mcP10, currency, fxRates, { compact: true })} –{' '}
-                  {formatMoney(activeProj.summary10Y.mcP90, currency, fxRates, { compact: true })}
+                  MC P10–P90: {formatMoney(activeProj.summary10Y.mcP10 + fixedOffset, currency, fxRates, { compact: true })} –{' '}
+                  {formatMoney(activeProj.summary10Y.mcP90 + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
               </div>
               <div className="kpi-card">
                 <div className="kpi-label">Proyección Base a {projHorizon} Años</div>
-                <div className="kpi-main pos">
-                  {formatMoney(
-                    projShowReal
-                      ? activeProj.points[activeProj.points.length - 1].realBase
-                      : activeProj.points[activeProj.points.length - 1].base,
-                    currency,
-                    fxRates,
-                    { compact: true }
-                  )}
+                <div className="kpi-main pos" style={{ fontSize: isMobile ? 16 : 19 }}>
+                  {formatMoney(projEndFinVal + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
                 <div className="kpi-sub">
                   Escenario Optimista:{' '}
-                  {formatMoney(
-                    activeProj.points[activeProj.points.length - 1].optimistic,
-                    currency,
-                    fxRates,
-                    { compact: true }
-                  )}
+                  {formatMoney(lastProjPoint.optimistic + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
               </div>
               <div className="kpi-card">
                 <div className="kpi-label">Banda Monte Carlo P90 ({projHorizon}Y)</div>
-                <div className="kpi-main amber">
-                  {formatMoney(
-                    activeProj.points[activeProj.points.length - 1].mcP90,
-                    currency,
-                    fxRates,
-                    { compact: true }
-                  )}
+                <div className="kpi-main amber" style={{ fontSize: isMobile ? 16 : 19 }}>
+                  {formatMoney(lastProjPoint.mcP90 + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
                 <div className="kpi-sub">
                   Conservador P10:{' '}
-                  {formatMoney(
-                    activeProj.points[activeProj.points.length - 1].mcP10,
-                    currency,
-                    fxRates,
-                    { compact: true }
-                  )}
+                  {formatMoney(lastProjPoint.mcP10 + fixedOffset, currency, fxRates, { compact: true })}
                 </div>
               </div>
             </div>
 
             {/* Tabla año por año de la proyección */}
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Año</th>
-                  <th className="num-col">Capital Aportado Acum.</th>
-                  <th className="num-col">Conservador</th>
-                  <th className="num-col">Escenario Base</th>
-                  <th className="num-col">Escenario Base Real (Infl.)</th>
-                  <th className="num-col">Optimista</th>
-                  <th className="num-col">Monte Carlo P10 / P50 / P90</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeProj.points
-                  .filter((p) => p.year === 0 || p.year % 2 === 0 || p.year === activeProj.horizonYears)
-                  .map((p) => (
-                    <tr key={p.year}>
-                      <td className="mono" style={{ fontWeight: 700 }}>
-                        Año {p.year} ({p.calendarYear})
-                      </td>
-                      <td className="num-col">
-                        {formatMoney(p.investedCumulative, currency, fxRates, { decimals: 0 })}
-                      </td>
-                      <td className="num-col">
-                        {formatMoney(p.conservative, currency, fxRates, { decimals: 0 })}
-                      </td>
-                      <td className="num-col cyan" style={{ fontWeight: 700 }}>
-                        {formatMoney(p.base, currency, fxRates, { decimals: 0 })}
-                      </td>
-                      <td className="num-col">
-                        {formatMoney(p.realBase, currency, fxRates, { decimals: 0 })}
-                      </td>
-                      <td className="num-col pos">
-                        {formatMoney(p.optimistic, currency, fxRates, { decimals: 0 })}
-                      </td>
-                      <td className="num-col" style={{ fontSize: 11.5 }}>
-                        {formatMoney(p.mcP10, currency, fxRates, { compact: true })} /{' '}
-                        <strong>{formatMoney(p.mcP50, currency, fxRates, { compact: true })}</strong> /{' '}
-                        <span className="amber">
-                          {formatMoney(p.mcP90, currency, fxRates, { compact: true })}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div
+              className="table-scroll"
+              style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+            >
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Año</th>
+                    <th className="num-col">Capital Aportado Acum.</th>
+                    <th className="num-col">Conservador</th>
+                    <th className="num-col">Portafolio Fin. Base</th>
+                    <th className="num-col">NW Total (+ Fijos)</th>
+                    <th className="num-col">Base Real (Infl.)</th>
+                    <th className="num-col">Optimista</th>
+                    <th className="num-col">Monte Carlo P10 / P50 / P90</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeProj.points
+                    .filter((p: any) => p.year === 0 || p.year % 2 === 0 || p.year === activeProj.horizonYears)
+                    .map((p: any) => (
+                      <tr key={p.year}>
+                        <td className="mono" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          Año {p.year} ({p.calendarYear})
+                        </td>
+                        <td className="num-col">
+                          {formatMoney(p.investedCumulative + fixedOffset, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col">
+                          {formatMoney(p.conservative + fixedOffset, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col cyan" style={{ fontWeight: 700 }}>
+                          {formatMoney(p.base, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col" style={{ fontWeight: 700, color: '#10B981' }}>
+                          {formatMoney(p.base + fixedImmutablePatrimonyUsd, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col">
+                          {formatMoney(p.realBase + fixedOffset, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col pos">
+                          {formatMoney(p.optimistic + fixedOffset, currency, fxRates, { decimals: 0 })}
+                        </td>
+                        <td className="num-col" style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                          {formatMoney(p.mcP10 + fixedOffset, currency, fxRates, { compact: true })} /{' '}
+                          <strong>{formatMoney(p.mcP50 + fixedOffset, currency, fxRates, { compact: true })}</strong> /{' '}
+                          <span className="amber">
+                            {formatMoney(p.mcP90 + fixedOffset, currency, fxRates, { compact: true })}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

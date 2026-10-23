@@ -1,15 +1,20 @@
-import React, { useState } from 'react';
-import { useAppStore } from '@/store';
+import React, { useEffect, useState } from 'react';
+import { useAppStore, type CashModalTarget } from '@/store';
 import { api } from '@/api';
-import { X, Plus, Upload, RotateCcw } from 'lucide-react';
+import { formatNumber } from '@shared/engine/format';
+import { X, Plus, Upload, RotateCcw, Wallet } from 'lucide-react';
 
 export const AddDialog: React.FC = () => {
   const {
     addModalOpen,
     addModalTab,
+    cashModalTarget,
+    setCashModalTarget,
     openAddModal,
     closeAddModal,
     evaluation,
+    nwSettings,
+    setNwSettings,
     refreshAll,
   } = useAppStore();
 
@@ -24,10 +29,22 @@ export const AddDialog: React.FC = () => {
   const [dateStr, setDateStr] = useState('2026-10-22');
   const [comment, setComment] = useState('');
 
-  // Cash state
+  // Cash state (supports Reserve USD, Broker Cash USD, and TV Ledger movement)
+  const [cashActionMode, setCashActionMode] = useState<'set' | 'add' | 'subtract'>('set');
   const [cashType, setCashType] = useState<'deposit' | 'withdrawal' | 'income'>('deposit');
   const [cashAmount, setCashAmount] = useState('10000');
   const [cashComment, setCashComment] = useState('Aporte de liquidez');
+
+  useEffect(() => {
+    if (!addModalOpen || addModalTab !== 'cash') return;
+    if (cashModalTarget === 'reserveUsd') {
+      setCashAmount(String(nwSettings.cashReserveUsd || 0));
+      setCashActionMode('set');
+    } else if (cashModalTarget === 'brokerCash') {
+      setCashAmount(String(nwSettings.brokerCashUsd || 0));
+      setCashActionMode('set');
+    }
+  }, [addModalOpen, addModalTab, cashModalTarget]);
 
   // Illiquid state
   const [illName, setIllName] = useState('Departamento / Bono Privado');
@@ -67,9 +84,37 @@ export const AddDialog: React.FC = () => {
 
   const handleAddCash = async (e: React.FormEvent) => {
     e.preventDefault();
+    const val = Number(cashAmount) || 0;
+
+    if (cashModalTarget === 'reserveUsd') {
+      const current = nwSettings.cashReserveUsd || 0;
+      const next =
+        cashActionMode === 'set'
+          ? val
+          : cashActionMode === 'add'
+          ? current + val
+          : Math.max(0, current - val);
+      setNwSettings({ cashReserveUsd: next });
+      closeAddModal();
+      return;
+    }
+
+    if (cashModalTarget === 'brokerCash') {
+      const current = nwSettings.brokerCashUsd || 0;
+      const next =
+        cashActionMode === 'set'
+          ? val
+          : cashActionMode === 'add'
+          ? current + val
+          : Math.max(0, current - val);
+      setNwSettings({ brokerCashUsd: next });
+      closeAddModal();
+      return;
+    }
+
     await api.addCash(portfolioId, {
       type: cashType,
-      amount: Number(cashAmount),
+      amount: val,
       comment: cashComment,
     });
     await refreshAll();
@@ -121,31 +166,42 @@ export const AddDialog: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: 14,
+            gap: 8,
           }}
         >
-          <h3 style={{ fontSize: 16, fontWeight: 700 }}>
-            Agregar al Portafolio (Sin límites de Holdings ni Transacciones)
+          <h3 style={{ fontSize: 15, fontWeight: 700 }}>
+            Operar / Ajustar Patrimonio y Portafolio Financiero
           </h3>
           <button className="btn btn-ghost" onClick={closeAddModal}>
             <X size={16} />
           </button>
         </div>
 
-        <div className="seg-group" style={{ marginBottom: 16, width: '100%' }}>
+        <div
+          className="seg-group"
+          style={{
+            marginBottom: 16,
+            width: '100%',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
           {(
             [
-              ['trade', 'Operación (Compra/Venta)'],
-              ['cash', 'Efectivo (Cash)'],
-              ['illiquid', 'Activo No Líquido'],
+              ['trade', 'Operación'],
+              ['cash', 'Efectivo (+Cash)'],
+              ['illiquid', 'No Líquido'],
               ['dividend', 'Dividendo'],
               ['csv', 'Importar CSV'],
             ] as const
           ).map(([k, label]) => (
             <button
               key={k}
+              type="button"
               className={`seg-btn ${addModalTab === k ? 'active' : ''}`}
-              style={{ flex: 1 }}
-              onClick={() => openAddModal(k)}
+              style={{ flex: '1 1 auto' }}
+              onClick={() => openAddModal(k, cashModalTarget)}
             >
               {label}
             </button>
@@ -230,9 +286,16 @@ export const AddDialog: React.FC = () => {
                 placeholder="Opcional"
               />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
               <button type="button" className="btn" onClick={handleResetSeed}>
-                <RotateCcw size={13} /> Restaurar Semilla Original TV (30 trades)
+                <RotateCcw size={13} /> Restaurar Semilla TV (30 trades)
               </button>
               <button type="submit" className="btn btn-primary">
                 <Plus size={14} /> Guardar Transacción
@@ -243,42 +306,148 @@ export const AddDialog: React.FC = () => {
 
         {addModalTab === 'cash' && (
           <form onSubmit={handleAddCash}>
-            <div className="form-row">
-              <div className="form-field">
-                <label>Movimiento de Caja</label>
-                <select
-                  className="input"
-                  value={cashType}
-                  onChange={(e) => setCashType(e.target.value as any)}
+            {/* Selector del destino del efectivo: Reserva USD, Cash Comitente o Ledger TV */}
+            <div className="form-field" style={{ marginBottom: 12 }}>
+              <label>Destino del Efectivo</label>
+              <div
+                className="seg-group"
+                style={{ display: 'flex', flexWrap: 'wrap', width: '100%', gap: 2 }}
+              >
+                {(
+                  [
+                    ['reserveUsd', 'Reserva de Efectivo USD (NW Líquido)'],
+                    ['brokerCash', 'Cash Comitente Líquido (USD)'],
+                    ['ledger', 'Movimiento Ledger Portafolio TV'],
+                  ] as [CashModalTarget, string][]
+                ).map(([targetKey, targetLabel]) => (
+                  <button
+                    key={targetKey}
+                    type="button"
+                    className={`seg-btn ${cashModalTarget === targetKey ? 'active' : ''}`}
+                    style={{ flex: '1 1 auto' }}
+                    onClick={() => {
+                      setCashModalTarget(targetKey);
+                      if (targetKey === 'reserveUsd') {
+                        setCashAmount(String(nwSettings.cashReserveUsd || 0));
+                      } else if (targetKey === 'brokerCash') {
+                        setCashAmount(String(nwSettings.brokerCashUsd || 0));
+                      } else {
+                        setCashAmount('10000');
+                      }
+                    }}
+                  >
+                    {targetLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {cashModalTarget === 'ledger' ? (
+              <>
+                <div className="form-row">
+                  <div className="form-field">
+                    <label>Movimiento de Caja (Ledger TV)</label>
+                    <select
+                      className="input"
+                      value={cashType}
+                      onChange={(e) => setCashType(e.target.value as any)}
+                    >
+                      <option value="deposit">Depósito de Efectivo (+Cash)</option>
+                      <option value="withdrawal">Retiro de Efectivo (-Cash)</option>
+                      <option value="income">Ingreso de Liquidez / Intereses</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Monto en USD</label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="input mono"
+                      value={cashAmount}
+                      onChange={(e) => setCashAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-field" style={{ marginBottom: 14 }}>
+                  <label>Concepto</label>
+                  <input
+                    className="input"
+                    value={cashComment}
+                    onChange={(e) => setCashComment(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  style={{
+                    padding: '8px 10px',
+                    marginBottom: 12,
+                    borderRadius: 8,
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 11.5,
+                    color: 'var(--text-secondary)',
+                  }}
                 >
-                  <option value="deposit">Depósito de Efectivo (+Cash)</option>
-                  <option value="withdrawal">Retiro de Efectivo (-Cash)</option>
-                  <option value="income">Ingreso de Liquidez / Intereses</option>
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Monto en USD</label>
-                <input
-                  type="number"
-                  step="any"
-                  className="input mono"
-                  value={cashAmount}
-                  onChange={(e) => setCashAmount(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div className="form-field" style={{ marginBottom: 14 }}>
-              <label>Concepto</label>
-              <input
-                className="input"
-                value={cashComment}
-                onChange={(e) => setCashComment(e.target.value)}
-              />
-            </div>
+                  {cashModalTarget === 'reserveUsd' ? (
+                    <span>
+                      <strong>Reserva de Efectivo USD</strong> (fuera del broker): se suma
+                      directamente al <strong>NW líquido</strong> sin alterar las métricas de
+                      riesgo del Portafolio Financiero. Saldo actual:{' '}
+                      <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                        ${formatNumber(nwSettings.cashReserveUsd || 0, 2)} USD
+                      </strong>
+                    </span>
+                  ) : (
+                    <span>
+                      <strong>Cash Comitente Líquido (USD)</strong>: efectivo disponible en
+                      la cuenta comitente del broker; forma parte del{' '}
+                      <strong>Portafolio Financiero Líquido</strong> y del{' '}
+                      <strong>NW líquido</strong>. Saldo actual:{' '}
+                      <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                        ${formatNumber(nwSettings.brokerCashUsd || 0, 2)} USD
+                      </strong>
+                    </span>
+                  )}
+                </div>
+                <div className="form-row">
+                  <div className="form-field">
+                    <label>Acción sobre el saldo</label>
+                    <select
+                      className="input"
+                      value={cashActionMode}
+                      onChange={(e) => setCashActionMode(e.target.value as any)}
+                    >
+                      <option value="set">Fijar saldo total exacto (=)</option>
+                      <option value="add">Sumar al saldo actual (+)</option>
+                      <option value="subtract">Restar del saldo actual (-)</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Monto en USD</label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="input mono"
+                      value={cashAmount}
+                      onChange={(e) => setCashAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="submit" className="btn btn-primary">
-                <Plus size={14} /> Registrar Efectivo
+                <Wallet size={14} />{' '}
+                {cashModalTarget === 'reserveUsd'
+                  ? 'Guardar Reserva de Efectivo USD'
+                  : cashModalTarget === 'brokerCash'
+                  ? 'Guardar Cash Comitente Líquido'
+                  : 'Registrar Movimiento en Ledger'}
               </button>
             </div>
           </form>
@@ -288,7 +457,7 @@ export const AddDialog: React.FC = () => {
           <form onSubmit={handleAddIlliquid}>
             <div className="form-row">
               <div className="form-field">
-                <label>Nombre del Activo No Líquido</label>
+                <label>Nombre del Activo No Líquido (Fuera del Portafolio Financiero)</label>
                 <input
                   className="input"
                   value={illName}
@@ -346,7 +515,7 @@ export const AddDialog: React.FC = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="submit" className="btn btn-primary">
-                <Plus size={14} /> Incorporar al Patrimonio
+                <Plus size={14} /> Incorporar a Activos No Líquidos
               </button>
             </div>
           </form>

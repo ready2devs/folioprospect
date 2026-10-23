@@ -1,4 +1,5 @@
 import type {
+  ArgFxResponse,
   AssetMeta,
   ComputedHolding,
   DailyPoint,
@@ -12,6 +13,8 @@ import type {
   QuoteData,
   RiskMetrics,
 } from '@shared/engine/types';
+
+export type { ArgFxResponse };
 
 export interface PortfolioEvaluationResponse {
   portfolio: Portfolio;
@@ -87,6 +90,10 @@ export interface AssetDetailResponse {
 export const api = {
   async getFx(): Promise<{ USD: number; ARS: number; EUR: number }> {
     const r = await fetch('/api/fx');
+    return r.json();
+  },
+  async getArgFx(): Promise<ArgFxResponse> {
+    const r = await fetch('/api/fx/ar');
     return r.json();
   },
   async evaluatePortfolio(

@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/store';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Sparkline } from '@/components/ui/Sparkline';
+import { MarketClock } from '@/components/ui/MarketClock';
+import { PriceSessionCell } from '@/components/left/PriceSessionCell';
+import { NwLiquidCard } from '@/components/left/NwLiquidCard';
+import { computeNwPatrimony } from '@shared/engine/nw';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
   Plus,
@@ -10,6 +15,7 @@ import {
   Briefcase,
   ArrowUpDown,
   ChevronRight,
+  Landmark,
 } from 'lucide-react';
 
 export const LeftPanel: React.FC = () => {
@@ -17,6 +23,8 @@ export const LeftPanel: React.FC = () => {
     evaluation,
     currency,
     fxRates,
+    argFx,
+    nwSettings,
     portfolioScope,
     setPortfolioScope,
     rightState,
@@ -27,6 +35,9 @@ export const LeftPanel: React.FC = () => {
     netOrGrossMode,
     setNetOrGrossMode,
   } = useAppStore();
+
+  const isMobile = useIsMobile(1023);
+  const isCompactRow = useIsMobile(440);
 
   const [sortBy, setSortBy] = useState<'value' | 'allocation' | 'daily' | 'ticker'>('value');
   const [filterText, setFilterText] = useState('');
@@ -42,8 +53,31 @@ export const LeftPanel: React.FC = () => {
   }
 
   const { kpis, holdings, sparklines, portfolio } = evaluation;
-  const displayedPatrimony =
-    netOrGrossMode === 'gross' ? kpis.totalGrossPatrimony : kpis.portfolioValue;
+  const illiquidAssets = portfolio.illiquid || [];
+  const illiquidTotalUsd = illiquidAssets.reduce(
+    (sum, item) => sum + (item.currentValue || 0),
+    0
+  );
+
+  const nw = computeNwPatrimony({
+    holdings,
+    grossHoldingsUsd: kpis.grossHoldingsValue,
+    illiquidTotalUsd,
+    cclLive: argFx?.cclRate ?? 1637.9,
+    mepLive: argFx?.mepRate ?? 1553.6,
+    settings: nwSettings,
+  });
+
+  // Portafolio Financiero (Líquido): Tenencias Brutas + Cash Comitente líquido (o Neto Ledger TV)
+  const financialLedgerNetUsd = kpis.grossHoldingsValue + kpis.freeCash;
+  const displayedFinancialPortfolio =
+    netOrGrossMode === 'gross'
+      ? nw.financialPortfolioLiquidUsd
+      : nw.financialPortfolioLiquidUsd;
+  const showLedgerNet = netOrGrossMode === 'net' && false; // Default shows Liquid Financial Portfolio; toggle switches view
+  const activeFinancialValue =
+    netOrGrossMode === 'gross' ? financialLedgerNetUsd : nw.financialPortfolioLiquidUsd;
+
   const dayPositive = kpis.lastDayGain.v >= 0;
 
   const filteredHoldings = [...holdings]
@@ -61,53 +95,79 @@ export const LeftPanel: React.FC = () => {
       return b.value - a.value;
     });
 
+  const gridTemplate = isCompactRow
+    ? 'minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(76px, 0.85fr)'
+    : 'minmax(0, 1.25fr) 44px minmax(0, 1.35fr) 40px minmax(72px, 0.82fr)';
+
   return (
-    <aside className="left-panel" aria-label="Portfolio Dashboard One-Pager Patrimonial">
-      {/* 1. CABECERA PATRIMONIAL EN VIVO */}
+    <aside
+      className="left-panel"
+      aria-label="Portfolio Dashboard One-Pager Patrimonial"
+      style={
+        isMobile
+          ? { height: 'auto', maxHeight: 'none', overflow: 'visible' }
+          : undefined
+      }
+    >
+      {/* 0. TARJETA MINIMALISTA NW LÍQUIDO (CON CELDA EXCEL CCL/MEP Y RESERVA USD) */}
+      <NwLiquidCard />
+
+      {/* 1. CABECERA DEL PORTAFOLIO FINANCIERO (LÍQUIDO) */}
       <div className="lp-header">
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 10,
+            marginBottom: 8,
             gap: 6,
+            flexWrap: 'wrap',
           }}
         >
-          {/* Selector de Portafolio (clic abre Estado 2 en Panel Derecho) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              flexWrap: 'wrap',
+              width: '100%',
+            }}
+          >
             <select
               aria-label="Selector de Portafolio"
               className="input"
               style={{
-                padding: '5px 8px',
+                padding: '4px 8px',
                 fontWeight: 700,
-                fontSize: 12.5,
+                fontSize: 12,
                 cursor: 'pointer',
+                flex: '1 1 160px',
+                minWidth: 0,
               }}
               value={portfolioScope}
               onChange={(e) => {
                 setPortfolioScope(e.target.value as 'personal' | 'overview');
                 setRightState('portfolio');
               }}
-              onClick={() => setRightState('portfolio')}
             >
-              <option value="personal">Personal largo plazo (TV)</option>
+              <option value="personal">Portafolio Financiero (TV)</option>
               <option value="overview">Vista General Consolidada</option>
             </select>
 
             <button
+              type="button"
               className={`btn ${rightState === 'portfolio' ? 'btn-primary' : ''}`}
-              style={{ padding: '5px 8px' }}
+              style={{ padding: '4px 8px', fontSize: 11.5 }}
               onClick={() => setRightState('portfolio')}
-              title="Abrir Dashboard Completo de Portafolio de TradingView (Estado 2)"
+              title="Abrir Dashboard Completo de Portafolio Financiero (Estado 2)"
             >
               <Briefcase size={12} /> Panel TV <ChevronRight size={12} />
             </button>
 
             <button
+              type="button"
               className={`btn ${rightState === 'market' ? 'btn-primary' : ''}`}
-              style={{ padding: '5px 8px' }}
+              style={{ padding: '4px 8px', fontSize: 11.5 }}
               onClick={() => setRightState('market')}
               title="Ver Inicio / Mercado estilo Google Finance (Estado 1)"
             >
@@ -116,31 +176,36 @@ export const LeftPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Valor Patrimonial Total en Vivo + Variación del día */}
+        {/* Valor del Portafolio Financiero Líquido + Variación del día HOY (24H) */}
         <div
           style={{
             display: 'flex',
             alignItems: 'baseline',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
             marginBottom: 6,
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 10.5,
+                fontWeight: 700,
                 color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                flexWrap: 'wrap',
+                gap: 6,
               }}
             >
               <span>
                 {netOrGrossMode === 'gross'
-                  ? 'VALOR BRUTO DE TENENCIAS'
-                  : 'PATRIMONIO NETO (PORTFOLIO VALUE)'}
+                  ? 'PORTAFOLIO FINANCIERO (NETO LEDGER TV)'
+                  : 'PORTAFOLIO FINANCIERO (LÍQUIDO)'}
               </span>
               <button
+                type="button"
                 onClick={() =>
                   setNetOrGrossMode(netOrGrossMode === 'net' ? 'gross' : 'net')
                 }
@@ -154,29 +219,33 @@ export const LeftPanel: React.FC = () => {
                   textDecoration: 'underline',
                 }}
               >
-                {netOrGrossMode === 'net' ? 'Ver Tenencias Brutas' : 'Ver Neto TV'}
+                {netOrGrossMode === 'gross'
+                  ? 'Ver Líquido (Tenencias + Cash Comitente)'
+                  : 'Alternar Neto Ledger TV'}
               </button>
             </div>
             <div
               className="mono"
               style={{
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: 700,
                 letterSpacing: '-0.02em',
                 marginTop: 2,
                 cursor: 'pointer',
               }}
               onClick={() => setRightState('portfolio')}
-              title="Haz clic para abrir el Dashboard completo del portafolio"
+              title="Haz clic para abrir el Dashboard completo del Portafolio Financiero"
             >
-              {formatMoney(displayedPatrimony, currency, fxRates)}
+              {formatMoney(activeFinancialValue, currency, fxRates)}
             </div>
           </div>
 
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>HOY (24H)</div>
+          <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              HOY (24H) · {holdings.length} POSICIONES
+            </div>
             <div className={`gf-change-row ${dayPositive ? 'pos' : 'neg'}`}>
-              <span>
+              <span className="mono">
                 {formatMoney(kpis.lastDayGain.v, currency, fxRates, { signed: true })} (
                 {formatPct(kpis.lastDayGain.p)})
               </span>
@@ -187,13 +256,13 @@ export const LeftPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Sub-resumen de Liquidez, Ganancia Total y Botones Rápidos sin límites */}
+        {/* Desglose Tenencias Brutas · Cash Comitente · Ledger TV + Botones Rápidos con flex-wrap */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: 11,
+            fontSize: 10.5,
             color: 'var(--text-secondary)',
             paddingTop: 6,
             borderTop: '1px solid var(--border-subtle)',
@@ -201,50 +270,87 @@ export const LeftPanel: React.FC = () => {
             gap: 6,
           }}
         >
-          <span className="mono">
-            Tenencias: <strong>{formatMoney(kpis.grossHoldingsValue, currency, fxRates)}</strong> ·
-            Cash: <span>{formatMoney(kpis.freeCash, currency, fxRates)}</span>
-          </span>
-          <div style={{ display: 'flex', gap: 5 }}>
+          <div
+            className="mono"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '2px 6px',
+            }}
+          >
+            <span>
+              Tenencias Brutas:{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {formatMoney(kpis.grossHoldingsValue, currency, fxRates, {
+                  decimals: 0,
+                })}
+              </strong>
+            </span>
+            <span>·</span>
+            <span
+              style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+              onClick={() => openAddModal('cash', 'brokerCash')}
+              title="Clic para ajustar el Cash Comitente líquido en el broker"
+            >
+              Cash Comitente:{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {formatMoney(nw.brokerCashUsd, currency, fxRates, { decimals: 0 })}
+              </strong>
+            </span>
+            <span>·</span>
+            <span title="Saldo contable de caja en el Ledger de TradingView">
+              Ledger TV:{' '}
+              <span>
+                {formatMoney(kpis.freeCash, currency, fxRates, { decimals: 0 })}
+              </span>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             <button
+              type="button"
               className="btn"
               style={{ padding: '3px 7px', fontSize: 11 }}
               onClick={() => openAddModal('trade')}
-              title="Agregar compra o venta sin límites"
+              title="Agregar compra o venta al Portafolio Financiero"
             >
               <Plus size={11} /> Posición
             </button>
             <button
+              type="button"
               className="btn"
               style={{ padding: '3px 7px', fontSize: 11 }}
-              onClick={() => openAddModal('cash')}
-              title="Sumar o retirar efectivo (Cash)"
+              onClick={() => openAddModal('cash', 'reserveUsd')}
+              title="Actualizar Reserva de Efectivo USD, Cash Comitente o movimiento de caja"
             >
-              <Wallet size={11} /> +Cash
+              <Wallet size={11} /> +Cash / Reserva
             </button>
             <button
+              type="button"
               className="btn"
               style={{ padding: '3px 7px', fontSize: 11 }}
               onClick={() => openAddModal('illiquid')}
-              title="Sumar activo no líquido (Inmueble, Bono, Plazo Fijo, Fondo Privado)"
+              title="Sumar activo no líquido fuera del portafolio financiero"
             >
               <Building2 size={11} /> +No Líquido
             </button>
           </div>
         </div>
 
-        {/* Filtro rápido y ordenamiento de la lista */}
+        {/* Filtro rápido y ordenamiento de las posiciones líquidas */}
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <input
             className="input"
-            style={{ flex: 1, padding: '4px 8px', fontSize: 11.5 }}
-            placeholder={`Filtrar ${holdings.length} posiciones (ej. NVDA, MU, TSM, BTC)...`}
+            style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 11.5 }}
+            placeholder={`Filtrar ${holdings.length} posiciones líquidas (ej. GOOG, NVDA, TSM, BTC)...`}
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
           />
           <button
+            type="button"
             className="btn"
-            style={{ padding: '4px 8px', fontSize: 11 }}
+            style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
             onClick={() =>
               setSortBy(
                 sortBy === 'value'
@@ -254,7 +360,7 @@ export const LeftPanel: React.FC = () => {
                   : 'value'
               )
             }
-            title="Cambiar orden de filas"
+            title="Cambiar orden de posiciones"
           >
             <ArrowUpDown size={11} />{' '}
             {sortBy === 'value' ? 'Valor' : sortBy === 'daily' ? '% Día' : 'Ticker'}
@@ -262,19 +368,38 @@ export const LeftPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. CABECERA DE LAS 5 COLUMNAS EXACTAS */}
-      <div className="lp-col-headers">
+      {/* 2. CABECERA DE COLUMNAS DEL PORTAFOLIO FINANCIERO */}
+      <div
+        className="lp-col-headers"
+        style={{
+          gridTemplateColumns: gridTemplate,
+          padding: isCompactRow ? '6px 10px' : '6px 12px',
+        }}
+      >
         <div>Posición</div>
-        <div style={{ textAlign: 'center' }}>Intradía</div>
+        {!isCompactRow && <div style={{ textAlign: 'center' }}>Intradía</div>}
         <div style={{ textAlign: 'right' }}>Precio / 24h</div>
-        <div style={{ textAlign: 'right' }}>Alloc</div>
-        <div style={{ textAlign: 'right' }}>Valor</div>
+        {!isCompactRow && <div style={{ textAlign: 'right' }}>Alloc</div>}
+        <div style={{ textAlign: 'right' }}>
+          {isCompactRow ? 'Valor / Alloc' : 'Valor'}
+        </div>
       </div>
 
-      {/* 3. LISTADO COMPACTO DE POSICIONES REALES (5 COLUMNAS EXACTAS) */}
-      <div className="lp-list">
+      {/* 3. LISTADO DE POSICIONES DEL PORTAFOLIO FINANCIERO + BLOQUE SEPARADO DE ACTIVOS NO LÍQUIDOS */}
+      <div
+        className="lp-list"
+        style={
+          isMobile
+            ? { overflow: 'visible', height: 'auto', maxHeight: 'none', flex: 'none' }
+            : undefined
+        }
+      >
         {filteredHoldings.map((h) => {
           const isUp = h.dailyGain.p >= 0;
+          const isCrypto =
+            h.assetType === 'Crypto' ||
+            h.symbol.startsWith('BINANCE:') ||
+            h.symbol.endsWith('USDT');
           const sp = sparklines[h.symbol] || {
             prevClose: h.prevClose,
             points: [h.prevClose, h.lastPrice],
@@ -287,17 +412,28 @@ export const LeftPanel: React.FC = () => {
             <div
               key={h.symbol}
               className={`lp-row ${isSelected ? 'selected' : ''}`}
+              style={{
+                gridTemplateColumns: gridTemplate,
+                padding: isCompactRow ? '8px 10px' : '7px 12px',
+              }}
               onClick={() => selectAsset(h.symbol)}
               title={`Ver análisis de ${h.name}, Fair Value y Proyección 10/20 años`}
             >
-              {/* COLUMNA 1 — Posición (Estilo Google Finance: Ticker arriba, Nombre/Sector abajo) */}
+              {/* COLUMNA 1 — Posición: Fila 1 = Ticker + badge AssetType (+ alloc% en móvil). Fila 2 = MarketClock + Nombre */}
               <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flexWrap: 'nowrap',
+                  }}
+                >
                   <span
                     className="mono"
                     style={{
                       fontWeight: 700,
-                      fontSize: 11.5,
+                      fontSize: 12,
                       color: 'var(--text-primary)',
                       letterSpacing: '-0.01em',
                     }}
@@ -306,132 +442,311 @@ export const LeftPanel: React.FC = () => {
                   </span>
                   <span
                     style={{
-                      fontSize: 9.5,
+                      fontSize: 9,
                       padding: '1px 4px',
                       borderRadius: 3,
                       background: 'var(--bg-elevated)',
                       color: 'var(--text-muted)',
+                      flexShrink: 0,
                     }}
                   >
                     {h.assetType}
                   </span>
+                  {isCompactRow && (
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: 9,
+                        color: 'var(--accent-cyan)',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {h.allocation.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
+
                 <div
                   style={{
-                    fontSize: 10,
-                    color: 'var(--text-secondary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    lineHeight: 1.2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    marginTop: 2,
+                    minWidth: 0,
                   }}
                   title={`${h.name} (${h.sector})`}
                 >
-                  {h.name}
-                </div>
-              </div>
-
-              {/* COLUMNA 2 — Mini-Gráfico de Evolución Diaria (Sparkline Vectorial Estilo Google Finance) */}
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <Sparkline
-                  points={sp.points}
-                  prevClose={sp.prevClose}
-                  isPositive={isUp}
-                  width={52}
-                  height={18}
-                />
-              </div>
-
-              {/* COLUMNA 3 — Precio y Variación Diaria Apilados + Icono Circular ↑/↓ (Estilo Google Finance) */}
-              <div style={{ textAlign: 'right', minWidth: 0, overflow: 'hidden' }}>
-                <div
-                  className="mono"
-                  style={{
-                    fontWeight: 600,
-                    fontSize: 11.5,
-                    color: 'var(--text-primary)',
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {formatNumber(h.lastPrice, 2)}
-                </div>
-                <div className={`gf-change-row ${isUp ? 'pos' : 'neg'}`}>
-                  <span className="mono" style={{ fontSize: 9.5 }}>{formatPct(h.dailyGain.p)}</span>
-                  <span className={`gf-arrow-circle ${isUp ? 'up' : 'down'}`}>
-                    {isUp ? '↑' : '↓'}
+                  <MarketClock
+                    marketState={h.marketState}
+                    isCrypto={isCrypto}
+                    assetType={h.assetType}
+                    symbol={h.symbol}
+                    size={12}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {h.name}
                   </span>
                 </div>
               </div>
 
-              {/* COLUMNA 4 — Allocation (%) */}
-              <div
-                className="mono"
-                style={{
-                  textAlign: 'right',
-                  fontWeight: 600,
-                  fontSize: 11,
-                  color: 'var(--text-primary)',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                {h.allocation.toFixed(1)}%
-              </div>
+              {/* COLUMNA 2 — Intradía (Sparkline en pantallas >440px) */}
+              {!isCompactRow && (
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <Sparkline
+                    points={sp.points}
+                    prevClose={sp.prevClose}
+                    isPositive={isUp}
+                    width={42}
+                    height={18}
+                  />
+                </div>
+              )}
 
-              {/* COLUMNA 5 — Value (Valor Total de la Posición + P&L latente debajo) */}
-              <div style={{ textAlign: 'right', minWidth: 0, paddingRight: 2 }}>
+              {/* COLUMNA 3 — Precio / 24h + Posmercado con Luna estilo Investing */}
+              <PriceSessionCell holding={h} align="right" />
+
+              {/* COLUMNA 4 — Allocation (%) en pantallas >440px */}
+              {!isCompactRow && (
                 <div
                   className="mono"
                   style={{
+                    textAlign: 'right',
                     fontWeight: 600,
+                    fontSize: 10.5,
+                    color: 'var(--text-primary)',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {h.allocation.toFixed(1)}%
+                </div>
+              )}
+
+              {/* COLUMNA 5 — Valor de la posición + P&L % acumulado (y Alloc % en móvil) */}
+              <div style={{ textAlign: 'right', minWidth: 0 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontWeight: 700,
                     fontSize: 11.5,
                     color: 'var(--text-primary)',
                     letterSpacing: '-0.02em',
                     lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {formatMoney(h.value, currency, fxRates, { decimals: 0 })}
                 </div>
                 <div
                   className={`mono ${h.unrealizedGain.v >= 0 ? 'pos' : 'neg'}`}
-                  style={{ fontSize: 9.5, fontWeight: 600, marginTop: 1 }}
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 600,
+                    marginTop: 1,
+                    whiteSpace: 'nowrap',
+                  }}
                 >
                   {formatPct(h.unrealizedGain.p)}
                 </div>
+                {isCompactRow && (
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 9,
+                      color: 'var(--text-muted)',
+                      marginTop: 0.5,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Alloc {h.allocation.toFixed(1)}%
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
 
-        {/* Filas adicionales de Activos No Líquidos si el usuario cargó alguno */}
-        {(portfolio.illiquid || []).map((ill) => (
+        {/* 4. SECCIÓN SEPARADA: ACTIVOS NO LÍQUIDOS / FUERA DEL PORTAFOLIO FINANCIERO */}
+        <div
+          style={{
+            margin: '12px 10px 16px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-elevated)',
+            overflow: 'hidden',
+          }}
+        >
           <div
-            key={ill.id}
-            className="lp-row"
-            onClick={() => setRightState('portfolio')}
+            style={{
+              padding: '9px 12px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 6,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Landmark size={13} color="var(--accent-amber)" />
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: 'var(--accent-amber)',
+                }}
+              >
+                ACTIVOS NO LÍQUIDOS / FUERA DEL PORTAFOLIO FINANCIERO
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: '3px 8px', fontSize: 10.5 }}
+              onClick={() => openAddModal('illiquid')}
+            >
+              <Plus size={11} /> Sumar Activo No Líquido
+            </button>
+          </div>
+
+          {illiquidAssets.length === 0 ? (
+            <div
+              style={{
+                padding: '10px 12px',
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 6,
+              }}
+            >
+              <span>
+                Sin activos ilíquidos registrados (inmuebles, fondos privados, plazos fijos).
+              </span>
+              <span className="mono" style={{ fontWeight: 600 }}>
+                {formatMoney(0, currency, fxRates, { decimals: 0 })}
+              </span>
+            </div>
+          ) : (
+            <div>
+              {illiquidAssets.map((ill) => {
+                const gainUsd = (ill.currentValue || 0) - (ill.costBasis || 0);
+                const gainPct =
+                  ill.costBasis > 0 ? (gainUsd / ill.costBasis) * 100 : 0;
+                return (
+                  <div
+                    key={ill.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      borderBottom: '1px solid var(--border-subtle)',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 12,
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {ill.name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        {ill.category} · Costo: $
+                        {formatNumber(ill.costBasis, 0)} USD · Renta est.{' '}
+                        {ill.annualYieldPct}% anual
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div
+                        className="mono"
+                        style={{ fontWeight: 700, fontSize: 12 }}
+                      >
+                        {formatMoney(ill.currentValue, currency, fxRates, {
+                          decimals: 0,
+                        })}
+                      </div>
+                      <div
+                        className={`mono ${gainUsd >= 0 ? 'pos' : 'neg'}`}
+                        style={{ fontSize: 9.5, fontWeight: 600 }}
+                      >
+                        {formatPct(gainPct)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Barra inferior de cierre: PATRIMONIO NETO TOTAL (NW Líquido + No Líquidos) */}
+          <div
+            style={{
+              padding: '9px 12px',
+              background: 'rgba(56, 189, 248, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 6,
+            }}
           >
             <div>
-              <div className="mono" style={{ fontWeight: 700, fontSize: 12.5 }}>
-                {ill.name}
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.03em',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                PATRIMONIO NETO TOTAL (NW Líquido + No Líquidos)
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {ill.category} · No Líquido ({ill.annualYieldPct}% TIR)
+              <div
+                className="mono"
+                style={{ fontSize: 10, color: 'var(--text-secondary)' }}
+              >
+                NW Líquido{' '}
+                {formatMoney(nw.nwLiquidUsd, currency, fxRates, { decimals: 0 })}{' '}
+                + No Líquidos{' '}
+                {formatMoney(illiquidTotalUsd, currency, fxRates, { decimals: 0 })}
               </div>
             </div>
-            <div style={{ textAlign: 'center', fontSize: 10.5, color: 'var(--accent-amber)' }}>
-              ILÍQUIDO
-            </div>
-            <div className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>
-              {formatNumber(ill.currentValue, 0)}
-            </div>
-            <div className="mono" style={{ textAlign: 'right' }}>
-              {((ill.currentValue / (kpis.totalGrossPatrimony || 1)) * 100).toFixed(2)}%
-            </div>
-            <div className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>
-              {formatMoney(ill.currentValue, currency, fxRates)}
+            <div
+              className="mono"
+              style={{
+                fontSize: 15,
+                fontWeight: 800,
+                color: 'var(--accent-cyan)',
+              }}
+            >
+              {formatMoney(nw.nwTotalUsd, currency, fxRates)}
             </div>
           </div>
-        ))}
+        </div>
       </div>
     </aside>
   );

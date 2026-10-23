@@ -1,5 +1,6 @@
 export type AssetType = 'Stock' | 'Dr' | 'Crypto' | 'ETF' | 'Index' | 'Cash' | 'Illiquid';
 export type CurrencyCode = 'USD' | 'ARS' | 'EUR';
+export type MarketState = 'open' | 'pre' | 'post' | 'closed';
 
 export interface Trade {
   id: string | number;
@@ -88,6 +89,13 @@ export interface QuoteData {
   name?: string;
   marketCap?: number;
   updatedAt?: number;
+  marketState?: MarketState;
+  regularMarketTime?: number;
+  extPrice?: number;
+  extChange?: number;
+  extChangePct?: number;
+  extTime?: number;
+  extSession?: 'pre' | 'post';
 }
 
 export interface ComputedHolding {
@@ -111,6 +119,14 @@ export interface ComputedHolding {
   totalGain: { v: number; p: number };
   annualizedYield: number;
   firstBuyTime: number;
+  marketState?: MarketState;
+  regularMarketTime?: number;
+  extPrice?: number;
+  extChange?: number;
+  extChangePct?: number;
+  extTime?: number;
+  extSession?: 'pre' | 'post';
+  dailyChangeAbs?: number;
 }
 
 export interface DailyPoint {
@@ -234,4 +250,52 @@ export interface ProjectionResult {
   points: ProjectionYearPoint[];
   summary10Y: ProjectionYearPoint;
   summary20Y: ProjectionYearPoint;
+}
+
+export interface ArgFxQuote {
+  compra: number;
+  venta: number;
+  updatedAt?: string;
+}
+
+export interface ArgFxResponse {
+  ccl: ArgFxQuote;
+  mep: ArgFxQuote;
+  cclRate: number;
+  mepRate: number;
+  source: 'dolarapi' | 'criptoya' | 'fallback';
+  fetchedAt: number;
+}
+
+export interface NwSettings {
+  brokerCashUsd: number;
+  cashReserveUsd: number;
+  includeCryptoInCcl: boolean;
+  cclOverride: number | null;
+  mepOverride: number | null;
+  cclBaseOverride: number | null;
+  sellCommPct: number;
+  mepBuyCommPct: number;
+  mepSellCommPct: number;
+  fxDiffOverride: number | null;
+}
+
+export interface NwComputedResult {
+  grossHoldingsUsd: number;
+  brokerCashUsd: number;
+  financialPortfolioLiquidUsd: number;
+  cclBaseAutoUsd: number;
+  cclBaseUsd: number;
+  cclRate: number;
+  mepRate: number;
+  gapPct: number;
+  commissionFactor: number;
+  totalCommPct: number;
+  usdMepObtained: number;
+  fxDiffAutoUsd: number;
+  fxDiffUsd: number;
+  cashReserveUsd: number;
+  nwLiquidUsd: number;
+  illiquidTotalUsd: number;
+  nwTotalUsd: number;
 }

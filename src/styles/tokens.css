@@ -17,7 +17,11 @@
   --neg-primary: #F43F5E;
   --neg-bright: #F87171;
   --neg-bg: rgba(244, 63, 94, 0.14);
+  --post-moon: #60A5FA;
+  --clock-open: #10B981;
+  --clock-closed: #EF4444;
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 [data-theme="light"] {
@@ -39,5 +43,9 @@
   --neg-primary: #E11D48;
   --neg-bright: #F43F5E;
   --neg-bg: rgba(244, 63, 94, 0.12);
+  --post-moon: #2563EB;
+  --clock-open: #059669;
+  --clock-closed: #DC2626;
   --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
