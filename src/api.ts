@@ -32,6 +32,7 @@ export type { ArgFxResponse };
 
 export interface PortfolioEvaluationResponse {
   portfolio: Portfolio;
+  quotes?: Record<string, QuoteData>;
   kpis: PortfolioKPIs;
   holdings: ComputedHolding[];
   closedHoldings: ComputedHolding[];
@@ -295,12 +296,10 @@ function patchCryptoInEvaluation(
     sparklines: patchedSparklines,
     kpis: {
       ...evalResult.kpis,
-      totalGrossPatrimony: totalValue + (evalResult.kpis.totalGrossPatrimony - evalResult.holdings.reduce((s, h) => s + h.value, 0)),
-      holdingsValue: totalValue,
-      unrealizedGainLoss: totalUnrealized,
-      unrealizedGainLossPct: totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0,
-      dailyChange: totalDaily,
-      dailyChangePct: totalValue > 0 ? (totalDaily / (totalValue - totalDaily)) * 100 : 0,
+      grossHoldingsValue: totalValue,
+      totalGrossPatrimony: totalValue + (evalResult.kpis.totalGrossPatrimony - evalResult.kpis.grossHoldingsValue),
+      unrealizedGain: { v: totalUnrealized, p: totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0 },
+      lastDayGain: { v: totalDaily, p: totalValue > 0 ? (totalDaily / (totalValue - totalDaily)) * 100 : 0 },
     },
   };
 }
