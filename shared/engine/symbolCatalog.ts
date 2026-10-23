@@ -83,9 +83,15 @@ export const TRADINGVIEW_CATALOG: CatalogSymbolEntry[] = [
   { symbol: 'BINANCE:FETUSDT', ticker: 'FETUSDT', name: 'Artificial Superintelligence / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'FET-USD', refPrice: 1.35 },
   { symbol: 'BINANCE:PEPEUSDT', ticker: 'PEPEUSDT', name: 'Pepe / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'PEPE24478-USD', refPrice: 0.000012 },
   { symbol: 'BINANCE:POLUSDT', ticker: 'POLUSDT', name: 'Polygon / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'POL28321-USD', refPrice: 0.45 },
-  { symbol: 'BINANCE:UNIUSD', ticker: 'UNIUSDT', name: 'Uniswap / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'UNI7083-USD', refPrice: 9.8 },
+  { symbol: 'BINANCE:UNIUSDT', ticker: 'UNIUSDT', name: 'Uniswap / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'UNI7083-USD', refPrice: 9.8 },
   { symbol: 'BINANCE:LTCUSDT', ticker: 'LTCUSDT', name: 'Litecoin / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'LTC-USD', refPrice: 95.0 },
   { symbol: 'BINANCE:AAVEUSDT', ticker: 'AAVEUSDT', name: 'Aave / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'AAVE-USD', refPrice: 245.0 },
+
+  // Stablecoins (pegged ~$1.00)
+  { symbol: 'BINANCE:USDTUSDT', ticker: 'USDTUSDT', name: 'Tether USD (Stablecoin)', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'USDT-USD', refPrice: 1.00 },
+  { symbol: 'BINANCE:USDCUSDT', ticker: 'USDCUSDT', name: 'USD Coin (Stablecoin)', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'USDC-USD', refPrice: 1.00 },
+  { symbol: 'BINANCE:DAIUSDT', ticker: 'DAIUSDT', name: 'Dai (Stablecoin)', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'DAI-USD', refPrice: 1.00 },
+  { symbol: 'BINANCE:BUSDUSDT', ticker: 'BUSDUSDT', name: 'Binance USD (Stablecoin)', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BUSD-USD', refPrice: 1.00 },
 
   // Major US Tech & Growth (NASDAQ / NYSE)
   { symbol: 'NASDAQ:TSLA', ticker: 'TSLA', name: 'Tesla, Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Consumer Cyclical', yahoo: 'TSLA', refPrice: 295.0 },
@@ -216,6 +222,10 @@ const SHORT_CRYPTO_ALIAS: Record<string, string> = {
   PEPE: 'BINANCE:PEPEUSDT',
   LTC: 'BINANCE:LTCUSDT',
   AAVE: 'BINANCE:AAVEUSDT',
+  USDT: 'BINANCE:USDTUSDT',
+  USDC: 'BINANCE:USDCUSDT',
+  DAI: 'BINANCE:DAIUSDT',
+  BUSD: 'BINANCE:BUSDUSDT',
 };
 
 /**

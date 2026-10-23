@@ -83,6 +83,16 @@ describe('normalizeTradingViewSymbol – typo correction & alias', () => {
   it('NYQ (Yahoo) → NYSE', () => {
     expect(normalizeTradingViewSymbol('NYQ:TSM')).toBe('NYSE:TSM');
   });
+  // Stablecoin aliases
+  it('resolves bare USDT → BINANCE:USDTUSDT', () => {
+    expect(normalizeTradingViewSymbol('USDT')).toBe('BINANCE:USDTUSDT');
+  });
+  it('resolves bare USDC → BINANCE:USDCUSDT', () => {
+    expect(normalizeTradingViewSymbol('USDC')).toBe('BINANCE:USDCUSDT');
+  });
+  it('handles BINANCE:USDTUSDT correctly', () => {
+    expect(normalizeTradingViewSymbol('BINANCE:USDTUSDT')).toBe('BINANCE:USDTUSDT');
+  });
 });
 
 /* ═══════════════════════════════════════════════════

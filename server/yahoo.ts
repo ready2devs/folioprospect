@@ -203,10 +203,36 @@ export async function fetchQuotesWithSparklines(
     const cryptoSyms = missing.filter((s) => s.startsWith('BINANCE:') || s.endsWith('USDT'));
     const stockSyms = missing.filter((s) => !s.startsWith('BINANCE:') && !s.endsWith('USDT'));
 
+    // Stablecoins pegged to $1.00 — no API call needed (USDTUSDT, USDCUSDT, BUSDUSDT, DAIUSDT)
+    const STABLECOIN_TICKERS = new Set(['USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'DAIUSDT', 'TUSDUSDT', 'FDUSDUSDT']);
+
     // Fetch Binance crypto 24/7 real-time
     await Promise.all(
       cryptoSyms.map(async (sym) => {
         const pair = sym.includes(':') ? sym.split(':')[1] : sym;
+
+        // Handle stablecoins: they're always ~$1.00, no API call needed
+        if (STABLECOIN_TICKERS.has(pair.toUpperCase())) {
+          const stablePrice = 1.00;
+          const qData: QuoteData = {
+            symbol: sym,
+            price: stablePrice,
+            prevClose: stablePrice,
+            change: 0,
+            changePct: 0,
+            currency: 'USD',
+            name: pair.replace('USDT', '') + ' (Stablecoin)',
+            updatedAt: now,
+            marketState: 'open',
+          };
+          quoteCache.set(sym, { value: qData, expiresAt: now + 120000 }); // 2 min cache
+          quotes[sym] = qData;
+          const pts = Array(36).fill(stablePrice);
+          sparkCache.set(sym, { value: { prevClose: stablePrice, points: pts }, expiresAt: now + 300000 });
+          sparklines[sym] = { prevClose: stablePrice, points: pts };
+          return;
+        }
+
         try {
           const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`, {
             signal: AbortSignal.timeout(3500),
@@ -228,12 +254,12 @@ export async function fetchQuotesWithSparklines(
               updatedAt: now,
               marketState: 'open',
             };
-            quoteCache.set(sym, { value: qData, expiresAt: now + 10000 });
+            quoteCache.set(sym, { value: qData, expiresAt: now + 25000 }); // 25s cache to reduce flicker with 15s polling
             quotes[sym] = qData;
 
             const pts = buildSyntheticSparkline(sym, prevClose, price, 36);
             const spVal = { prevClose, points: pts };
-            sparkCache.set(sym, { value: spVal, expiresAt: now + 30000 });
+            sparkCache.set(sym, { value: spVal, expiresAt: now + 60000 }); // 1 min sparkline cache
             sparklines[sym] = spVal;
           }
         } catch {

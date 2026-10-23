@@ -93,7 +93,9 @@ const HybridDatePicker: React.FC<HybridDatePickerProps> = ({
 }) => {
   const [textVal, setTextVal] = useState(() => isoToDisplayDate(valueIso));
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const nativeDateRef = useRef<HTMLInputElement>(null);
+  const calBtnRef = useRef<HTMLButtonElement>(null);
 
   const parsedYearMonth = useMemo(() => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valueIso);
@@ -169,9 +171,22 @@ const HybridDatePicker: React.FC<HybridDatePickerProps> = ({
           style={{ flex: 1, minWidth: 0 }}
         />
         <button
+          ref={calBtnRef}
           type="button"
           className={`btn ${pickerOpen ? 'btn-primary' : ''}`}
-          onClick={() => setPickerOpen((v) => !v)}
+          onClick={() => {
+            if (!pickerOpen && calBtnRef.current) {
+              const rect = calBtnRef.current.getBoundingClientRect();
+              const calW = Math.min(290, window.innerWidth * 0.92);
+              let left = rect.right - calW;
+              if (left < 4) left = 4;
+              let top = rect.bottom + 4;
+              if (top + 340 > window.innerHeight) top = rect.top - 340;
+              if (top < 4) top = 4;
+              setPopoverPos({ top, left });
+            }
+            setPickerOpen((v) => !v);
+          }}
           title="Abrir calendario interactivo (Móvil / PC)"
           style={{ padding: '7px 10px', flexShrink: 0 }}
         >
@@ -225,7 +240,16 @@ const HybridDatePicker: React.FC<HybridDatePickerProps> = ({
 
       {/* Mini Date-Picker Custom Desplegable */}
       {pickerOpen && (
-        <div className="tv-calendar-popover" onClick={(e) => e.stopPropagation()}>
+        <>
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+          onClick={() => setPickerOpen(false)}
+        />
+        <div
+          className="tv-calendar-popover"
+          onClick={(e) => e.stopPropagation()}
+          style={popoverPos ? { top: popoverPos.top, left: popoverPos.left } : undefined}
+        >
           <div className="tv-calendar-header">
             <button
               type="button"
@@ -358,6 +382,7 @@ const HybridDatePicker: React.FC<HybridDatePickerProps> = ({
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   );

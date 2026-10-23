@@ -530,7 +530,7 @@ html, body, #root {
   z-index: 100;
 }
 .modal-card {
-  width: 560px;
+  width: 620px;
   max-width: 94vw;
   max-height: 88vh;
   overflow-y: auto;
@@ -983,11 +983,9 @@ html, body, #root {
 }
 
 .tv-calendar-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   width: min(290px, 92vw);
-  z-index: 130;
+  z-index: 200;
   background: var(--bg-surface);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
