@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-registerRoutes(app);
+await registerRoutes(app);
 
 const PORT = Number(process.env.PORT || 5174);
 app.listen(PORT, '127.0.0.1', () => {

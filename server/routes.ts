@@ -2,6 +2,8 @@ import type { Express, Request, Response } from 'express';
 import {
   initDatabase,
   saveDatabase,
+  hydrateDatabase,
+  kvConfigured,
   loadSeedHistory,
   loadSeedCalendar,
   loadTvReference,
@@ -34,8 +36,12 @@ import type {
   Trade,
 } from '../shared/engine/types.js';
 
-export function registerRoutes(app: Express): void {
+export async function registerRoutes(app: Express): Promise<void> {
+  // On Vercel, hydrate the durable database from KV before serving requests;
+  // if KV is empty (first run), prime it with the locally built database.
+  const hydrated = await hydrateDatabase();
   const db = initDatabase();
+  if (!hydrated && kvConfigured()) saveDatabase(db);
   const seedHistory = loadSeedHistory();
   const seedCalendar = loadSeedCalendar();
   const tvReference = loadTvReference();

@@ -6,6 +6,68 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SEED_DIR = path.join(DATA_DIR, 'seed');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 
+// ---------------------------------------------------------------------------
+// Durable persistence via Upstash Redis (Vercel Marketplace integration).
+// When KV env vars are present (production on Vercel), the database JSON is
+// stored in Redis under a single key and becomes the source of truth, so it
+// survives serverless cold starts. Without env vars (local dev), behavior is
+// unchanged: data/db.json on disk with a /tmp fallback.
+// ---------------------------------------------------------------------------
+const KV_KEY = 'folioprospect:db';
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+
+export function kvConfigured(): boolean {
+  return Boolean(KV_URL && KV_TOKEN);
+}
+
+let hydratedDb: DatabaseSchema | null = null;
+
+async function kvGetDb(): Promise<DatabaseSchema | null> {
+  if (!kvConfigured()) return null;
+  try {
+    const res = await fetch(`${KV_URL}/get/${encodeURIComponent(KV_KEY)}`, {
+      headers: { Authorization: `Bearer ${KV_TOKEN}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    if (!data?.result) return null;
+    const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+    if (parsed && Array.isArray(parsed.portfolios)) return parsed as DatabaseSchema;
+  } catch {
+    // KV unreachable: fall back to local sources
+  }
+  return null;
+}
+
+async function kvSetDb(db: DatabaseSchema): Promise<void> {
+  if (!kvConfigured()) return;
+  try {
+    await fetch(`${KV_URL}/set/${encodeURIComponent(KV_KEY)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KV_TOKEN}` },
+      body: JSON.stringify(db),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // best effort: local /tmp copy was already written synchronously
+  }
+}
+
+/**
+ * Load the durable database from KV before routes are registered.
+ * Returns true when KV held a database (which then becomes authoritative).
+ */
+export async function hydrateDatabase(): Promise<boolean> {
+  const remote = await kvGetDb();
+  if (remote) {
+    hydratedDb = remote;
+    return true;
+  }
+  return false;
+}
+
 export interface DatabaseSchema {
   portfolios: Portfolio[];
   assetMeta: Record<string, AssetMeta>;
@@ -33,6 +95,7 @@ export function loadTvReference(): any {
 }
 
 export function initDatabase(): DatabaseSchema {
+  if (hydratedDb) return hydratedDb;
   const vercelTmp = path.join('/tmp', 'folioprospect-db.json');
   if (fs.existsSync(vercelTmp)) {
     try {
@@ -87,6 +150,9 @@ export function initDatabase(): DatabaseSchema {
 
 export function saveDatabase(db: DatabaseSchema): void {
   db.updatedAt = new Date().toISOString();
+  hydratedDb = db;
+  // Durable write (fire-and-forget; local copies below stay synchronous)
+  void kvSetDb(db);
   try {
     const tmp = DB_PATH + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
