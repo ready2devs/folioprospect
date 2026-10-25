@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
+import { BrandMark } from '@/components/ui/BrandMark';
 
 export const TopBar: React.FC = () => {
   const {
@@ -47,9 +48,10 @@ export const TopBar: React.FC = () => {
           title="Ir a Inicio / Mercado (Estado 1)"
           style={{ flexShrink: 0 }}
         >
-          <div className="brand-mark">FP</div>
-          <span className="brand-title">FolioProspect</span>
-          <span className="brand-badge">QUANT</span>
+          <BrandMark size={28} />
+          <span className="brand-title">
+            Folio<span style={{ color: '#10B981' }}>Prospect</span>
+          </span>
         </div>
 
         {/* Conmutador rápido de los 3 estados del Panel Derecho */}

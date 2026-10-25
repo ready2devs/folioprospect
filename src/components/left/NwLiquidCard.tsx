@@ -16,6 +16,95 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
+/* Arte conceptual de fondo (no son datos): la línea verde de la cartera
+   nace en la esquina inferior izquierda y muere en la superior derecha,
+   con picos y valles y trazo cónico como el logo A2; debajo, la línea
+   azul del índice, más fina. Entre ambas, una banda verde con degradado;
+   bajo la azul, un área celeste con degradado. Todo semitransparente. */
+const NW_GREEN_PTS: Array<[number, number]> = [
+  [0, 220], [52, 178], [86, 191], [138, 137], [176, 153],
+  [234, 96], [266, 110], [324, 52], [404, -2],
+];
+const NW_BLUE_PTS: Array<[number, number]> = [
+  [0, 220], [60, 196], [96, 204], [160, 178], [202, 186],
+  [276, 158], [310, 166], [404, 113],
+];
+
+const nwPathFrom = (pts: Array<[number, number]>) =>
+  pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+
+/* Cinta continua de ancho progresivo (como las maquetas): polígono
+   calculado por desplazamiento perpendicular en cada vértice.
+   Nada de segmentos sueltos: así no aparecen "puntos" en las uniones. */
+const nwRibbon = (pts: Array<[number, number]>, w0: number, w1: number) => {
+  const n = pts.length;
+  const left: Array<[number, number]> = [];
+  const right: Array<[number, number]> = [];
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pts[i];
+    const pPrev = pts[Math.max(0, i - 1)];
+    const pNext = pts[Math.min(n - 1, i + 1)];
+    let dx = pNext[0] - pPrev[0];
+    let dy = pNext[1] - pPrev[1];
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    const hw = (w0 + (w1 - w0) * (i / (n - 1))) / 2;
+    left.push([x - dy * hw, y + dx * hw]);
+    right.push([x + dy * hw, y - dx * hw]);
+  }
+  const poly = [...left, ...right.reverse()];
+  return (
+    poly.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') +
+    ' Z'
+  );
+};
+
+const NwConceptArt: React.FC = () => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    viewBox="0 0 400 218"
+    preserveAspectRatio="none"
+    style={{
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+    }}
+  >
+    <defs>
+      <linearGradient id="nwGradArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#38BDF8" style={{ stopOpacity: 'var(--nw-area-top)' }} />
+        <stop offset="1" stopColor="#7DD3FC" style={{ stopOpacity: 'var(--nw-area-bot)' }} />
+      </linearGradient>
+      <linearGradient id="nwGradBand" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#10B981" style={{ stopOpacity: 'var(--nw-band-top)' }} />
+        <stop offset="1" stopColor="#6EE7B7" style={{ stopOpacity: 'var(--nw-band-bot)' }} />
+      </linearGradient>
+    </defs>
+    <path d={`${nwPathFrom(NW_BLUE_PTS)} L404,218 L0,218 Z`} fill="url(#nwGradArea)" />
+    <path
+      d={`${nwPathFrom(NW_GREEN_PTS)} ${[...NW_BLUE_PTS]
+        .reverse()
+        .map((p) => `L${p[0]},${p[1]}`)
+        .join(' ')} Z`}
+      fill="url(#nwGradBand)"
+    />
+    <path
+      d={nwRibbon(NW_BLUE_PTS, 0.7, 4.4)}
+      fill="var(--nw-line-blue)"
+      fillOpacity="var(--nw-line-blue-opacity)"
+    />
+    <path
+      d={nwRibbon(NW_GREEN_PTS, 1, 10.5)}
+      fill="#10B981"
+      fillOpacity="var(--nw-line-green-opacity)"
+    />
+  </svg>
+);
+
 export const NwLiquidCard: React.FC = () => {
   const {
     evaluation,
@@ -73,16 +162,18 @@ export const NwLiquidCard: React.FC = () => {
   return (
     <div
       style={{
+        position: 'relative',
         width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box',
         overflow: 'hidden',
-        padding: '10px 12px',
-        background:
-          'linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, rgba(15, 23, 42, 0.4) 100%)',
+        padding: '14px 16px 12px',
+        background: 'var(--nw-bg)',
         borderBottom: '1px solid var(--border-subtle)',
       }}
     >
+      <NwConceptArt />
+      <div style={{ position: 'relative', zIndex: 1 }}>
       {/* Cabecera minimalista de NW LÍQUIDO */}
       <div
         style={{
@@ -113,11 +204,11 @@ export const NwLiquidCard: React.FC = () => {
           <div
             className="mono"
             style={{
-              fontSize: 21,
+              fontSize: 26,
               fontWeight: 800,
               letterSpacing: '-0.025em',
               color: 'var(--text-primary)',
-              marginTop: 1,
+              marginTop: 2,
               lineHeight: 1.2,
             }}
           >
@@ -125,23 +216,76 @@ export const NwLiquidCard: React.FC = () => {
           </div>
         </div>
 
-        {/* Botón minimalista fx Fórmula / Ajustar */}
+      </div>
+
+      {/* Desglose: Portafolio Fin. · Reserva · Dif. Cambio
+          (el NW Líquido es la suma de los tres; sin signos +) */}
+      <div
+        className="mono"
+        style={{
+          marginTop: 10,
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '3px 12px',
+          fontSize: 10.5,
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <span>
+          Portafolio Fin.{' '}
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {fmtUsdCompact(nw.financialPortfolioLiquidUsd)}
+          </strong>
+        </span>
+        <span
+          style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+          onClick={() => openAddModal('cash', 'reserveUsd')}
+          title="Clic para ajustar Reserva de Efectivo USD"
+        >
+          Reserva{' '}
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {fmtUsdCompact(nw.cashReserveUsd)}
+          </strong>
+        </span>
+        <span
+          style={{ cursor: 'pointer' }}
+          onClick={() => setExpanded((v) => !v)}
+          title={`CCL $${formatNumber(nw.cclRate, 0)} · MEP $${formatNumber(nw.mepRate, 0)} (${formatPct(nw.gapPct, true, 1)})`}
+        >
+          Dif. Cambio{' '}
+          <strong className={fxDiffPositive ? 'pos' : 'neg'}>
+            {fmtUsdCompact(nw.fxDiffUsd)}
+          </strong>
+        </span>
+      </div>
+
+      {/* Fila inferior: CCL · MEP a la izquierda, fx discreto a la derecha */}
+      <div
+        style={{
+          marginTop: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+        }}
+      >
+        <span className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+          CCL ${formatNumber(nw.cclRate, 0)} · MEP ${formatNumber(nw.mepRate, 0)}
+        </span>
+
         <button
           type="button"
           className="btn"
           onClick={() => setExpanded((v) => !v)}
           style={{
-            padding: '4px 9px',
+            padding: '3px 9px',
             fontSize: 10.5,
-            fontWeight: 700,
-            borderRadius: 6,
-            borderColor: expanded
-              ? 'var(--accent-cyan)'
-              : 'rgba(16, 185, 129, 0.35)',
-            background: expanded
-              ? 'rgba(56, 189, 248, 0.14)'
-              : 'rgba(16, 185, 129, 0.1)',
-            color: expanded ? 'var(--accent-cyan)' : '#10B981',
+            fontWeight: 600,
+            borderRadius: 999,
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--nw-bg)',
+            color: expanded ? 'var(--accent-cyan)' : 'var(--text-muted)',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 5,
@@ -149,71 +293,12 @@ export const NwLiquidCard: React.FC = () => {
           }}
           title="Desplegar editor de fórmula fx de Diferencia de Cambio CCL/MEP, Reserva USD y nomenclatura"
         >
-          <span
-            className="mono"
-            style={{
-              fontStyle: 'italic',
-              fontWeight: 800,
-              padding: '0 3px',
-              borderRadius: 3,
-              background: 'rgba(0,0,0,0.25)',
-            }}
-          >
+          <span className="mono" style={{ fontStyle: 'italic', fontWeight: 800 }}>
             fx
           </span>
           <span>Fórmula / Ajustar</span>
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
-      </div>
-
-      {/* Una sola línea limpia de desglose en estado colapsado */}
-      <div
-        className="mono"
-        style={{
-          marginTop: 5,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '3px 8px',
-          fontSize: 10.5,
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5 }}>
-          <span>
-            Portafolio Fin.{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {fmtUsdCompact(nw.financialPortfolioLiquidUsd)}
-            </strong>
-          </span>
-          <span>+</span>
-          <span
-            style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-            onClick={() => openAddModal('cash', 'reserveUsd')}
-            title="Clic para ajustar Reserva de Efectivo USD"
-          >
-            Reserva{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {fmtUsdCompact(nw.cashReserveUsd)}
-            </strong>
-          </span>
-          <span>+</span>
-          <span
-            style={{ cursor: 'pointer' }}
-            onClick={() => setExpanded((v) => !v)}
-            title={`CCL $${formatNumber(nw.cclRate, 0)} · MEP $${formatNumber(nw.mepRate, 0)} (${formatPct(nw.gapPct, true, 1)})`}
-          >
-            Dif. Cambio{' '}
-            <strong className={fxDiffPositive ? 'pos' : 'neg'}>
-              {fmtUsdCompact(nw.fxDiffUsd, true)}
-            </strong>
-          </span>
-        </div>
-
-        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-          CCL ${formatNumber(nw.cclRate, 0)} · MEP ${formatNumber(nw.mepRate, 0)}
-        </span>
       </div>
 
       {/* Panel desplegable: Editor de Fórmula Matemática fx + Parámetros CCL/MEP + Nomenclatura */}
@@ -910,6 +995,7 @@ export const NwLiquidCard: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

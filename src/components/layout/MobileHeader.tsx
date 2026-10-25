@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from '@/store';
 import type { CurrencyCode } from '@shared/engine/types';
 import { Search, Sun, Moon, RefreshCw } from 'lucide-react';
+import { BrandMark } from '@/components/ui/BrandMark';
 
 export const MobileHeader: React.FC = () => {
   const {
@@ -30,12 +31,7 @@ export const MobileHeader: React.FC = () => {
         title="Ver Cartera y Posiciones"
         style={{ gap: 6, minWidth: 0, flexShrink: 0 }}
       >
-        <div
-          className="brand-mark"
-          style={{ width: 24, height: 24, fontSize: 11.5, borderRadius: 6, flexShrink: 0 }}
-        >
-          FP
-        </div>
+        <BrandMark size={24} />
         <span
           className="brand-title"
           style={{
@@ -43,7 +39,7 @@ export const MobileHeader: React.FC = () => {
             whiteSpace: 'nowrap',
           }}
         >
-          FolioProspect
+          Folio<span style={{ color: '#10B981' }}>Prospect</span>
         </span>
       </div>
 

@@ -22,6 +22,15 @@
   --clock-closed: #EF4444;
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Tarjeta NW Líquido: fondo plano + arte conceptual en capas */
+  --nw-bg: #0C1F18;
+  --nw-line-green-opacity: 0.3;
+  --nw-line-blue: #60A5FA;
+  --nw-line-blue-opacity: 0.45;
+  --nw-area-top: 0.2;
+  --nw-area-bot: 0.05;
+  --nw-band-top: 0.24;
+  --nw-band-bot: 0.05;
 }
 
 [data-theme="light"] {
@@ -48,4 +57,13 @@
   --clock-closed: #DC2626;
   --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.06);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Tarjeta NW Líquido: fondo plano + arte conceptual en capas */
+  --nw-bg: #F0FAF5;
+  --nw-line-green-opacity: 0.22;
+  --nw-line-blue: #3B82C4;
+  --nw-line-blue-opacity: 0.4;
+  --nw-area-top: 0.17;
+  --nw-area-bot: 0.05;
+  --nw-band-top: 0.19;
+  --nw-band-bot: 0.05;
 }
