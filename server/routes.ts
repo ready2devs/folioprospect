@@ -13,6 +13,7 @@ import {
   fetchQuotesWithSparklines,
   fetchAssetChart,
   fetchFundamentals,
+  fetchAssetExtras,
   searchSymbols,
   fetchLiveFxRates,
 } from './yahoo.js';
@@ -502,8 +503,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       fetchAssetChart(matchedKey, range),
     ]);
 
-    const quote = quotes[matchedKey];
-    const fundInput = await fetchFundamentals(matchedKey, quote.price);
+    // Defensive: never dereference a missing quote (this used to throw a 500
+    // whose HTML error page crashed the client into a black screen).
+    const quote =
+      quotes[matchedKey] ||
+      ({
+        symbol: matchedKey,
+        price: chart.points[chart.points.length - 1]?.[1] ?? 100,
+        prevClose: chart.prevClose,
+        change: 0,
+        changePct: 0,
+        currency: 'USD',
+        marketState: 'closed',
+      } as any);
+    const [fundInput, extras] = await Promise.all([
+      fetchFundamentals(matchedKey, quote.price),
+      fetchAssetExtras(matchedKey, quote.price),
+    ]);
     const fairValue = computeFairValue(fundInput);
 
     // User's current position and transactions for this symbol
@@ -535,6 +551,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       sparkline: sparklines[matchedKey],
       chart,
       fairValue,
+      extras,
       holding,
       trades: assetTrades,
       projection: assetProjection,

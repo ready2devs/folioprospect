@@ -1,17 +1,15 @@
-import React, { useState, useEffect, useId, useMemo, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
-  Activity,
   ArrowLeft,
   BarChart3,
   Briefcase,
   Moon,
   Plus,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
+import { FinvizChart } from './FinvizChart';
+import { OpportunitySheet } from './OpportunitySheet';
 
 const TIMEFRAMES = ['1D', '5D', '1M', '6M', 'YTD', '1Y', '5Y', 'MAX'] as const;
 
@@ -60,6 +58,7 @@ const InlineMarketClock: React.FC<{ isOpen: boolean; label?: string }> = ({ isOp
 export const AssetView: React.FC = () => {
   const {
     assetDetail,
+    assetError,
     selectedSymbol,
     selectedAssetRange,
     selectAsset,
@@ -70,7 +69,6 @@ export const AssetView: React.FC = () => {
   } = useAppStore();
 
   const isMobile = useLocalIsMobile(1023);
-  const chartGradId = useId();
 
   useEffect(() => {
     if (!assetDetail && selectedSymbol) {
@@ -89,31 +87,28 @@ export const AssetView: React.FC = () => {
     }
   }, [assetDetail?.symbol]);
 
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(1000);
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-    const update = () => {
-      if (chartContainerRef.current) {
-        const w = chartContainerRef.current.clientWidth;
-        if (w > 120) setChartWidth(w);
-      }
-    };
-    update();
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.width > 120) {
-          setChartWidth(Math.floor(entry.contentRect.width));
-        }
-      }
-    });
-    ro.observe(chartContainerRef.current);
-    return () => ro.disconnect();
-  }, [assetDetail?.symbol, selectedAssetRange]);
-
   if (!assetDetail) {
+    if (assetError) {
+      return (
+        <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
+            No se pudo cargar el detalle de {selectedSymbol}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 13.5, marginBottom: 16 }}>
+            {assetError} El resto de la app sigue funcionando.
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => selectAsset(selectedSymbol, selectedAssetRange || '1Y')}
+          >
+            Reintentar
+          </button>{' '}
+          <button className="btn btn-ghost" onClick={() => setRightState('portfolio')}>
+            Volver al portafolio
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="card" style={{ padding: 48, textAlign: 'center' }}>
         <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 8 }}>
@@ -123,7 +118,65 @@ export const AssetView: React.FC = () => {
     );
   }
 
-  const { meta, quote, fairValue, holding, trades, chart } = assetDetail;
+  // Respuesta malformada (p. ej. error 500 del servidor): antes esto rompía
+  // el render completo y dejaba la pantalla negra. Ahora se muestra un
+  // estado de error recuperable.
+  if (
+    !assetDetail.meta ||
+    !assetDetail.quote ||
+    typeof assetDetail.quote.price !== 'number' ||
+    !Number.isFinite(assetDetail.quote.price)
+  ) {
+    return (
+      <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
+          No se pudo cargar el detalle de {selectedSymbol}
+        </div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 13.5, marginBottom: 16 }}>
+          La fuente de datos no devolvió la información completa de este activo. El resto de la app
+          sigue funcionando.
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => selectAsset(selectedSymbol, selectedAssetRange || '1Y')}
+        >
+          Reintentar
+        </button>{' '}
+        <button className="btn btn-ghost" onClick={() => setRightState('portfolio')}>
+          Volver al portafolio
+        </button>
+      </div>
+    );
+  }
+
+  const { meta, quote, holding, trades, chart } = assetDetail;
+  // Fair Value puede faltar (cripto / sin fundamentales): valores seguros.
+  const fairValue = assetDetail.fairValue ?? {
+    symbol: assetDetail.symbol,
+    currentPrice: quote.price,
+    fairValue: null,
+    dcfValue: null,
+    analystTarget: null,
+    priceToFairValue: null,
+    status: 'N/A' as const,
+    upsidePct: null,
+    moat: 'None' as const,
+    moatScore: 0,
+    uncertainty: 'Extreme' as const,
+    multiples: {
+      pe: null,
+      forwardPe: null,
+      evToEbitda: null,
+      fcfYieldPct: null,
+      roicProxyPct: null,
+      grossMarginPct: null,
+      operatingMarginPct: null,
+      roePct: null,
+      revenueGrowthPct: null,
+      debtToEquity: null,
+    },
+    implied10YReturnCagrPct: 11.5,
+  };
   const isUp = (quote?.changePct ?? 0) >= 0;
 
   // Determine market state & post-market session info (FP-120 / FP-121 / FP-122)
@@ -160,94 +213,39 @@ export const AssetView: React.FC = () => {
       : 0;
   const extIsUp = extChange >= 0;
 
-  const chartPoints = chart?.points && chart.points.length >= 2
-    ? chart.points
-    : ([
-        [Date.now() - 86400000 * 30, quote.prevClose || quote.price * 0.98],
-        [Date.now(), quote.price],
-      ] as [number, number][]);
-
-  const prices = chartPoints.map((p) => p[1]);
-  const minP = Math.min(...prices, fairValue?.fairValue ?? Infinity);
-  const maxP = Math.max(...prices, fairValue?.fairValue ?? -Infinity);
-  const spanP = (maxP - minP) || (quote.price * 0.05) || 1;
-  const paddedMinP = Math.max(0, minP - spanP * 0.05);
-  const paddedMaxP = maxP + spanP * 0.05;
-  const paddedSpanP = paddedMaxP - paddedMinP || 1;
-
-  const svgW = chartWidth;
-  const svgH = 260;
-  const padL = isMobile ? 10 : 20;
-  const padR = isMobile ? 68 : 85;
-  const padT = 20;
-  const padB = 30;
-  const innerW = Math.max(40, svgW - padL - padR);
-  const innerH = svgH - padT - padB;
-
-  const getX = (idx: number) => padL + (idx / (chartPoints.length - 1)) * innerW;
-  const getY = (val: number) => padT + (1 - (val - paddedMinP) / paddedSpanP) * innerH;
-
-  const svgCoords = chartPoints.map(([t, p], i) => [getX(i), getY(p)] as const);
-  const lineD = svgCoords
-    .map(([x, y], i) => (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1))
-    .join(' ');
-  const areaD =
-    lineD +
-    ' L' +
-    svgCoords[svgCoords.length - 1][0].toFixed(1) +
-    ',' +
-    (svgH - padB).toFixed(1) +
-    ' L' +
-    svgCoords[0][0].toFixed(1) +
-    ',' +
-    (svgH - padB).toFixed(1) +
-    ' Z';
-
-  const strokeColor = isUp ? 'var(--pos-bright, #10B981)' : 'var(--neg-bright, #F43F5E)';
-  const currentY = getY(quote.price);
-  const fvY = fairValue?.fairValue != null ? getY(fairValue.fairValue) : null;
-
-  const activePoint = hoverIndex !== null && chartPoints[hoverIndex]
-    ? {
-        time: chartPoints[hoverIndex][0],
-        price: chartPoints[hoverIndex][1],
-        x: getX(hoverIndex),
-        y: getY(chartPoints[hoverIndex][1]),
-      }
-    : null;
-
-  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const normX = (mouseX / rect.width) * svgW;
-    const ratio = Math.max(0, Math.min(1, (normX - padL) / innerW));
-    const idx = Math.round(ratio * (chartPoints.length - 1));
-    setHoverIndex(idx);
-  };
+  const chartPoints: [number, number][] =
+    chart?.points && chart.points.length >= 2
+      ? chart.points
+      : [
+          [Date.now() - 86400000 * 30, quote.prevClose || quote.price * 0.98],
+          [Date.now(), quote.price],
+        ];
 
   const initialCap = holding ? holding.value : (quote.price * 10);
   const rMonthly = Math.pow(1 + projCagr / 100, 1 / 12) - 1;
 
-  const proj10Years = useMemo(() => {
+  // NOTA: cálculos planos, sin useMemo — ningún hook puede ir después de los
+  // returns tempranos de carga/error (reglas de hooks).
+  const proj10Years = (() => {
     let v = initialCap;
     for (let m = 0; m < 120; m++) {
       v = v * (1 + rMonthly) + projMonthly;
     }
     return v;
-  }, [initialCap, rMonthly, projMonthly]);
+  })();
 
-  const proj20Years = useMemo(() => {
+  const proj20Years = (() => {
     let v = initialCap;
     for (let m = 0; m < 240; m++) {
       v = v * (1 + rMonthly) + projMonthly;
     }
     return v;
-  }, [initialCap, rMonthly, projMonthly]);
+  })();
 
   const totalInvested10Y = initialCap + projMonthly * 120;
   const totalInvested20Y = initialCap + projMonthly * 240;
 
-  const projCurvePoints = useMemo(() => {
+  const projCurvePoints = (() => {
     const pts = [{ yr: 0, val: initialCap, inv: initialCap }];
     let curVal = initialCap;
     for (let y = 1; y <= projHorizon; y++) {
@@ -261,21 +259,7 @@ export const AssetView: React.FC = () => {
       });
     }
     return pts;
-  }, [initialCap, rMonthly, projMonthly, projHorizon]);
-
-  const fvStatusMap: Record<string, { label: string; color: string; bg: string }> = {
-    Undervalued: { label: 'Subvaluado', color: '#10B981', bg: 'rgba(16, 185, 129, 0.16)' },
-    'Fairly Valued': { label: 'En Precio Justo', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.16)' },
-    Overvalued: { label: 'Sobrevaluado', color: '#F43F5E', bg: 'rgba(244, 63, 94, 0.16)' },
-    'N/A': { label: 'N/A (Cripto / Sin Flujos)', color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.16)' },
-  };
-  const fvStatus = fvStatusMap[fairValue.status] || fvStatusMap['N/A'];
-
-  const moatLabelMap: Record<string, string> = {
-    Wide: 'Wide (Ventaja Amplia)',
-    Narrow: 'Narrow (Ventaja Estrecha)',
-    None: 'None (Sin Ventaja)',
-  };
+  })();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: '100%', overflowX: 'hidden' }}>
@@ -468,198 +452,34 @@ export const AssetView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. GRÁFICO INTERACTIVO SVG DE EVOLUCIÓN DE PRECIO CON FAIR VALUE & TOOLTIP */}
-      <div
-        ref={chartContainerRef}
-        className="card"
-        style={{ padding: isMobile ? '14px 12px' : '16px 18px', position: 'relative' }}
-      >
+      {/* 2. OVERVIEW DE PRECIO ESTILO FINVIZ (ancho completo) + FICHA DE EVALUACIÓN DE OPORTUNIDAD */}
+      <div className="card" style={{ padding: isMobile ? '12px 10px' : '16px 18px' }}>
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 10,
             flexWrap: 'wrap',
-            gap: 8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Activity size={15} color="var(--accent-cyan)" />
-            <span style={{ fontWeight: 700, fontSize: 13 }}>
-              Evolución de Precio ({selectedAssetRange}) & Referencia Fair Value
-            </span>
-          </div>
-          {fairValue.fairValue != null && (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: '#F59E0B',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontWeight: 600,
-              }}
-            >
-              <span
-                style={{
-                  width: 14,
-                  height: 0,
-                  borderTop: '2px dashed #F59E0B',
-                  display: 'inline-block',
-                }}
-              />
-              Fair Value Estimado: {formatMoney(fairValue.fairValue, currency, fxRates)}
-            </div>
-          )}
-        </div>
-
-        {/* Floating Tooltip info bar */}
-        <div
-          style={{
-            minHeight: 24,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            fontSize: 12,
+            gap: 6,
             marginBottom: 6,
-            color: 'var(--text-secondary)',
-            flexWrap: 'wrap',
           }}
         >
-          {activePoint ? (
-            <>
-              <span className="mono" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                📅 {new Date(activePoint.time).toLocaleDateString('es-AR', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </span>
-              <span className="mono" style={{ color: strokeColor, fontWeight: 700, fontSize: 13 }}>
-                Precio: {formatMoney(activePoint.price, currency, fxRates)}
-              </span>
-              <span className="mono" style={{ color: 'var(--text-muted)' }}>
-                Var vs Inicio:{' '}
-                {formatPct(((activePoint.price - chartPoints[0][1]) / chartPoints[0][1]) * 100)}
-              </span>
-            </>
-          ) : (
-            <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
-              Desliza el cursor o toca sobre el gráfico para inspeccionar precio y fecha.
-            </span>
-          )}
+          <span style={{ fontWeight: 700, fontSize: 13 }}>
+            Evolución del precio ({selectedAssetRange}) · velas, SMA 20/50/200, volumen y canal de tendencia
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Lectura visual (estilo Finviz): manda el análisis fundamental de la ficha, no el gráfico.
+          </span>
         </div>
-
-        {/* SVG Graphic */}
-        <div style={{ width: '100%', overflow: 'hidden' }}>
-          <svg
-            viewBox={'0 0 ' + svgW + ' ' + svgH}
-            style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}
-            onMouseMove={handleSvgMouseMove}
-            onMouseLeave={() => setHoverIndex(null)}
-          >
-            <defs>
-              <linearGradient id={chartGradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={strokeColor} stopOpacity={0.32} />
-                <stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
-              </linearGradient>
-            </defs>
-
-            {/* Grid horizontal lines */}
-            {[0.25, 0.5, 0.75].map((pct, idx) => {
-              const yVal = padT + pct * innerH;
-              return (
-                <line
-                  key={idx}
-                  x1={padL}
-                  y1={yVal}
-                  x2={svgW - padR}
-                  y2={yVal}
-                  stroke="var(--border-subtle)"
-                  strokeDasharray="2,2"
-                />
-              );
-            })}
-
-            {/* Área degradada */}
-            <path d={areaD} fill={'url(#' + chartGradId + ')'} />
-
-            {/* Línea horizontal punteada de Fair Value si existe */}
-            {fvY !== null && (
-              <>
-                <line
-                  x1={padL}
-                  y1={fvY}
-                  x2={svgW - padR}
-                  y2={fvY}
-                  stroke="#F59E0B"
-                  strokeWidth={1.5}
-                  strokeDasharray="4,4"
-                />
-                <text
-                  x={svgW - padR + 5}
-                  y={fvY + 4}
-                  fill="#F59E0B"
-                  fontSize="9.5"
-                  fontFamily="JetBrains Mono"
-                  fontWeight="600"
-                >
-                  {'FV $' + (fairValue.fairValue?.toFixed(1) ?? '')}
-                </text>
-              </>
-            )}
-
-            {/* Línea horizontal tenue del precio actual */}
-            <line
-              x1={padL}
-              y1={currentY}
-              x2={svgW - padR}
-              y2={currentY}
-              stroke="var(--text-muted)"
-              strokeOpacity={0.3}
-              strokeDasharray="2,2"
-            />
-            <text
-              x={svgW - padR + 5}
-              y={currentY + 4}
-              fill="var(--text-secondary)"
-              fontSize="9.5"
-              fontFamily="JetBrains Mono"
-              fontWeight="600"
-            >
-              {'$' + quote.price.toFixed(1)}
-            </text>
-
-            {/* Curva principal */}
-            <path
-              d={lineD}
-              fill="none"
-              stroke={strokeColor}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-
-            {/* Hover Crosshair & Dot */}
-            {activePoint && (
-              <>
-                <line
-                  x1={activePoint.x}
-                  y1={padT}
-                  x2={activePoint.x}
-                  y2={svgH - padB}
-                  stroke="var(--border-strong)"
-                  strokeWidth={1}
-                  strokeDasharray="3,3"
-                />
-                <circle cx={activePoint.x} cy={activePoint.y} r={6} fill={strokeColor} fillOpacity={0.3} />
-                <circle cx={activePoint.x} cy={activePoint.y} r={3.5} fill={strokeColor} />
-              </>
-            )}
-          </svg>
-        </div>
+        <FinvizChart
+          candles={chart?.candles || []}
+          fallbackPoints={chartPoints}
+          fairValue={fairValue.fairValue}
+          height={isMobile ? 300 : 400}
+        />
       </div>
+
+      <OpportunitySheet key={assetDetail.symbol} detail={assetDetail} isMobile={isMobile} />
 
       {/* 3. BLOQUE 'TU POSICIÓN EN CARTERA & HISTORIAL DE TRANSACCIONES' */}
       <div className="card">
@@ -880,348 +700,7 @@ export const AssetView: React.FC = () => {
         )}
       </div>
 
-      {/* 4. MÓDULO DE FAIR VALUE EN VIVO (ESTILO MORNINGSTAR) */}
-      <div className="card">
-        <div className="card-title" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            <Sparkles size={16} color="var(--accent-amber)" /> Fair Value en Vivo (Estilo Morningstar)
-          </span>
-          <span
-            style={{
-              fontSize: 11.5,
-              padding: '3px 10px',
-              borderRadius: 6,
-              background: fvStatus.bg,
-              color: fvStatus.color,
-              fontWeight: 700,
-            }}
-          >
-            {fvStatus.label}
-          </span>
-        </div>
-
-        {/* Comparativa Visual Horizontal: Precio Actual vs Fair Value */}
-        <div
-          style={{
-            padding: isMobile ? '12px 12px' : '16px 18px',
-            borderRadius: 8,
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border-subtle)',
-            marginBottom: 16,
-          }}
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 12,
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Precio Actual de Mercado
-              </div>
-              <div className="mono" style={{ fontSize: isMobile ? 17 : 22, fontWeight: 800 }}>
-                {formatMoney(quote.price, currency, fxRates)}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Fair Value Estimado (Intrínseco)
-              </div>
-              <div className="mono" style={{ fontSize: isMobile ? 17 : 22, fontWeight: 800, color: '#F59E0B' }}>
-                {fairValue.fairValue != null
-                  ? formatMoney(fairValue.fairValue, currency, fxRates)
-                  : 'N/A'}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Price / Fair Value (P/FV)
-              </div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: isMobile ? 17 : 22,
-                  fontWeight: 800,
-                  color:
-                    fairValue.priceToFairValue == null
-                      ? 'var(--text-muted)'
-                      : fairValue.priceToFairValue < 0.9
-                      ? 'var(--pos-bright)'
-                      : fairValue.priceToFairValue > 1.1
-                      ? 'var(--neg-bright)'
-                      : 'var(--accent-amber)',
-                }}
-              >
-                {fairValue.priceToFairValue != null
-                  ? fairValue.priceToFairValue.toFixed(2) + 'x'
-                  : 'N/A'}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Potencial Upside / Descuento
-              </div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: isMobile ? 17 : 22,
-                  fontWeight: 800,
-                  color: (fairValue.upsidePct ?? 0) >= 0 ? 'var(--pos-bright)' : 'var(--neg-bright)',
-                }}
-              >
-                {fairValue.upsidePct != null ? formatPct(fairValue.upsidePct) : 'N/A'}
-              </div>
-            </div>
-          </div>
-
-          {/* Barra visual horizontal de Posición de Precio vs Fair Value */}
-          {fairValue.priceToFairValue != null && (
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: 10,
-                  color: 'var(--text-muted)',
-                  marginBottom: 6,
-                  flexWrap: 'wrap',
-                  gap: 4,
-                }}
-              >
-                <span>Subvaluado (&lt; 0.90x)</span>
-                <span>Precio Justo (0.90x – 1.10x)</span>
-                <span>Sobrevaluado (&gt; 1.10x)</span>
-              </div>
-              <div
-                style={{
-                  position: 'relative',
-                  height: 12,
-                  borderRadius: 6,
-                  background:
-                    'linear-gradient(90deg, #10B981 0%, #10B981 40%, #F59E0B 45%, #F59E0B 55%, #F43F5E 60%, #F43F5E 100%)',
-                  opacity: 0.85,
-                }}
-              >
-                {(() => {
-                  const clamped = Math.max(0.5, Math.min(1.5, fairValue.priceToFairValue));
-                  const markerLeftPct = ((clamped - 0.5) / 1.0) * 100;
-                  return (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: -4,
-                        bottom: -4,
-                        left: markerLeftPct + '%',
-                        width: 4,
-                        borderRadius: 2,
-                        background: '#ffffff',
-                        boxShadow: '0 0 6px rgba(0,0,0,0.8), 0 0 10px #ffffff',
-                        transform: 'translateX(-50%)',
-                      }}
-                      title={'P/FV: ' + fairValue.priceToFairValue.toFixed(2) + 'x'}
-                    />
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* Desglose de Valoración: DCF + Consenso Analistas */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-              gap: 10,
-              marginTop: 14,
-              paddingTop: 12,
-              borderTop: '1px solid var(--border-subtle)',
-            }}
-          >
-            <div style={{ fontSize: 12 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Modelo DCF 10 Años: </span>
-              <strong className="mono">
-                {fairValue.dcfValue != null ? formatMoney(fairValue.dcfValue, currency, fxRates) : '—'}
-              </strong>
-            </div>
-            <div style={{ fontSize: 12 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Target Consenso Analistas: </span>
-              <strong className="mono">
-                {fairValue.analystTarget != null
-                  ? formatMoney(fairValue.analystTarget, currency, fxRates)
-                  : '—'}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* Economic Moat & Incertidumbre */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-            gap: 14,
-            marginBottom: 16,
-          }}
-        >
-          {/* Economic Moat */}
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 8,
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 6,
-                flexWrap: 'wrap',
-                gap: 6,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}>
-                <ShieldCheck size={14} color="var(--accent-cyan)" /> Economic Moat (Ventaja Competitiva)
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-cyan)' }}>
-                {moatLabelMap[fairValue.moat] || fairValue.moat}
-              </span>
-            </div>
-            {/* Moat Score Progress Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  flex: 1,
-                  height: 6,
-                  borderRadius: 3,
-                  background: 'var(--border-subtle)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    height: '100%',
-                    width: fairValue.moatScore + '%',
-                    borderRadius: 3,
-                    background:
-                      fairValue.moat === 'Wide'
-                        ? 'var(--accent-cyan)'
-                        : fairValue.moat === 'Narrow'
-                        ? 'var(--accent-amber)'
-                        : 'var(--text-muted)',
-                  }}
-                />
-              </div>
-              <span className="mono" style={{ fontSize: 11.5, fontWeight: 700 }}>
-                {fairValue.moatScore}/100
-              </span>
-            </div>
-          </div>
-
-          {/* Incertidumbre del Fair Value */}
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 8,
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 6,
-                flexWrap: 'wrap',
-                gap: 6,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}>
-                <ShieldAlert size={14} color="var(--accent-amber)" /> Incertidumbre (Uncertainty)
-              </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  background:
-                    fairValue.uncertainty === 'Low'
-                      ? 'var(--pos-bg)'
-                      : fairValue.uncertainty === 'Medium'
-                      ? 'rgba(245, 158, 11, 0.15)'
-                      : 'var(--neg-bg)',
-                  color:
-                    fairValue.uncertainty === 'Low'
-                      ? 'var(--pos-bright)'
-                      : fairValue.uncertainty === 'Medium'
-                      ? 'var(--accent-amber)'
-                      : 'var(--neg-bright)',
-                }}
-              >
-                {fairValue.uncertainty}
-              </span>
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-              Riesgo de flujos futuros, ciclicidad operativa y volatilidad de márgenes.
-            </div>
-          </div>
-        </div>
-
-        {/* Grilla de 10 Múltiplos Clave */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>
-            Múltiplos Clave de Valoración & Rentabilidad
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
-              gap: 8,
-            }}
-          >
-            {[
-              { label: 'P/E Trailing', val: fairValue.multiples.pe ? fairValue.multiples.pe.toFixed(1) + 'x' : '—' },
-              { label: 'Forward P/E', val: fairValue.multiples.forwardPe ? fairValue.multiples.forwardPe.toFixed(1) + 'x' : '—' },
-              { label: 'EV/EBITDA', val: fairValue.multiples.evToEbitda ? fairValue.multiples.evToEbitda.toFixed(1) + 'x' : '—' },
-              { label: 'FCF Yield', val: fairValue.multiples.fcfYieldPct != null ? formatPct(fairValue.multiples.fcfYieldPct, false) : '—' },
-              { label: 'ROIC (Proxy)', val: fairValue.multiples.roicProxyPct != null ? formatPct(fairValue.multiples.roicProxyPct, false) : '—' },
-              { label: 'Gross Margin', val: fairValue.multiples.grossMarginPct != null ? formatPct(fairValue.multiples.grossMarginPct, false) : '—' },
-              { label: 'Operating Margin', val: fairValue.multiples.operatingMarginPct != null ? formatPct(fairValue.multiples.operatingMarginPct, false) : '—' },
-              { label: 'ROE', val: fairValue.multiples.roePct != null ? formatPct(fairValue.multiples.roePct, false) : '—' },
-              { label: 'Revenue Growth', val: fairValue.multiples.revenueGrowthPct != null ? formatPct(fairValue.multiples.revenueGrowthPct, true) : '—' },
-              { label: 'Debt / Equity', val: fairValue.multiples.debtToEquity != null ? fairValue.multiples.debtToEquity.toFixed(2) : '—' },
-            ].map((m, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '9px 10px',
-                  borderRadius: 6,
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-subtle)',
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 2 }}>
-                  {m.label}
-                </div>
-                <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-                  {m.val}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* 4. (La valuación vive ahora en la ficha de Evaluación de oportunidad, sección 2.) */}
 
       {/* 5. MINI-PROYECTOR A 10 / 20 AÑOS DEL ACTIVO */}
       <div className="card">

@@ -732,13 +732,28 @@ export async function fetchQuotesWithSparklines(
   return { quotes, sparklines, cached: usedCacheFallback };
 }
 
+export interface AssetCandle {
+  t: number; // epoch ms
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+export interface AssetChartResult {
+  points: [number, number][];
+  prevClose: number;
+  candles: AssetCandle[];
+}
+
 export async function fetchAssetChart(
   symbol: string,
   range: string = '1y'
-): Promise<{ points: [number, number][]; prevClose: number }> {
+): Promise<AssetChartResult> {
   const key = `${symbol}:${range}`;
   const now = Date.now();
-  const cached = chartCache.get(key);
+  const cached = chartCache.get(key) as CacheEntry<AssetChartResult> | undefined;
   if (cached && cached.expiresAt > now) return cached.value;
 
   const ySym = tvToYahooSymbol(symbol);
@@ -766,17 +781,33 @@ export async function fetchAssetChart(
       const j: any = await res.json();
       const r0 = j?.chart?.result?.[0];
       if (r0 && Array.isArray(r0.timestamp)) {
-        const closes = r0.indicators?.quote?.[0]?.close || [];
+        const q0 = r0.indicators?.quote?.[0] || {};
+        const closes = q0.close || [];
+        const opens = q0.open || [];
+        const highs = q0.high || [];
+        const lows = q0.low || [];
+        const volumes = q0.volume || [];
         const pts: [number, number][] = [];
+        const candles: AssetCandle[] = [];
         for (let i = 0; i < r0.timestamp.length; i++) {
           if (closes[i] != null && Number.isFinite(closes[i])) {
-            pts.push([r0.timestamp[i] * 1000, Number(closes[i])]);
+            const t = r0.timestamp[i] * 1000;
+            const c = Number(closes[i]);
+            pts.push([t, c]);
+            const o = Number.isFinite(opens[i]) ? Number(opens[i]) : c;
+            const h = Number.isFinite(highs[i]) ? Number(highs[i]) : Math.max(o, c);
+            const l = Number.isFinite(lows[i]) ? Number(lows[i]) : Math.min(o, c);
+            const v = Number.isFinite(volumes[i]) ? Number(volumes[i]) : 0;
+            candles.push({ t, o, h, l, c, v });
           }
         }
         if (pts.length > 1) {
           const prevClose = r0.meta?.chartPreviousClose ?? pts[0][1];
-          const val = { points: pts, prevClose };
-          chartCache.set(key, { value: val, expiresAt: now + 60000 });
+          const val: AssetChartResult = { points: pts, prevClose, candles };
+          chartCache.set(key, {
+            value: val as { points: [number, number][]; prevClose: number },
+            expiresAt: now + 60000,
+          });
           return val;
         }
       }
@@ -790,8 +821,153 @@ export async function fetchAssetChart(
     t > 1e11 ? t : t * 1000,
     c,
   ]);
+  const candles: AssetCandle[] = pts.map(([t, c], i) => {
+    const o = i > 0 ? pts[i - 1][1] : c;
+    return { t, o, h: Math.max(o, c), l: Math.min(o, c), c, v: 0 };
+  });
   const prevClose = pts.length > 1 ? pts[pts.length - 2][1] : pts[0]?.[1] ?? 100;
-  return { points: pts, prevClose };
+  return { points: pts, prevClose, candles };
+}
+
+export interface AssetExtras {
+  targetLow: number | null;
+  targetMean: number | null;
+  targetMedian: number | null;
+  targetHigh: number | null;
+  analystCount: number | null;
+  strongBuy: number | null;
+  buy: number | null;
+  hold: number | null;
+  sell: number | null;
+  strongSell: number | null;
+  dividendYieldPct: number | null;
+  marketCap: number | null;
+  ceo: string;
+  employees: number | null;
+  hq: string;
+  website: string;
+  businessSummary: string;
+}
+
+const extrasCache = new Map<string, CacheEntry<AssetExtras>>();
+
+const EMPTY_EXTRAS: AssetExtras = {
+  targetLow: null,
+  targetMean: null,
+  targetMedian: null,
+  targetHigh: null,
+  analystCount: null,
+  strongBuy: null,
+  buy: null,
+  hold: null,
+  sell: null,
+  strongSell: null,
+  dividendYieldPct: null,
+  marketCap: null,
+  ceo: '',
+  employees: null,
+  hq: '',
+  website: '',
+  businessSummary: '',
+};
+
+/**
+ * Datos extra para la ficha de Evaluación de oportunidad: targets de
+ * analistas (mín/promedio/mediana/máx + conteo por recomendación), dividend
+ * yield, market cap y perfil de empresa (CEO, empleados, sede, descripción).
+ * Best-effort: si Yahoo no responde, devuelve lo que haya en el fallback de
+ * fundamentales (target promedio) y el resto vacío — nunca lanza.
+ */
+export async function fetchAssetExtras(
+  symbol: string,
+  currentPrice: number
+): Promise<AssetExtras> {
+  const now = Date.now();
+  const c = extrasCache.get(symbol);
+  if (c && c.expiresAt > now) return c.value;
+
+  const isCrypto =
+    symbol.startsWith('BINANCE:') || symbol.endsWith('USDT') || symbol.endsWith('-USD');
+  if (isCrypto) return { ...EMPTY_EXTRAS };
+
+  const ySym = tvToYahooSymbol(symbol);
+  const auth = await getYahooAuth();
+  if (auth) {
+    try {
+      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+        ySym
+      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price&crumb=${encodeURIComponent(
+        auth.crumb
+      )}`;
+      const res = await fetch(url, {
+        headers: { 'user-agent': UA, cookie: auth.cookie },
+        signal: AbortSignal.timeout(5500),
+      });
+      if (res.ok) {
+        const j: any = await res.json();
+        const r0 = j?.quoteSummary?.result?.[0];
+        if (r0) {
+          const fd = r0.financialData || {};
+          const sd = r0.summaryDetail || {};
+          const ks = r0.defaultKeyStatistics || {};
+          const ap = r0.assetProfile || {};
+          const priceMod = r0.price || {};
+          const trend = (r0.recommendationTrend?.trend || [])[0] || {};
+          const raw = (x: any): number | null =>
+            x?.raw != null && Number.isFinite(x.raw) ? Number(x.raw) : null;
+          const officers: any[] = Array.isArray(ap.companyOfficers) ? ap.companyOfficers : [];
+          const ceoOfficer =
+            officers.find((o) => /chief executive|\bceo\b/i.test(String(o?.title || ''))) ||
+            officers[0];
+          const hqParts = [ap.city, ap.state, ap.country].filter(Boolean);
+          const shares = raw(ks.sharesOutstanding) ?? raw(ks.impliedSharesOutstanding);
+          const extras: AssetExtras = {
+            targetLow: raw(fd.targetLowPrice),
+            targetMean: raw(fd.targetMeanPrice),
+            targetMedian: raw(fd.targetMedianPrice),
+            targetHigh: raw(fd.targetHighPrice),
+            analystCount: raw(fd.numberOfAnalystOpinions),
+            strongBuy: trend.strongBuy != null ? Number(trend.strongBuy) : null,
+            buy: trend.buy != null ? Number(trend.buy) : null,
+            hold: trend.hold != null ? Number(trend.hold) : null,
+            sell: trend.sell != null ? Number(trend.sell) : null,
+            strongSell: trend.strongSell != null ? Number(trend.strongSell) : null,
+            dividendYieldPct:
+              raw(sd.dividendYield) != null ? (raw(sd.dividendYield) as number) * 100 : null,
+            marketCap:
+              raw(priceMod.marketCap) ??
+              (shares != null && currentPrice > 0 ? shares * currentPrice : null),
+            ceo: ceoOfficer?.name
+              ? String(ceoOfficer.name).replace(/\s*\([^)]*\)\s*/g, ' ').trim()
+              : '',
+            employees:
+              ap.fullTimeEmployees != null && Number.isFinite(ap.fullTimeEmployees)
+                ? Number(ap.fullTimeEmployees)
+                : null,
+            hq: hqParts.join(' · '),
+            website: String(ap.website || ''),
+            businessSummary: String(ap.longBusinessSummary || ''),
+          };
+          extrasCache.set(symbol, { value: extras, expiresAt: now + 10 * 60 * 1000 });
+          return extras;
+        }
+      }
+    } catch {
+      // best-effort: fall through to the fundamentals fallback
+    }
+  }
+
+  const fund = await fetchFundamentals(symbol, currentPrice);
+  const extras: AssetExtras = {
+    ...EMPTY_EXTRAS,
+    targetMean: fund.targetMeanPrice ?? null,
+    marketCap:
+      fund.sharesOutstanding != null && currentPrice > 0
+        ? fund.sharesOutstanding * currentPrice
+        : null,
+  };
+  extrasCache.set(symbol, { value: extras, expiresAt: now + 60 * 1000 });
+  return extras;
 }
 
 export async function fetchFundamentals(

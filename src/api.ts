@@ -90,13 +90,43 @@ export interface MarketOverviewResponse {
   earnings: any[];
 }
 
+export interface AssetCandle {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+export interface AssetExtras {
+  targetLow: number | null;
+  targetMean: number | null;
+  targetMedian: number | null;
+  targetHigh: number | null;
+  analystCount: number | null;
+  strongBuy: number | null;
+  buy: number | null;
+  hold: number | null;
+  sell: number | null;
+  strongSell: number | null;
+  dividendYieldPct: number | null;
+  marketCap: number | null;
+  ceo: string;
+  employees: number | null;
+  hq: string;
+  website: string;
+  businessSummary: string;
+}
+
 export interface AssetDetailResponse {
   symbol: string;
   meta: AssetMeta;
   quote: QuoteData;
   sparkline: { prevClose: number; points: number[] };
-  chart: { points: [number, number][]; prevClose: number };
+  chart: { points: [number, number][]; prevClose: number; candles?: AssetCandle[] };
   fairValue: FairValueResult;
+  extras?: AssetExtras;
   holding: ComputedHolding | null;
   trades: any[];
   projection: ProjectionResult;

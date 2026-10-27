@@ -100,6 +100,7 @@ export interface AppState {
   evaluation: PortfolioEvaluationResponse | null;
   marketData: MarketOverviewResponse | null;
   assetDetail: AssetDetailResponse | null;
+  assetError: string | null;
 
   setTheme: (t: 'dark' | 'light') => void;
   toggleTheme: () => void;
@@ -145,6 +146,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   evaluation: null,
   marketData: null,
   assetDetail: null,
+  assetError: null,
 
   setTheme: (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -190,13 +192,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       rightState: 'asset',
       mobileTab: 'right',
       loading: true,
+      assetError: null,
     });
     scrollTopOnMobile();
     try {
       const assetDetail = await api.getAssetDetail(normSym, r);
+      // Validate the payload before storing it: an error/partial response
+      // stored as-is used to crash AssetView and black-screen the whole app.
+      if (
+        !assetDetail ||
+        !assetDetail.meta ||
+        !assetDetail.quote ||
+        typeof assetDetail.quote.price !== 'number' ||
+        !Number.isFinite(assetDetail.quote.price)
+      ) {
+        set({
+          assetDetail: null,
+          assetError: `La fuente de datos no devolvió el detalle de ${normSym}.`,
+          loading: false,
+        });
+        return;
+      }
       set({ assetDetail, loading: false });
     } catch {
-      set({ loading: false });
+      set({
+        assetDetail: null,
+        assetError: `No se pudo cargar el detalle de ${normSym}.`,
+        loading: false,
+      });
     }
   },
   setBenchmark: async (benchmark) => {
@@ -274,7 +297,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           get().selectedSymbol,
           get().selectedAssetRange
         );
-        set({ assetDetail });
+        // Only replace the current detail with a valid payload; a failed
+        // background refresh must not wipe a good screen (or crash it).
+        if (
+          assetDetail &&
+          assetDetail.meta &&
+          assetDetail.quote &&
+          typeof assetDetail.quote.price === 'number' &&
+          Number.isFinite(assetDetail.quote.price)
+        ) {
+          set({ assetDetail });
+        }
       }
     } catch {
       set({ loading: false });

@@ -10,6 +10,7 @@ import { AddDialog } from './components/left/AddDialog';
 import { MarketView } from './components/market/MarketView';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { AssetView } from './components/asset/AssetView';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { ArrowLeft } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -62,9 +63,11 @@ export const App: React.FC = () => {
                     : selectedSymbol}
                 </span>
               </div>
-              {rightState === 'market' && <MarketView />}
-              {rightState === 'portfolio' && <PortfolioView />}
-              {rightState === 'asset' && <AssetView />}
+              <ErrorBoundary resetKey={rightState + ':' + (selectedSymbol || '')}>
+                {rightState === 'market' && <MarketView />}
+                {rightState === 'portfolio' && <PortfolioView />}
+                {rightState === 'asset' && <AssetView />}
+              </ErrorBoundary>
             </main>
           )}
         </div>
@@ -81,9 +84,11 @@ export const App: React.FC = () => {
       <div className="workspace-grid">
         <LeftPanel />
         <main className="right-panel" aria-label="Panel Dinámico Multi-Estado">
-          {rightState === 'market' && <MarketView />}
-          {rightState === 'portfolio' && <PortfolioView />}
-          {rightState === 'asset' && <AssetView />}
+          <ErrorBoundary resetKey={rightState + ':' + (selectedSymbol || '')}>
+            {rightState === 'market' && <MarketView />}
+            {rightState === 'portfolio' && <PortfolioView />}
+            {rightState === 'asset' && <AssetView />}
+          </ErrorBoundary>
         </main>
       </div>
       <SearchModal />

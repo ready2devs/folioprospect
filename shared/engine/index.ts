@@ -4,6 +4,7 @@ export * from './ledger.js';
 export * from './series.js';
 export * from './risk.js';
 export * from './fairvalue.js';
+export * from './opportunity.js';
 export * from './projection.js';
 export * from './nw.js';
 export * from './symbolCatalog.js';
