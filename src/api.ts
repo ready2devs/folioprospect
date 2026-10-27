@@ -401,37 +401,50 @@ export function recomputeEvaluationWithPersistedLedger(
 
   const ledger = evaluateLedger(mergedPortfolio, metaMap, quotesMap);
 
-  const historyMap: Record<string, [number, number][]> = {};
-  if (serverEval.series?.daily?.length) {
-    for (const h of ledger.holdings) {
-      const sp = serverEval.sparklines?.[h.symbol]?.points;
-      const px = h.lastPrice;
-      historyMap[h.symbol] = serverEval.series.daily.map((d, idx, arr) => {
-        const ratio = idx / Math.max(1, arr.length - 1);
-        const est = h.avgPrice + (px - h.avgPrice) * ratio;
-        return [Math.floor(d.time / 1000), idx === arr.length - 1 ? px : est];
-      });
-      if (sp && !serverEval.sparklines[h.symbol]) {
-        serverEval.sparklines[h.symbol] = { prevClose: h.prevClose, points: [h.prevClose, px] };
-      }
-    }
-  }
-
   const benchmark = serverEval.series?.benchmarkSymbol || mergedPortfolio.benchmark || 'SP:SPX';
-  const series =
-    serverEval.series?.daily?.length && !persisted.isCustomized
-      ? serverEval.series
-      : (() => {
-          const built = buildPortfolioSeries(mergedPortfolio, historyMap, quotesMap, benchmark);
-          ledger.kpis.totalGain.p = built.twrAllPct;
-          ledger.kpis.annualizedYield = built.annualizedYieldPct;
-          return {
-            daily: built.daily,
-            monthly: built.monthly,
-            periods: built.periods,
-            benchmarkSymbol: benchmark,
-          };
-        })();
+
+  // The client has NO real per-symbol price history — the server only sends
+  // the already-computed aggregate series. Rebuilding that series on the
+  // client used to fabricate a history (each holding linearly interpolated
+  // from its average cost to its current price) and included no benchmark
+  // history at all, so whenever the local ledger was customized/desynced:
+  //   - the benchmark (SP:SPX) came out flat at 0.00% for every period, and
+  //   - the portfolio curve became a smooth, always-rising line, turning
+  //     real period returns (e.g. a negative last month) positive.
+  // Whenever the server sent a series, keep it exactly as-is — customized
+  // ledger or not. It is the only source with real benchmark/price history.
+  // The recomputed ledger above still drives holdings, KPIs and totals.
+  const series = serverEval.series?.daily?.length
+    ? (() => {
+        const daily = serverEval.series.daily;
+        const twrAllPct =
+          serverEval.series.periods?.ALL?.pct ??
+          daily[daily.length - 1]?.cumReturnPct ??
+          0;
+        ledger.kpis.totalGain.p = twrAllPct;
+        const startMs = mergedPortfolio.startPoint || daily[0]?.time || Date.now();
+        const lastMs = daily[daily.length - 1]?.time ?? startMs;
+        const elapsedDays = Math.max(1, (lastMs - startMs) / 86400000);
+        ledger.kpis.annualizedYield =
+          1 + twrAllPct / 100 > 0
+            ? (Math.pow(1 + twrAllPct / 100, 365 / elapsedDays) - 1) * 100
+            : 0;
+        return serverEval.series;
+      })()
+    : (() => {
+        // Degraded fallback only when the server sent no series at all:
+        // build from trade fill prices (back-filled by buildPortfolioSeries).
+        // There is no benchmark data in this path, so it stays at 0 here.
+        const built = buildPortfolioSeries(mergedPortfolio, {}, quotesMap, benchmark);
+        ledger.kpis.totalGain.p = built.twrAllPct;
+        ledger.kpis.annualizedYield = built.annualizedYieldPct;
+        return {
+          daily: built.daily,
+          monthly: built.monthly,
+          periods: built.periods,
+          benchmarkSymbol: benchmark,
+        };
+      })();
 
   const dailyReturns = series.daily.map((d, i) => {
     if (i === 0) return 0;
