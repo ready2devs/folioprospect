@@ -149,12 +149,20 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
 
   // Escenarios desde la dispersión de métodos (DCF / target de analistas / FV):
   // pesimista = el método más bajo, optimista = el más alto, base = FV del motor.
+  // Con 3+ métodos se descarta un extremo si es un outlier (>1,8× la mediana):
+  // un DCF disparado no tiene que fijar el escenario optimista.
   const methods = [dcf, analyst, fv].filter(
     (v): v is number => v != null && Number.isFinite(v) && v > price * 0.2 && v < price * 4
   );
   let fvBase = fv ?? (price > 0 ? price * 1.05 : 0);
   let fvPes = methods.length ? Math.min(...methods) : fvBase * 0.6;
   let fvOpt = methods.length ? Math.max(...methods) : fvBase * 1.45;
+  if (methods.length >= 3) {
+    const sorted = [...methods].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (fvOpt > median * 1.8) fvOpt = sorted[sorted.length - 2];
+    if (fvPes < median / 1.8) fvPes = sorted[1];
+  }
   if (fvPes >= fvBase) fvPes = fvBase * 0.65;
   if (fvOpt <= fvBase) fvOpt = fvBase * 1.4;
 

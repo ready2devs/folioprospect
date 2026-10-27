@@ -25,22 +25,22 @@ import { ChevronDown, Pencil, Star } from 'lucide-react';
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '0.04em',
+  fontSize: 9.5,
+  fontWeight: 600,
+  letterSpacing: '0.05em',
   textTransform: 'uppercase',
-  color: 'var(--text-secondary)',
-  margin: '13px 0 5px',
+  color: 'var(--text-muted)',
+  margin: '11px 0 4px',
 };
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 10px',
+  padding: '6px 9px',
   border: '1px solid var(--border-subtle)',
   borderRadius: 7,
   background: 'var(--bg-primary)',
   color: 'var(--text-primary)',
   font: 'inherit',
-  fontSize: 14,
+  fontSize: 12.5,
 };
 const fldLabel: React.CSSProperties = {
   fontSize: 11,
@@ -97,62 +97,60 @@ export const OpportunitySheet: React.FC<{
     price > 0 ? price * 1.3 : 0,
     1
   );
-  // Marcadores de la escala del consenso. Si dos quedan a menos de ~11% de
-  // distancia, el segundo va en «nivel alto»: valor corrido hacia arriba y
-  // nombre corrido hacia abajo, para que las etiquetas no se pisen.
-  const markerData = [
-    { val: price, name: 'Actual', color: 'var(--text-primary)', bold: true },
-    { val: cMin, name: 'Mínimo', color: 'var(--text-muted)', bold: false },
-    { val: cAvg, name: 'Promedio', color: 'var(--pos-bright)', bold: true },
-    { val: cMax, name: 'Máximo', color: 'var(--text-muted)', bold: false },
+  // Escala del consenso, limpia: etiqueta de valor solo en el punto clave
+  // (el promedio); el resto lleva solo el nombre, en fuente chica. Los
+  // marcadores de los extremos se anclan hacia adentro y, si dos nombres
+  // quedan cerca, el segundo baja un nivel para que no se pisen.
+  const scaleMarkers = [
+    { key: 'price', val: price, name: 'Actual', color: 'var(--text-primary)', showValue: false },
+    { key: 'min', val: cMin, name: 'Mínimo', color: 'var(--text-muted)', showValue: false },
+    { key: 'avg', val: cAvg, name: 'Promedio', color: 'var(--pos-bright)', showValue: true },
+    { key: 'max', val: cMax, name: 'Máximo', color: 'var(--text-muted)', showValue: false },
   ]
     .filter((m) => m.val > 0)
-    .map((m) => ({ ...m, pct: Math.max(3, Math.min(97, (m.val / scaleMax) * 100)) }))
+    .map((m) => ({ ...m, pct: Math.max(2, Math.min(98, (m.val / scaleMax) * 100)), nameLow: false }))
     .sort((a, b) => a.pct - b.pct);
-  {
-    let lastPct = -100;
-    let lastAlt = false;
-    for (const m of markerData) {
-      const close = m.pct - lastPct < 11;
-      (m as { alt?: boolean }).alt = close ? !lastAlt : false;
-      lastAlt = (m as { alt?: boolean }).alt ?? false;
-      lastPct = m.pct;
+  for (let i = 1; i < scaleMarkers.length; i++) {
+    if (scaleMarkers[i].pct - scaleMarkers[i - 1].pct < 12) {
+      scaleMarkers[i].nameLow = !scaleMarkers[i - 1].nameLow;
     }
   }
-  const marker = (m: (typeof markerData)[number]) => {
-    const alt = (m as { alt?: boolean }).alt ?? false;
+  const marker = (m: (typeof scaleMarkers)[number]) => {
+    const shift = m.pct <= 10 ? '-12%' : m.pct >= 90 ? '-88%' : '-50%';
     return (
       <div
-        key={m.name}
-        style={{ position: 'absolute', left: m.pct + '%', top: 0, transform: 'translateX(-50%)', textAlign: 'center' }}
+        key={m.key}
+        style={{
+          position: 'absolute',
+          left: m.pct + '%',
+          top: 0,
+          transform: `translateX(${shift})`,
+          textAlign: 'center',
+        }}
       >
-        <div
-          className="mono"
-          style={{
-            fontSize: 11,
-            fontWeight: m.bold ? 800 : 600,
-            whiteSpace: 'nowrap',
-            transform: alt ? 'translateY(-13px)' : undefined,
-          }}
-        >
-          US$ {fmtLocal(m.val, m.val % 1 === 0 ? 0 : 2)}
+        <div style={{ height: 15 }}>
+          {m.showValue && (
+            <span className="mono" style={{ fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              US$ {fmtLocal(m.val, m.val % 1 === 0 ? 0 : 2)}
+            </span>
+          )}
         </div>
         <div
           style={{
-            width: 10,
-            height: 10,
+            width: 9,
+            height: 9,
             borderRadius: '50%',
             background: m.color,
-            margin: '2px auto 1px',
+            margin: '1px auto',
             border: '2px solid var(--bg-surface)',
           }}
         />
         <div
           style={{
-            fontSize: 10.5,
+            fontSize: 10,
             color: 'var(--text-secondary)',
             whiteSpace: 'nowrap',
-            marginTop: alt ? 13 : undefined,
+            marginTop: m.nameLow ? 11 : 1,
           }}
         >
           {m.name}
@@ -561,9 +559,9 @@ export const OpportunitySheet: React.FC<{
             ? `hasta el promedio de analistas (US$ ${fmtLocal(cAvg)}) — el precio que esperan, en promedio, para dentro de ~1 año`
             : 'hasta el promedio de analistas'}
         </div>
-        <div style={{ position: 'relative', height: 66, marginTop: 30 }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 22, height: 2, background: 'var(--border-subtle)' }} />
-          {markerData.map(marker)}
+        <div style={{ position: 'relative', height: 58, marginTop: 14 }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 20, height: 2, background: 'var(--border-subtle)' }} />
+          {scaleMarkers.map(marker)}
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0', borderTop: '1px solid var(--border-subtle)', paddingTop: 8 }}>
           Cada panel de analistas da un promedio distinto; por eso el Fair Value propio promedia varias

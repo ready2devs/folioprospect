@@ -64,3 +64,32 @@
 - Persistir las ediciones de la ficha por activo (hoy viven en la sesión).
 - Fair Value propio por triangulación completa dentro del motor (hoy la
   precarga genérica usa la dispersión DCF/target/FV del motor actual).
+
+## v1.1 — Pulido tras la prueba del usuario en producción (2026-10-27)
+
+- **Cambio de la cabecera según el marco temporal**: 1D muestra el cambio oficial del
+  día; el resto (5D/1M/6M/YTD/1Y/5Y/MAX) calcula el cambio del período contra el
+  primer cierre del gráfico, con etiqueta ("Cambio en 1 año", etc.).
+- **Gráfico 1D**: se descartan las velas finales degeneradas de Yahoo (placeholder
+  O=H=L=C, volumen 0) y el Fair Value solo extiende la escala hasta un 60% del
+  recorrido del precio; si queda fuera, se anota "FV … (fuera de escala)" en la
+  leyenda en vez de aplastar el gráfico.
+- **Canales estilo Finviz por pivotes** (reemplaza la regresión sobre todos los
+  máximos/mínimos, que daba canales cerrados sin estructura): zigzag con umbral
+  según volatilidad (mediana del rango diario), resistencia anclada en el techo
+  mayor del período y soporte en el piso mayor, segundo ancla = el pivote que
+  deja la línea viva (tolerancia de ruptura ~2,5% en pivotes, cierres más
+  estrictos) con más toques. Etiqueta de patrón: cuña convergente/expansiva,
+  canal alcista/bajista/lateral, cuña alcista/bajista, triángulo
+  ascendente/descendente. Las líneas de Finviz son automáticas (su detector de
+  patrones es server-side; REA no aplica: no hay artefacto cliente que analizar).
+- **Descripción de la empresa en español**: el servidor traduce `longBusinessSummary`
+  (best-effort, fallback al original, cacheado con los extras).
+- **Escala de consenso**: solo el Promedio lleva valor numérico encima; nombres de
+  marcadores chicos con anclaje hacia adentro en los extremos y doble nivel si se
+  acercan (antes los valores se pisaban: "US$ 317,5US$ 422").
+- **Formulario "Datos de la ficha"**: etiquetas 9,5px e inputs 12,5px con menos
+  padding (en escritorio se veía amontonado; en móvil ya estaba bien).
+- **Seed de escenarios**: con 3+ métodos se descarta un extremo outlier
+  (>1,8× la mediana) — el DCF de GOOG (US$1.153) fijaba un optimista absurdo;
+  ahora GOOG precarga 267/411/422.

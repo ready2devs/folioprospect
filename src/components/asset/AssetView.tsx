@@ -221,6 +221,31 @@ export const AssetView: React.FC = () => {
           [Date.now(), quote.price],
         ];
 
+  // Cambio del PERÍODO elegido junto al precio (no siempre el del día): el
+  // cambio diario ya se ve en el panel de posiciones; esta vista analiza la
+  // evolución en el marco temporal seleccionado en el gráfico. Para 1D se
+  // usa el cambio oficial del día (contra el cierre previo).
+  const rangeLabelMap: Record<string, string> = {
+    '1D': 'hoy',
+    '5D': 'en 5 días',
+    '1M': 'en 1 mes',
+    '6M': 'en 6 meses',
+    YTD: 'en el año (YTD)',
+    '1Y': 'en 1 año',
+    '5Y': 'en 5 años',
+    MAX: 'histórico',
+  };
+  const activeRange = (selectedAssetRange || '1Y').toUpperCase();
+  const periodStartPrice = chartPoints[0]?.[1] ?? quote.price;
+  const useDayChange =
+    activeRange === '1D' || !(periodStartPrice > 0) || chartPoints.length < 2;
+  const headerChange = useDayChange ? quote.change : quote.price - periodStartPrice;
+  const headerChangePct = useDayChange
+    ? quote.changePct
+    : (headerChange / periodStartPrice) * 100;
+  const headerIsUp = headerChange >= 0;
+  const periodLabel = rangeLabelMap[activeRange] || `en ${activeRange}`;
+
   const initialCap = holding ? holding.value : (quote.price * 10);
   const rMonthly = Math.pow(1 + projCagr / 100, 1 / 12) - 1;
 
@@ -396,22 +421,26 @@ export const AssetView: React.FC = () => {
               {formatMoney(quote.price, currency, fxRates, { decimals: quote.price >= 100 ? 2 : 4 })}
             </div>
             <div
-              className={'gf-change-row ' + (isUp ? 'pos' : 'neg')}
+              className={'gf-change-row ' + (headerIsUp ? 'pos' : 'neg')}
               style={{ fontSize: isMobile ? 13.5 : 15, fontWeight: 700 }}
             >
               <span className="mono">
-                {isUp ? '+' : '−'}
-                {formatMoney(Math.abs(quote.change), currency, fxRates, { decimals: 2 })} (
-                {formatPct(quote.changePct)})
+                {headerIsUp ? '+' : '−'}
+                {formatMoney(Math.abs(headerChange), currency, fxRates, { decimals: 2 })} (
+                {formatPct(headerChangePct)})
               </span>
               <span
-                className={'gf-arrow-circle ' + (isUp ? 'up' : 'down')}
+                className={'gf-arrow-circle ' + (headerIsUp ? 'up' : 'down')}
                 style={{ width: 18, height: 18, fontSize: 11 }}
               >
-                {isUp ? '↑' : '↓'}
+                {headerIsUp ? '↑' : '↓'}
               </span>
               <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 400 }}>
-                {isMarketOpen ? 'En rueda activa' : 'Al cierre regular'}
+                {useDayChange
+                  ? isMarketOpen
+                    ? 'En rueda activa'
+                    : 'Al cierre regular'
+                  : `Cambio ${periodLabel}`}
               </span>
             </div>
           </div>

@@ -878,6 +878,46 @@ const EMPTY_EXTRAS: AssetExtras = {
  * Best-effort: si Yahoo no responde, devuelve lo que haya en el fallback de
  * fundamentales (target promedio) y el resto vacío — nunca lanza.
  */
+/**
+ * Traduce un texto (descripción de empresa de Yahoo, en inglés) al español de
+ * forma best-effort con el endpoint público de Google Translate. Si falla o
+ * tarda, devuelve el original. Se cachea junto con los extras (10 min).
+ */
+async function translateToSpanish(text: string): Promise<string> {
+  const clean = (text || '').trim();
+  if (clean.length < 40) return clean;
+  // Heurística rápida: si ya parece español, no traducir.
+  if (/\b(la empresa|sociedad|compañía|se dedica|con sede)\b/i.test(clean)) return clean;
+  try {
+    const chunks: string[] = [];
+    let rest = clean;
+    while (rest.length > 4200) {
+      const cut = rest.lastIndexOf('. ', 4200);
+      const idx = cut > 800 ? cut + 1 : 4200;
+      chunks.push(rest.slice(0, idx));
+      rest = rest.slice(idx).trim();
+    }
+    chunks.push(rest);
+    const out: string[] = [];
+    for (const chunk of chunks) {
+      const url =
+        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=' +
+        encodeURIComponent(chunk);
+      const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) return clean;
+      const data: any = await res.json();
+      const translated = Array.isArray(data?.[0])
+        ? data[0].map((seg: any) => (Array.isArray(seg) ? String(seg[0] || '') : '')).join('')
+        : '';
+      if (!translated) return clean;
+      out.push(translated);
+    }
+    return out.join(' ');
+  } catch {
+    return clean;
+  }
+}
+
 export async function fetchAssetExtras(
   symbol: string,
   currentPrice: number
@@ -946,7 +986,7 @@ export async function fetchAssetExtras(
                 : null,
             hq: hqParts.join(' · '),
             website: String(ap.website || ''),
-            businessSummary: String(ap.longBusinessSummary || ''),
+            businessSummary: await translateToSpanish(String(ap.longBusinessSummary || '')),
           };
           extrasCache.set(symbol, { value: extras, expiresAt: now + 10 * 60 * 1000 });
           return extras;

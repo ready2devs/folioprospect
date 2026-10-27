@@ -3,9 +3,9 @@ import type { AssetCandle } from '@/api';
 
 /**
  * Gráfico de precio estilo Finviz (overview del activo):
- * velas OHLC + volumen, medias móviles SMA 20/50/200 y canal de tendencia
- * (regresión lineal sobre máximos y sobre mínimos del período visible,
- * como las líneas que traza Finviz en la captura de referencia).
+ * velas OHLC + volumen, medias móviles SMA 20/50/200 y líneas de tendencia
+ * ancladas en pivotes zigzag con etiqueta de patrón (cuña, canal, triángulo),
+ * como las que traza el detector automático de patrones de Finviz.
  *
  * Es una lectura visual secundaria: el análisis que manda en esta app es el
  * fundamental (la ficha de Evaluación de oportunidad de abajo).
@@ -44,6 +44,126 @@ function linReg(values: number[]): { a: number; b: number } {
   }
   const b = den > 0 ? num / den : 0;
   return { a: my - b * mx, b };
+}
+
+interface Pivot {
+  i: number;
+  v: number;
+  kind: 'H' | 'L';
+}
+
+interface TrendLine {
+  i0: number;
+  v0: number;
+  slope: number;
+}
+
+const lineAt = (l: TrendLine, i: number) => l.v0 + l.slope * (i - l.i0);
+
+/**
+ * Pivotes zigzag: extremos alternados confirmados por una reversión mínima
+ * (`rev`, en tanto por uno). Es la base del reconocimiento de patrones de
+ * Finviz: las líneas se anclan en puntos de giro reales, no en promedios.
+ */
+function zigzagPivots(candles: AssetCandle[], rev: number): Pivot[] {
+  const pivots: Pivot[] = [];
+  if (candles.length < 3) return pivots;
+  let trend: 'up' | 'down' | null = null;
+  let candH = { i: 0, v: candles[0].h };
+  let candL = { i: 0, v: candles[0].l };
+  for (let i = 1; i < candles.length; i++) {
+    const { h, l } = candles[i];
+    if (trend === null) {
+      if (h > candH.v) candH = { i, v: h };
+      if (l < candL.v) candL = { i, v: l };
+      if (l <= candH.v * (1 - rev) && candH.i < i) {
+        pivots.push({ ...candH, kind: 'H' });
+        trend = 'down';
+        candL = { i, v: l };
+      } else if (h >= candL.v * (1 + rev) && candL.i < i) {
+        pivots.push({ ...candL, kind: 'L' });
+        trend = 'up';
+        candH = { i, v: h };
+      }
+      continue;
+    }
+    if (trend === 'up') {
+      if (h > candH.v) candH = { i, v: h };
+      if (l <= candH.v * (1 - rev)) {
+        pivots.push({ ...candH, kind: 'H' });
+        trend = 'down';
+        candL = { i, v: l };
+      }
+    } else {
+      if (l < candL.v) candL = { i, v: l };
+      if (h >= candL.v * (1 + rev)) {
+        pivots.push({ ...candL, kind: 'L' });
+        trend = 'up';
+        candH = { i, v: h };
+      }
+    }
+  }
+  if (trend === 'up') pivots.push({ ...candH, kind: 'H' });
+  else if (trend === 'down') pivots.push({ ...candL, kind: 'L' });
+  return pivots;
+}
+
+/**
+ * Mejor línea anclada para un lado ('H' = resistencia, 'L' = soporte),
+ * con el método observable de Finviz: el primer ancla es el extremo mayor
+ * del período (el techo o el piso más importante) y el segundo ancla es el
+ * pivote posterior que deja la línea «viva» — sin que otros pivotes la
+ * rompan más allá de una tolerancia de mecha (~2,5%) — con más toques y
+ * mayor recorrido. Así salen las estructuras amplias (cuñas, canales,
+ * triángulos) en vez de canales cerrados pegados al precio.
+ */
+function bestAnchoredLine(
+  pivots: Pivot[],
+  candles: AssetCandle[],
+  side: 'H' | 'L'
+): TrendLine | null {
+  const n = candles.length;
+  const sidePivots = pivots.filter((p) => p.kind === side);
+  if (sidePivots.length < 2) return null;
+  const usable = sidePivots.filter((p) => p.i <= n * 0.85);
+  const pool = usable.length >= 2 ? usable : sidePivots;
+  const anchor1 =
+    side === 'H'
+      ? pool.reduce((a, b) => (b.v > a.v ? b : a))
+      : pool.reduce((a, b) => (b.v < a.v ? b : a));
+  const minGap = Math.max(5, Math.round(n * 0.08));
+  const later = sidePivots.filter((p) => p.i >= anchor1.i + minGap);
+  if (later.length === 0) return null;
+  let best: { line: TrendLine; score: number } | null = null;
+  for (const q of later) {
+    const slope = (q.v - anchor1.v) / (q.i - anchor1.i);
+    const line: TrendLine = { i0: anchor1.i, v0: anchor1.v, slope };
+    const endVal = lineAt(line, n - 1);
+    const lastClose = candles[n - 1].c;
+    if (endVal <= 0 || endVal > lastClose * 2.4 || endVal < lastClose * 0.35) continue;
+    let touches = 0;
+    let pivotBreaks = 0;
+    for (const pv of sidePivots) {
+      if (pv.i < anchor1.i) continue;
+      const lv = lineAt(line, pv.i);
+      const rel = (pv.v - lv) / lv;
+      if (Math.abs(rel) <= 0.015) touches++;
+      if (side === 'H' && rel > 0.025) pivotBreaks++;
+      if (side === 'L' && rel < -0.025) pivotBreaks++;
+    }
+    let closeBreaks = 0;
+    for (let i = q.i; i < n; i++) {
+      const lv = lineAt(line, i);
+      if (side === 'H' && candles[i].c > lv * 1.015) closeBreaks++;
+      if (side === 'L' && candles[i].c < lv * 0.985) closeBreaks++;
+    }
+    const score =
+      touches * 2 + (q.i / n) * 2 + (q.i - anchor1.i) / n - pivotBreaks * 3 - closeBreaks * 0.35;
+    if (!best || score > best.score) best = { line, score };
+  }
+  if (best) return best.line;
+  const q = later[later.length - 1];
+  return { i0: anchor1.i, v0: anchor1.v, slope: (q.v - anchor1.v) / (q.i - anchor1.i) };
 }
 
 /** Agrega velas si hay demasiadas (p. ej. MAX) para que el SVG quede liviano. */
@@ -97,12 +217,23 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   }, []);
 
   const candles = useMemo(() => {
-    let src = rawCandles && rawCandles.length >= 2 ? rawCandles : [];
+    let src = rawCandles && rawCandles.length >= 2 ? [...rawCandles] : [];
     if (src.length < 2 && fallbackPoints && fallbackPoints.length >= 2) {
       src = fallbackPoints.map(([t, c], i) => {
         const o = i > 0 ? fallbackPoints[i - 1][1] : c;
         return { t, o, h: Math.max(o, c), l: Math.min(o, c), c, v: 0 };
       });
+    }
+    // Yahoo agrega al final una vela «en curso» degenerada (O=H=L=C, volumen
+    // 0) que dejaba la leyenda en cero: se descarta si hay velas reales antes.
+    while (
+      src.length > 1 &&
+      (src[src.length - 1].v || 0) === 0 &&
+      src[src.length - 1].o === src[src.length - 1].h &&
+      src[src.length - 1].h === src[src.length - 1].l &&
+      src[src.length - 1].l === src[src.length - 1].c
+    ) {
+      src = src.slice(0, -1);
     }
     return downsample(src);
   }, [rawCandles, fallbackPoints]);
@@ -140,9 +271,22 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
     if (c.h > maxP) maxP = c.h;
     if (c.v > maxV) maxV = c.v;
   }
-  if (fairValue != null && Number.isFinite(fairValue)) {
-    minP = Math.min(minP, fairValue);
-    maxP = Math.max(maxP, fairValue);
+  // El Fair Value extiende la escala solo hasta un 60% del recorrido del
+  // precio: si está mucho más lejos (p. ej. en 1D), antes aplanaba todo el
+  // gráfico. En ese caso la línea no se dibuja y la leyenda lo aclara.
+  const priceSpan = maxP - minP || maxP * 0.05 || 1;
+  const fvValid = fairValue != null && Number.isFinite(fairValue) && fairValue > 0;
+  let fvInScale = false;
+  if (fvValid) {
+    if (fairValue >= minP && fairValue <= maxP) {
+      fvInScale = true;
+    } else if (fairValue > maxP && fairValue <= maxP + priceSpan * 0.6) {
+      maxP = fairValue;
+      fvInScale = true;
+    } else if (fairValue < minP && fairValue >= minP - priceSpan * 0.6) {
+      minP = fairValue;
+      fvInScale = true;
+    }
   }
   const span = maxP - minP || maxP * 0.05 || 1;
   const yMin = Math.max(0, minP - span * 0.04);
@@ -166,11 +310,32 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
     return d;
   };
 
-  // Canal de tendencia: regresión sobre máximos (techo, violeta) y mínimos (piso, azul)
+  // Líneas de tendencia estilo Finviz: ancladas en pivotes zigzag reales
+  // (resistencia violeta por máximos de giro, soporte azul por mínimos),
+  // extendidas hasta el borde derecho. La regresión anterior promediaba
+  // todos los máximos/mínimos y daba canales cerrados sin estructura.
+  const medianRangePct = (() => {
+    const rs = candles
+      .map((c) => (c.c > 0 ? (c.h - c.l) / c.c : 0))
+      .filter((v) => v > 0)
+      .sort((a, b) => a - b);
+    return rs.length ? rs[Math.floor(rs.length / 2)] : 0.02;
+  })();
+  const revThreshold =
+    candles.length <= 70
+      ? Math.min(0.03, Math.max(0.008, medianRangePct * 1.6))
+      : Math.min(0.11, Math.max(0.035, medianRangePct * 1.9));
+  const pivots = zigzagPivots(candles, revThreshold);
+  const topLine = bestAnchoredLine(pivots, candles, 'H');
+  const botLine = bestAnchoredLine(pivots, candles, 'L');
   const regHigh = linReg(candles.map((c) => c.h));
   const regLow = linReg(candles.map((c) => c.l));
-  const chanTop = (i: number) => regHigh.a + regHigh.b * i;
-  const chanBot = (i: number) => regLow.a + regLow.b * i;
+  const chanTop = (i: number) =>
+    topLine ? lineAt(topLine, i) : regHigh.a + regHigh.b * i;
+  const chanBot = (i: number) =>
+    botLine ? lineAt(botLine, i) : regLow.a + regLow.b * i;
+  const topStart = topLine ? topLine.i0 : 0;
+  const botStart = botLine ? botLine.i0 : 0;
 
   const active = hover != null && candles[hover] ? hover : candles.length - 1;
   const ac = candles[active];
@@ -182,13 +347,30 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   const s50 = smaAt(sma50, active);
   const s200 = smaAt(sma200, active);
 
-  const trendPctPerBar = closes.length > 1 ? regHigh.b : 0;
-  const trendLabel =
-    Math.abs(trendPctPerBar) < (ySpan / priceH) * 0.02
-      ? 'Lateral'
-      : regHigh.b < 0
-        ? 'Bajista'
-        : 'Alcista';
+  // Patrón según la deriva total de cada línea en el período visible.
+  const midPrice = closes.length ? closes[Math.floor(closes.length / 2)] || 1 : 1;
+  const driftOf = (l: TrendLine | null, regB: number) =>
+    (((l ? l.slope : regB) * Math.max(1, candles.length - 1)) / (midPrice || 1)) * 100;
+  const driftR = driftOf(topLine, regHigh.b);
+  const driftS = driftOf(botLine, regLow.b);
+  const FLAT = 4;
+  const trendLabel = (() => {
+    const rDown = driftR < -FLAT;
+    const rUp = driftR > FLAT;
+    const sDown = driftS < -FLAT;
+    const sUp = driftS > FLAT;
+    if (rDown && sUp) return 'Cuña convergente';
+    if (rUp && sDown) return 'Cuña expansiva';
+    if (rDown && sDown)
+      return Math.abs(driftR - driftS) < 6 ? 'Canal bajista' : 'Cuña bajista';
+    if (rUp && sUp)
+      return Math.abs(driftR - driftS) < 6 ? 'Canal alcista' : 'Cuña alcista';
+    if (!rDown && !rUp && sUp) return 'Triángulo ascendente';
+    if (rDown && !sDown && !sUp) return 'Triángulo descendente';
+    if (rUp && !sDown && !sUp) return 'Soporte roto al alza';
+    if (sDown && !rDown && !rUp) return 'Resistencia en caída';
+    return 'Canal lateral';
+  })();
 
   // Eje de fechas: ~6 marcas
   const dateTicks: { i: number; label: string }[] = [];
@@ -258,6 +440,11 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
         {s200 != null && (
           <span style={{ color: '#A3A34D' }}>SMA 200 · {s200.toFixed(2)}</span>
         )}
+        {fvValid && !fvInScale && fairValue != null && (
+          <span style={{ color: '#F59E0B' }}>
+            FV US$ {fairValue.toFixed(fairValue >= 100 ? 0 : 2)} (fuera de escala)
+          </span>
+        )}
         <span
           style={{
             marginLeft: 'auto',
@@ -267,9 +454,9 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
             border: '1px solid var(--border-subtle)',
             color: 'var(--text-muted)',
           }}
-          title="Dirección del canal de tendencia trazado sobre el período visible"
+          title="Patrón técnico detectado con líneas ancladas en pivotes (método estilo Finviz)"
         >
-          Canal: {trendLabel}
+          {trendLabel}
         </span>
       </div>
 
@@ -322,10 +509,10 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
             );
           })}
 
-        {/* Canal de tendencia (debajo de las velas, como en Finviz) */}
+        {/* Líneas de tendencia ancladas en pivotes (debajo de las velas, como en Finviz) */}
         <line
-          x1={x(0)}
-          y1={y(chanTop(0))}
+          x1={x(topStart)}
+          y1={y(chanTop(topStart))}
           x2={x(candles.length - 1)}
           y2={y(chanTop(candles.length - 1))}
           stroke="#A855F7"
@@ -333,8 +520,8 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
           strokeOpacity={0.75}
         />
         <line
-          x1={x(0)}
-          y1={y(chanBot(0))}
+          x1={x(botStart)}
+          y1={y(chanBot(botStart))}
           x2={x(candles.length - 1)}
           y2={y(chanBot(candles.length - 1))}
           stroke="#38BDF8"
@@ -343,7 +530,7 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
         />
 
         {/* Fair Value (referencia fundamental, punteada ámbar) */}
-        {fairValue != null && Number.isFinite(fairValue) && (
+        {fvInScale && fairValue != null && (
           <g>
             <line
               x1={padL}
