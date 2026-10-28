@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
+import { api, type AssetEarningsInfo } from '@/api';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
   ArrowLeft,
@@ -86,6 +87,62 @@ export const AssetView: React.FC = () => {
       setProjCagr(assetDetail.fairValue.implied10YReturnCagrPct);
     }
   }, [assetDetail?.symbol]);
+
+  // Balances: el detalle principal trae solo lo cacheado (respuesta
+  // inmediata); el escaneo vivo se pide aparte a /api/asset/:symbol/earnings
+  // y, cuando llega, reemplaza/completa el estado (tarjeta y marcadores
+  // se actualizan solos, sin cambios visuales).
+  const [earningsInfo, setEarningsInfo] = useState<AssetEarningsInfo | null>(
+    assetDetail?.earningsInfo ?? null
+  );
+  const detailSymbol = assetDetail?.symbol;
+  const detailEarnings = assetDetail?.earningsInfo ?? null;
+  useEffect(() => {
+    setEarningsInfo(detailEarnings);
+    if (!detailSymbol) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const mergeFresh = (fresh: AssetEarningsInfo | null) => {
+      if (cancelled || !fresh) return;
+      if (!fresh.next && !fresh.last && !(fresh.events && fresh.events.length > 0)) return;
+      setEarningsInfo((prev) => {
+        if (!prev) return fresh;
+        // Eventos: UNIÓN por fecha (lo fresco gana por fecha, porque
+        // puede traer el EPS real de un evento que la semilla solo
+        // tenía como estimado). Elegir «la lista más larga» perdía el
+        // próximo balance cuando venía del respaldo de Yahoo.
+        const byDate = new Map<string, AssetEarningsInfo['events'][number]>();
+        for (const e of prev.events || []) byDate.set(e.date, e);
+        for (const e of fresh.events || []) byDate.set(e.date, e);
+        return {
+          next: fresh.next ?? prev.next,
+          last: fresh.last ?? prev.last,
+          events: [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+        };
+      });
+    };
+    api
+      .getAssetEarnings(detailSymbol)
+      .then((fresh) => {
+        mergeFresh(fresh);
+        // Si la primera respuesta vino sin «último balance» (la fuente
+        // puede frenarse en frío), un reintento tardío lo completa:
+        // del lado del servidor la caché ya está caliente.
+        if (!cancelled && fresh && !fresh.last) {
+          retryTimer = setTimeout(() => {
+            api.getAssetEarnings(detailSymbol).then(mergeFresh).catch(() => {});
+          }, 7000);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+    // Solo por símbolo: en los cambios de rango el estado ya poblado se
+    // conserva (detailEarnings de ese render corresponde a este símbolo).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailSymbol]);
 
   if (!assetDetail) {
     if (assetError) {
@@ -284,6 +341,43 @@ export const AssetView: React.FC = () => {
       });
     }
     return pts;
+  })();
+
+  // Balances (earnings): estado local `earningsInfo` (semilla = lo que el
+  // detalle trajo de caché; se completa en vivo con el endpoint dedicado).
+  // Fechas para marcar en el gráfico y datos para la tarjeta compacta.
+  const earningsDates = (earningsInfo?.events || []).map((e) => e.date);
+  // Próximo dividendo (extras: Yahoo calendarEvents / respaldo Finviz).
+  // La fecha futura no tiene vela en el gráfico: esta tarjeta es su cobertura.
+  const nextDivDate = assetDetail.extras?.nextExDividendDate ?? null;
+  const nextDivPayDate = assetDetail.extras?.dividendDate ?? null;
+  const nextDivRate = assetDetail.extras?.dividendRate ?? null;
+  const nextDivYield =
+    assetDetail.extras?.forwardDividendYieldPct ?? assetDetail.extras?.dividendYieldPct ?? null;
+  const showEarnDivCard = Boolean(
+    (earningsInfo && (earningsInfo.next || earningsInfo.last)) || nextDivDate
+  );
+  const fmtEarnDate = (dateStr: string) =>
+    new Date(dateStr + 'T12:00:00').toLocaleDateString('es-AR', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  const nextWhenLabel = (() => {
+    if (!earningsInfo?.next) return '';
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const d = Math.round(
+      (Date.parse(earningsInfo.next.date + 'T12:00:00Z') -
+        Date.parse(todayStr + 'T12:00:00Z')) /
+        86400000
+    );
+    return d <= 0 ? 'hoy' : d === 1 ? 'mañana' : `en ${d} días`;
   })();
 
   return (
@@ -504,9 +598,105 @@ export const AssetView: React.FC = () => {
           candles={chart?.candles || []}
           fallbackPoints={chartPoints}
           fairValue={fairValue.fairValue}
+          earningsDates={earningsDates}
+          dividendEvents={chart?.dividendEvents || []}
           height={isMobile ? 300 : 400}
         />
       </div>
+
+      {/* Tarjeta compacta de balances y dividendos (Nasdaq + Yahoo/Finviz) */}
+      {showEarnDivCard && (
+        <div
+          className="card"
+          style={{
+            padding: isMobile ? '12px 14px' : '14px 18px',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: isMobile ? 10 : 28,
+            flexWrap: 'wrap',
+          }}
+        >
+          {earningsInfo?.next && (
+            <div style={{ flex: isMobile ? '0 0 auto' : '1 1 260px', minWidth: 0, fontSize: 13.5 }}>
+              <strong>Próximo balance:</strong> {fmtEarnDate(earningsInfo.next.date)}
+              {earningsInfo.next.session && (
+                <>
+                  {' · '}
+                  {earningsInfo.next.session === 'BMO'
+                    ? 'antes de la apertura'
+                    : 'después del cierre'}
+                </>
+              )}
+              {earningsInfo.next.estimateEps != null && (
+                <>
+                  {' · EPS estimado (consenso) '}
+                  <span className="mono" style={{ fontWeight: 700 }}>
+                    US$ {earningsInfo.next.estimateEps.toFixed(2)}
+                  </span>
+                </>
+              )}
+              {' · '}
+              <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{nextWhenLabel}</span>
+            </div>
+          )}
+          {earningsInfo?.last && (
+            <div style={{ flex: isMobile ? '0 0 auto' : '1 1 260px', minWidth: 0, fontSize: 13.5 }}>
+              <strong>Último balance:</strong> {fmtEarnDate(earningsInfo.last.date)}
+              {earningsInfo.last.actualEps != null && (
+                <>
+                  {' · EPS real '}
+                  <span className="mono" style={{ fontWeight: 700 }}>
+                    US$ {earningsInfo.last.actualEps.toFixed(2)}
+                  </span>
+                </>
+              )}
+              {earningsInfo.last.estimateEps != null && (
+                <>
+                  {' vs esperado '}
+                  <span className="mono">US$ {earningsInfo.last.estimateEps.toFixed(2)}</span>
+                </>
+              )}
+              {earningsInfo.last.surprise != null && (
+                <>
+                  {' · sorpresa '}
+                  <span
+                    className="mono"
+                    style={{
+                      fontWeight: 700,
+                      color:
+                        earningsInfo.last.surprise >= 0
+                          ? 'var(--pos-bright)'
+                          : 'var(--neg-bright)',
+                    }}
+                  >
+                    {(earningsInfo.last.surprise >= 0 ? '+' : '−') +
+                      Math.abs(earningsInfo.last.surprise).toFixed(2).replace('.', ',')}
+                    %
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+          {nextDivDate && (
+            <div style={{ flex: isMobile ? '0 0 auto' : '1 1 260px', minWidth: 0, fontSize: 13.5 }}>
+              <strong>Próximo dividendo:</strong> ex-dividendo {fmtEarnDate(nextDivDate)}
+              {nextDivPayDate && <> · pago {fmtEarnDate(nextDivPayDate)}</>}
+              {nextDivRate != null && (
+                <>
+                  {' · '}
+                  <span className="mono" style={{ fontWeight: 700 }}>
+                    US$ {nextDivRate.toFixed(2)}
+                  </span>{' '}
+                  por acción al año
+                </>
+              )}
+              {nextDivRate == null && nextDivYield != null && (
+                <> · yield {nextDivYield.toFixed(2).replace('.', ',')}%</>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <OpportunitySheet key={assetDetail.symbol} detail={assetDetail} isMobile={isMobile} />
 

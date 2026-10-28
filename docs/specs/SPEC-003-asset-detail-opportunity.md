@@ -93,3 +93,38 @@
 - **Seed de escenarios**: con 3+ métodos se descarta un extremo outlier
   (>1,8× la mediana) — el DCF de GOOG (US$1.153) fijaba un optimista absurdo;
   ahora GOOG precarga 267/411/422.
+
+## v1.2 — Consenso interactivo, indicadores Finviz completos y balances en vivo (2026-10-28)
+
+- **Escala de consenso**: todos los puntos (Actual, Mínimo, Promedio, Máximo)
+  muestran su valor al pasar el mouse, tocar o enfocar con teclado (burbuja
+  «US$ …»); el Promedio lo mantiene siempre visible.
+- **Indicadores fundamentales**: nuevo `server/finviz.ts` +
+  `shared/engine/finvizParse.ts` que traen la ficha snapshot completa de Finviz
+  (84 campos) y la fusionan con Yahoo en `fetchAssetExtras` (Finviz manda en su
+  catálogo; Yahoo completa targets/perfil). Motivo: Yahoo no publica EPS next 5Y
+  (su `earningsTrend` llega hasta +1y) y devolvía ratios erróneos (P/S de TSM
+  0,46 vs 14,54 real). Panel reorganizado en 5 grupos (Valuación, Crecimiento —
+  con «EPS próx. 5 años (CAGR)» destacado —, Rentabilidad y Calidad con ROIC
+  real, Solvencia y Balance, Propiedad y Riesgo). Dato no publicado → «—», sin
+  valores de relleno.
+- **Earnings en vivo** (`server/earnings.ts`): el calendario dejó de ser la foto
+  seed del 22-oct con grupos congelados. Fuente: API pública de calendario de
+  Nasdaq por fecha (con EPS real y sorpresa en fechas pasadas), caché por fecha
+  de 6 h compartida, grupos recalculados contra hoy en America/New_York
+  (recientes 14 días / hoy y mañana / próximos 30 días) y fallback = seed
+  regroupado dinámicamente. `/api/market` usa la misma fuente.
+- **Detalle del activo**: tarjeta «Balances y dividendos» entre el gráfico y la
+  ficha (próximo balance con EPS estimado de consenso, último con real vs
+  esperado y sorpresa, próximo dividendo con ex-date/pago/monto) y marcadores
+  sobre el eje temporal del gráfico: «E» ámbar por balance y «D» azul por
+  ex-dividendo (eventos de dividendos del chart de Yahoo), con chips en la
+  leyenda; en los bordes del gráfico el marcador lleva solo la letra para que
+  no se corte. Las fechas futuras sin vela no se pueden marcar: las cubre la
+  tarjeta.
+- **Latencia**: `/api/asset` no hace pedidos por earnings (responde con la
+  caché de fechas + el próximo balance de Yahoo `calendarEvents`); el endpoint
+  separado `GET /api/asset/:symbol/earnings` completa el detalle con escaneo
+  priorizado de Nasdaq (deadline 9 s) y la vía rápida
+  `api/company/{ticker}/earnings-surprise` para los últimos 4 trimestres. La
+  vista pide ese endpoint sin bloquear la ficha.

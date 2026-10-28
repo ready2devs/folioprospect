@@ -2,7 +2,9 @@ import type { MarketState, QuoteData } from '../shared/engine/types.js';
 import type { FundamentalInput } from '../shared/engine/fairvalue.js';
 import { cleanTicker, tvToYahooSymbol } from '../shared/engine/format.js';
 import { findCatalogEntry } from '../shared/engine/symbolCatalog.js';
+import type { FinvizFundamentals } from '../shared/engine/finvizParse.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
+import { fetchFinvizFundamentals } from './finviz.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -741,10 +743,18 @@ export interface AssetCandle {
   v: number;
 }
 
+export interface AssetDividendEvent {
+  /** Fecha ex-dividendo (YYYY-MM-DD) */
+  date: string;
+  amount: number;
+}
+
 export interface AssetChartResult {
   points: [number, number][];
   prevClose: number;
   candles: AssetCandle[];
+  /** Dividendos (ex-date) del rango pedido, para marcar «D» en el gráfico. */
+  dividendEvents?: AssetDividendEvent[];
 }
 
 export async function fetchAssetChart(
@@ -772,7 +782,7 @@ export async function fetchAssetChart(
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
       ySym
-    )}?range=${cfg.range}&interval=${cfg.interval}`;
+    )}?range=${cfg.range}&interval=${cfg.interval}&events=div`;
     const res = await fetch(url, {
       headers: { 'user-agent': UA },
       signal: AbortSignal.timeout(5000),
@@ -801,9 +811,24 @@ export async function fetchAssetChart(
             candles.push({ t, o, h, l, c, v });
           }
         }
+        // Dividendos ex-date del rango (events=div): mapa epoch → {amount, date}
+        const divMap = r0.events?.dividends || {};
+        const dividendEvents: AssetDividendEvent[] = Object.values(divMap)
+          .map((ev: any) => {
+            const epochSec = Number(ev?.date);
+            const amount = Number(ev?.amount);
+            if (!Number.isFinite(epochSec) || !Number.isFinite(amount)) return null;
+            return {
+              date: new Date(epochSec * 1000).toISOString().slice(0, 10),
+              amount,
+            };
+          })
+          .filter((x): x is AssetDividendEvent => x !== null)
+          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
         if (pts.length > 1) {
           const prevClose = r0.meta?.chartPreviousClose ?? pts[0][1];
-          const val: AssetChartResult = { points: pts, prevClose, candles };
+          const val: AssetChartResult = { points: pts, prevClose, candles, dividendEvents };
           chartCache.set(key, {
             value: val as { points: [number, number][]; prevClose: number },
             expiresAt: now + 60000,
@@ -826,7 +851,7 @@ export async function fetchAssetChart(
     return { t, o, h: Math.max(o, c), l: Math.min(o, c), c, v: 0 };
   });
   const prevClose = pts.length > 1 ? pts[pts.length - 2][1] : pts[0]?.[1] ?? 100;
-  return { points: pts, prevClose, candles };
+  return { points: pts, prevClose, candles, dividendEvents: [] };
 }
 
 export interface AssetExtras {
@@ -844,6 +869,16 @@ export interface AssetExtras {
   dividendYieldPct: number | null;
   /** Forward dividend yield en porcentaje (ej: 0.99 para 0.99%) desde summaryDetail.yield o annualDividendYield */
   forwardDividendYieldPct: number | null;
+  /** Próxima fecha ex-dividendo (YYYY-MM-DD): Yahoo calendarEvents o, como respaldo, el «Dividend Ex-Date» de Finviz */
+  nextExDividendDate: string | null;
+  /** Fecha de pago del próximo dividendo (YYYY-MM-DD) si la fuente la publica */
+  dividendDate: string | null;
+  /** Dividendo anual por acción en US$ (summaryDetail.dividendRate) */
+  dividendRate: number | null;
+  /** Próxima fecha de balance (YYYY-MM-DD) según Yahoo calendarEvents.earnings (primera fecha futura, en UTC) */
+  nextEarningsDate: string | null;
+  /** EPS promedio estimado para ese próximo balance (calendarEvents.earnings.earningsAverage) */
+  nextEarningsEstimate: number | null;
   marketCap: number | null;
   /** Trailing P/E ratio (precio sobre ganancias pasadas 12M) */
   trailingPE: number | null;
@@ -885,6 +920,10 @@ export interface AssetExtras {
   operatingMarginPct: number | null;
   /** Proxy de ROIC calculado en porcentaje */
   roicProxyPct: number | null;
+  /** ROIC real publicado por Finviz en porcentaje (null si Finviz no lo trae) */
+  roicPct: number | null;
+  /** Catálogo completo de fundamentales de Finviz (null si no se pudo obtener) */
+  finviz: FinvizFundamentals | null;
   /** Ratio corriente (Current Ratio) */
   currentRatio: number | null;
   /** Ratio rápido / prueba ácida (Quick Ratio) */
@@ -915,6 +954,11 @@ const EMPTY_EXTRAS: AssetExtras = {
   strongSell: null,
   dividendYieldPct: null,
   forwardDividendYieldPct: null,
+  nextExDividendDate: null,
+  dividendDate: null,
+  dividendRate: null,
+  nextEarningsDate: null,
+  nextEarningsEstimate: null,
   marketCap: null,
   trailingPE: null,
   forwardPE: null,
@@ -936,6 +980,8 @@ const EMPTY_EXTRAS: AssetExtras = {
   grossMarginPct: null,
   operatingMarginPct: null,
   roicProxyPct: null,
+  roicPct: null,
+  finviz: null,
   currentRatio: null,
   quickRatio: null,
   beta: null,
@@ -994,6 +1040,53 @@ async function translateToSpanish(text: string): Promise<string> {
   }
 }
 
+/**
+ * Merge Yahoo + Finviz: para los campos del catálogo Finviz, Finviz manda
+ * si trae valor (su P/S, PEG, ROIC y EPS next 5Y son los correctos; Yahoo
+ * devolvía P/S 0,46 para TSM y no trae EPS a 5 años en la mayoría de los
+ * activos). Yahoo completa los huecos que Finviz deje.
+ */
+function applyFinviz(extras: AssetExtras, finviz: FinvizFundamentals | null): AssetExtras {
+  if (!finviz) return extras;
+  const m: AssetExtras = { ...extras, finviz, roicPct: finviz.roicPct };
+  m.marketCap = finviz.marketCap ?? m.marketCap;
+  m.trailingPE = finviz.pe ?? m.trailingPE;
+  m.forwardPE = finviz.forwardPe ?? m.forwardPE;
+  m.pegRatio = finviz.peg ?? m.pegRatio;
+  m.priceToSales = finviz.priceToSales ?? m.priceToSales;
+  m.priceToBook = finviz.priceToBook ?? m.priceToBook;
+  m.priceToFreeCashFlow = finviz.priceToFcf ?? m.priceToFreeCashFlow;
+  m.evToEbitda = finviz.evToEbitda ?? m.evToEbitda;
+  m.debtToEquity = finviz.debtToEquity ?? m.debtToEquity;
+  m.shortFloatPct = finviz.shortFloatPct ?? m.shortFloatPct;
+  m.roePct = finviz.roePct ?? m.roePct;
+  m.roaPct = finviz.roaPct ?? m.roaPct;
+  m.profitMarginPct = finviz.profitMarginPct ?? m.profitMarginPct;
+  m.grossMarginPct = finviz.grossMarginPct ?? m.grossMarginPct;
+  m.operatingMarginPct = finviz.operatingMarginPct ?? m.operatingMarginPct;
+  m.currentRatio = finviz.currentRatio ?? m.currentRatio;
+  m.quickRatio = finviz.quickRatio ?? m.quickRatio;
+  m.beta = finviz.beta ?? m.beta;
+  m.epsTrailing = finviz.epsTtm ?? m.epsTrailing;
+  m.epsNext5YGrowthPct = finviz.epsNext5YPct ?? m.epsNext5YGrowthPct;
+  // Respaldo de próxima fecha ex-dividendo: el texto de Finviz
+  // («Dec 10, 2026») convertido a ISO, solo si es hoy o futura.
+  if (!m.nextExDividendDate && finviz.dividendExDateText) {
+    const parsed = Date.parse(finviz.dividendExDateText);
+    if (Number.isFinite(parsed)) {
+      const iso = new Date(parsed).toISOString().slice(0, 10);
+      const todayStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      if (iso >= todayStr) m.nextExDividendDate = iso;
+    }
+  }
+  return m;
+}
+
 export async function fetchAssetExtras(
   symbol: string,
   currentPrice: number
@@ -1007,12 +1100,13 @@ export async function fetchAssetExtras(
   if (isCrypto) return { ...EMPTY_EXTRAS };
 
   const ySym = tvToYahooSymbol(symbol);
-  const auth = await getYahooAuth();
+  // Finviz en paralelo con la auth de Yahoo: no suma latencia serial.
+  const [auth, finviz] = await Promise.all([getYahooAuth(), fetchFinvizFundamentals(symbol)]);
   if (auth) {
     try {
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
         ySym
-      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price,earningsTrend&crumb=${encodeURIComponent(
+      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price,earningsTrend,calendarEvents&crumb=${encodeURIComponent(
         auth.crumb
       )}`;
       const res = await fetch(url, {
@@ -1027,6 +1121,7 @@ export async function fetchAssetExtras(
           const sd = r0.summaryDetail || {};
           const ks = r0.defaultKeyStatistics || {};
           const ap = r0.assetProfile || {};
+          const calEv = r0.calendarEvents || {};
           const priceMod = r0.price || {};
           const trend = (r0.recommendationTrend?.trend || [])[0] || {};
           const eTrendList: any[] = Array.isArray(r0.earningsTrend?.trend) ? r0.earningsTrend.trend : [];
@@ -1034,6 +1129,8 @@ export async function fetchAssetExtras(
             x?.raw != null && Number.isFinite(x.raw) ? Number(x.raw) : null;
           const toPct = (val: number | null): number | null =>
             val != null && Number.isFinite(val) ? val * 100 : null;
+          const epochToIsoDate = (sec: number | null): string | null =>
+            sec != null && sec > 0 ? new Date(sec * 1000).toISOString().slice(0, 10) : null;
           const officers: any[] = Array.isArray(ap.companyOfficers) ? ap.companyOfficers : [];
           const ceoOfficer =
             officers.find((o) => /chief executive|\bceo\b/i.test(String(o?.title || ''))) ||
@@ -1072,6 +1169,24 @@ export async function fetchAssetExtras(
             raw(trend5y?.earningsEstimate?.growth) ?? raw(trend5y?.growth);
           const epsNext5YGrowthPct = toPct(epsNext5YGrowthRaw);
 
+          // Próximo balance según calendarEvents.earnings: earningsDate es
+          // una lista de epochs (a veces un rango tentativo); nos quedamos
+          // con la primera fecha futura (ISO en UTC) y su EPS promedio.
+          const earnBlock: any = (calEv as any).earnings || {};
+          const todayUtcStr = new Date().toISOString().slice(0, 10);
+          const futureEarnIsos = (
+            Array.isArray(earnBlock.earningsDate) ? earnBlock.earningsDate : []
+          )
+            .map((d: any) => raw(d))
+            .filter((sec: number | null): sec is number => sec != null && sec > 0)
+            .map((sec: number) => new Date(sec * 1000).toISOString().slice(0, 10))
+            .filter((iso: string) => iso >= todayUtcStr)
+            .sort();
+          const nextEarningsDate = futureEarnIsos.length > 0 ? futureEarnIsos[0] : null;
+          const nextEarningsEstimate = nextEarningsDate
+            ? raw(earnBlock.earningsAverage)
+            : null;
+
           const ev = raw(ks.enterpriseValue);
           const ebitda = raw(fd.ebitda);
           const evToEbitda =
@@ -1094,6 +1209,13 @@ export async function fetchAssetExtras(
             dividendYieldPct:
               raw(sd.dividendYield) != null ? (raw(sd.dividendYield) as number) * 100 : null,
             forwardDividendYieldPct,
+            nextExDividendDate: epochToIsoDate(
+              raw(calEv.exDividendDate) ?? raw(sd.exDividendDate)
+            ),
+            dividendDate: epochToIsoDate(raw(calEv.dividendDate)),
+            dividendRate: raw(sd.dividendRate),
+            nextEarningsDate,
+            nextEarningsEstimate,
             marketCap,
             trailingPE: raw(sd.trailingPE) ?? raw(ks.trailingPE),
             forwardPE: raw(ks.forwardPE) ?? raw(sd.forwardPE),
@@ -1123,6 +1245,8 @@ export async function fetchAssetExtras(
               if (opM != null) return Number((opM * 0.85).toFixed(2));
               return null;
             })(),
+            roicPct: null,
+            finviz: null,
             currentRatio: raw(fd.currentRatio),
             quickRatio: raw(fd.quickRatio),
             beta: raw(ks.beta) ?? raw(sd.beta),
@@ -1138,8 +1262,9 @@ export async function fetchAssetExtras(
             website: String(ap.website || ''),
             businessSummary: await translateToSpanish(String(ap.longBusinessSummary || '')),
           };
-          extrasCache.set(symbol, { value: extras, expiresAt: now + 10 * 60 * 1000 });
-          return extras;
+          const merged = applyFinviz(extras, finviz);
+          extrasCache.set(symbol, { value: merged, expiresAt: now + 10 * 60 * 1000 });
+          return merged;
         }
       }
     } catch {
@@ -1148,14 +1273,17 @@ export async function fetchAssetExtras(
   }
 
   const fund = await fetchFundamentals(symbol, currentPrice);
-  const extras: AssetExtras = {
-    ...EMPTY_EXTRAS,
-    targetMean: fund.targetMeanPrice ?? null,
-    marketCap:
-      fund.sharesOutstanding != null && currentPrice > 0
-        ? fund.sharesOutstanding * currentPrice
-        : null,
-  };
+  const extras: AssetExtras = applyFinviz(
+    {
+      ...EMPTY_EXTRAS,
+      targetMean: fund.targetMeanPrice ?? null,
+      marketCap:
+        fund.sharesOutstanding != null && currentPrice > 0
+          ? fund.sharesOutstanding * currentPrice
+          : null,
+    },
+    finviz
+  );
   extrasCache.set(symbol, { value: extras, expiresAt: now + 60 * 1000 });
   return extras;
 }

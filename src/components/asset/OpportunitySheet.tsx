@@ -62,6 +62,7 @@ export const OpportunitySheet: React.FC<{
   const [editingPersp, setEditingPersp] = useState<number | null>(null);
   const [editingVerdict, setEditingVerdict] = useState(false);
   const [coreExpanded, setCoreExpanded] = useState(false);
+  const [hoveredMarker, setHoveredMarker] = useState<string | null>(null);
 
   const set = (k: keyof OpportunityFormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -121,38 +122,69 @@ export const OpportunitySheet: React.FC<{
   }
   const marker = (m: (typeof scaleMarkers)[number]) => {
     const shift = m.pct <= 10 ? '-12%' : m.pct >= 90 ? '-88%' : '-50%';
+    const valueText = 'US$ ' + fmtLocal(m.val, m.val % 1 === 0 ? 0 : 2);
+    const hovered = hoveredMarker === m.key;
+    // El Promedio muestra su valor SIEMPRE; el resto, al pasar el mouse,
+    // tocar o enfocar con teclado (burbuja con el valor de ese punto).
+    const showBubble = m.showValue || hovered;
     return (
       <div
         key={m.key}
+        role="button"
+        tabIndex={0}
+        aria-label={`${m.name}: ${valueText}`}
+        title={`${m.name}: ${valueText}`}
+        onMouseEnter={() => setHoveredMarker(m.key)}
+        onMouseLeave={() => setHoveredMarker(null)}
+        onClick={() => setHoveredMarker((h) => (h === m.key ? null : m.key))}
+        onFocus={() => setHoveredMarker(m.key)}
+        onBlur={() => setHoveredMarker(null)}
         style={{
           position: 'absolute',
           left: m.pct + '%',
           top: 0,
           transform: `translateX(${shift})`,
           textAlign: 'center',
+          cursor: 'pointer',
+          zIndex: showBubble ? 6 : 2,
+          outline: 'none',
         }}
       >
-        <div style={{ height: 15 }}>
-          {m.showValue && (
-            <span className="mono" style={{ fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
-              US$ {fmtLocal(m.val, m.val % 1 === 0 ? 0 : 2)}
+        <div style={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+          {showBubble && (
+            <span
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 999,
+                padding: '1px 7px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+              }}
+            >
+              {valueText}
             </span>
           )}
         </div>
         <div
           style={{
-            width: 9,
-            height: 9,
+            width: hovered ? 13 : 9,
+            height: hovered ? 13 : 9,
             borderRadius: '50%',
             background: m.color,
             margin: '1px auto',
             border: '2px solid var(--bg-surface)',
+            transition: 'width 0.12s ease, height 0.12s ease',
           }}
         />
         <div
           style={{
             fontSize: 10,
-            color: 'var(--text-secondary)',
+            color: hovered ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: hovered ? 700 : 400,
             whiteSpace: 'nowrap',
             marginTop: m.nameLow ? 11 : 1,
           }}
@@ -166,6 +198,15 @@ export const OpportunitySheet: React.FC<{
   const divY = parseLocalNum(form.divYield);
   const multiples = detail.fairValue?.multiples;
   const extras = detail.extras;
+  const fz = extras?.finviz;
+  const roicReal = fz?.roicPct ?? extras?.roicPct ?? null;
+  const roicLabel = roicReal != null ? 'ROIC' : 'ROIC (proxy)';
+  const divGrowthVal = (() => {
+    const parts = [fz?.dividendGrowth3Y, fz?.dividendGrowth5Y]
+      .filter((v): v is number => v != null && Number.isFinite(v))
+      .map((v) => fmtLocal(v, 1) + '%');
+    return parts.length > 0 ? parts.join(' / ') : '—';
+  })();
 
   const fmtRatio = (v: number | null | undefined, suffix = 'x', dec = 2): string =>
     v != null && Number.isFinite(v) ? fmtLocal(v, dec) + suffix : '—';
@@ -173,6 +214,16 @@ export const OpportunitySheet: React.FC<{
     v != null && Number.isFinite(v) ? fmtLocal(v, dec) + '%' : '—';
   const fmtNum = (v: number | null | undefined, dec = 2): string =>
     v != null && Number.isFinite(v) ? fmtLocal(v, dec) : '—';
+  const fmtUsd = (v: number | null | undefined, dec = 2): string =>
+    v != null && Number.isFinite(v) ? 'US$ ' + fmtLocal(v, dec) : '—';
+  const fmtBig = (v: number | null | undefined): string => {
+    if (v == null || !Number.isFinite(v)) return '—';
+    const abs = Math.abs(v);
+    if (abs >= 1e12) return 'US$ ' + fmtLocal(v / 1e12) + ' T';
+    if (abs >= 1e9) return 'US$ ' + fmtLocal(v / 1e9) + ' B';
+    if (abs >= 1e6) return 'US$ ' + fmtLocal(v / 1e6) + ' M';
+    return 'US$ ' + fmtLocal(v, 0);
+  };
 
   const formCard = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
@@ -683,8 +734,8 @@ export const OpportunitySheet: React.FC<{
             ? `hasta el promedio de analistas (US$ ${fmtLocal(cAvg)}) — el precio que esperan, en promedio, para dentro de ~1 año`
             : 'hasta el promedio de analistas'}
         </div>
-        <div style={{ position: 'relative', height: 58, marginTop: 14 }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 20, height: 2, background: 'var(--border-subtle)' }} />
+        <div style={{ position: 'relative', height: 66, marginTop: 14 }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 25, height: 2, background: 'var(--border-subtle)' }} />
           {scaleMarkers.map(marker)}
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0', borderTop: '1px solid var(--border-subtle)', paddingTop: 8 }}>
@@ -726,13 +777,15 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'P/E (TTM)', val: fmtRatio(extras?.trailingPE ?? multiples?.pe), tip: 'Precio sobre ganancias pasadas de 12 meses' },
-                { label: 'Forward P/E', val: fmtRatio(extras?.forwardPE ?? multiples?.forwardPe), tip: 'Precio sobre ganancias estimadas a 1 año' },
-                { label: 'PEG', val: fmtNum(extras?.pegRatio), tip: 'P/E dividido crecimiento esperado (menor a 1 suele indicar buen precio)' },
-                { label: 'P/S', val: fmtRatio(extras?.priceToSales), tip: 'Precio sobre ventas (Price to Sales)' },
-                { label: 'P/B', val: fmtRatio(extras?.priceToBook), tip: 'Precio sobre valor libros contable (Price to Book)' },
-                { label: 'P/FCF', val: fmtRatio(extras?.priceToFreeCashFlow), tip: 'Precio sobre flujo de caja libre (Price to Free Cash Flow)' },
-                { label: 'EV/EBITDA', val: fmtRatio(extras?.evToEbitda ?? multiples?.evToEbitda), tip: 'Enterprise Value sobre EBITDA' },
+                { label: 'P/E (TTM)', val: fmtRatio(fz?.pe ?? extras?.trailingPE ?? multiples?.pe), tip: 'Precio sobre ganancias pasadas de 12 meses' },
+                { label: 'Forward P/E', val: fmtRatio(fz?.forwardPe ?? extras?.forwardPE ?? multiples?.forwardPe), tip: 'Precio sobre ganancias estimadas a 1 año' },
+                { label: 'PEG', val: fmtNum(fz?.peg ?? extras?.pegRatio), tip: 'P/E dividido crecimiento esperado (menor a 1 suele indicar buen precio)' },
+                { label: 'P/S', val: fmtRatio(fz?.priceToSales ?? extras?.priceToSales), tip: 'Precio sobre ventas (Price to Sales)' },
+                { label: 'P/B', val: fmtRatio(fz?.priceToBook ?? extras?.priceToBook), tip: 'Precio sobre valor libros contable (Price to Book)' },
+                { label: 'P/C', val: fmtRatio(fz?.priceToCash), tip: 'Precio sobre el efectivo por acción (Price to Cash)' },
+                { label: 'P/FCF', val: fmtRatio(fz?.priceToFcf ?? extras?.priceToFreeCashFlow), tip: 'Precio sobre flujo de caja libre (Price to Free Cash Flow)' },
+                { label: 'EV/EBITDA', val: fmtRatio(fz?.evToEbitda ?? extras?.evToEbitda ?? multiples?.evToEbitda), tip: 'Enterprise Value sobre EBITDA' },
+                { label: 'EV/Sales', val: fmtRatio(fz?.evToSales), tip: 'Enterprise Value sobre ventas: cuánto vale toda la empresa por cada dólar que vende' },
               ].map((m) => (
                 <div
                   key={m.label}
@@ -758,25 +811,32 @@ export const OpportunitySheet: React.FC<{
               Crecimiento
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
-              {[
-                { label: 'EPS próx. año', val: fmtPct(extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
-                { label: 'EPS próx. 5 años', val: fmtPct(extras?.epsNext5YGrowthPct), tip: 'Crecimiento estimado anualizado de EPS a 5 años' },
-                { label: 'Crec. ganancias YoY', val: fmtPct(extras?.earningsGrowthPct), tip: 'Crecimiento interanual de ganancias (Earnings Growth)' },
-                { label: 'Crec. ingresos YoY', val: fmtPct(extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), tip: 'Crecimiento interanual de ingresos (Revenue Growth)' },
-              ].map((m) => (
+              {([
+                { label: 'EPS próx. 5 años (CAGR)', val: fmtPct(fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), tip: 'Crecimiento anual compuesto esperado del beneficio por acción (EPS) según los analistas para los próximos 5 años (fuente: Finviz). Es el dato clave para valorar una empresa de crecimiento: con él se juzga si el P/E de hoy está caro o barato.', accent: true },
+                { label: 'EPS este año', val: fmtPct(fz?.epsThisYearPct), tip: 'Crecimiento del beneficio por acción esperado para este año' },
+                { label: 'EPS próx. año', val: fmtPct(fz?.epsNextYearPct ?? extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
+                { label: 'EPS Y/Y TTM', val: fmtPct(fz?.epsYoyTtmPct ?? extras?.earningsGrowthPct), tip: 'Crecimiento interanual del beneficio por acción de los últimos 12 meses (TTM)' },
+                { label: 'EPS Q/Q', val: fmtPct(fz?.epsQqPct), tip: 'Crecimiento del beneficio por acción del último trimestre contra el mismo trimestre del año anterior' },
+                { label: 'EPS pasado 5 años', val: fmtPct(fz?.epsPast5YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 5 años (histórico)' },
+                { label: 'EPS pasado 3 años', val: fmtPct(fz?.epsPast3YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 3 años (histórico)' },
+                { label: 'Crec. ingresos Y/Y TTM', val: fmtPct(fz?.salesYoyTtmPct ?? extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), tip: 'Crecimiento interanual de ingresos de los últimos 12 meses (Revenue Growth TTM)' },
+                { label: 'Ventas Q/Q', val: fmtPct(fz?.salesQqPct), tip: 'Crecimiento de ventas del último trimestre contra el mismo trimestre del año anterior' },
+                { label: 'Ventas pasadas 5 años', val: fmtPct(fz?.salesPast5YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 5 años (histórico)' },
+                { label: 'Ventas pasadas 3 años', val: fmtPct(fz?.salesPast3YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 3 años (histórico)' },
+              ] as { label: string; val: string; tip: string; accent?: boolean }[]).map((m) => (
                 <div
                   key={m.label}
                   title={m.tip}
                   style={{
                     padding: '7px 8px',
                     borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
+                    background: m.accent ? 'var(--bg-elevated)' : 'var(--bg-primary)',
+                    border: m.accent ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                  <div style={{ fontSize: 9.5, color: m.accent ? 'var(--accent-cyan)' : 'var(--text-muted)', marginBottom: 2, fontWeight: m.accent ? 700 : 400 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: m.accent ? 13.5 : 12 }}>{m.val}</div>
                 </div>
               ))}
             </div>
@@ -789,13 +849,16 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'Margen neto', val: fmtPct(extras?.profitMarginPct), tip: 'Porcentaje de ventas que queda como ganancia limpia después de todos los gastos e impuestos' },
-                { label: 'Margen operativo', val: fmtPct(extras?.operatingMarginPct ?? multiples?.operatingMarginPct), tip: 'Margen antes de intereses e impuestos (EBIT / Ventas)' },
-                { label: 'Margen bruto', val: fmtPct(extras?.grossMarginPct ?? multiples?.grossMarginPct), tip: 'Ganancia bruta sobre ingresos' },
-                { label: 'ROE', val: fmtPct(extras?.roePct ?? multiples?.roePct), tip: 'Rentabilidad sobre el patrimonio neto (Return on Equity)' },
-                { label: 'ROA', val: fmtPct(extras?.roaPct), tip: 'Rentabilidad sobre los activos totales (Return on Assets)' },
-                { label: 'ROIC (proxy)', val: fmtPct(extras?.roicProxyPct ?? multiples?.roicProxyPct), tip: 'Retorno sobre el capital invertido estimado' },
+                { label: roicLabel, val: fmtPct(roicReal ?? extras?.roicProxyPct ?? multiples?.roicProxyPct), tip: roicReal != null ? 'Retorno sobre el capital invertido real (Finviz): cuánto gana la empresa por cada dólar invertido en el negocio' : 'Retorno sobre el capital invertido estimado (proxy): cuánto gana la empresa por cada dólar invertido en el negocio' },
+                { label: 'ROE', val: fmtPct(fz?.roePct ?? extras?.roePct ?? multiples?.roePct), tip: 'Rentabilidad sobre el patrimonio neto (Return on Equity)' },
+                { label: 'ROA', val: fmtPct(fz?.roaPct ?? extras?.roaPct), tip: 'Rentabilidad sobre los activos totales (Return on Assets)' },
+                { label: 'Margen bruto', val: fmtPct(fz?.grossMarginPct ?? extras?.grossMarginPct ?? multiples?.grossMarginPct), tip: 'Ganancia bruta sobre ingresos' },
+                { label: 'Margen operativo', val: fmtPct(fz?.operatingMarginPct ?? extras?.operatingMarginPct ?? multiples?.operatingMarginPct), tip: 'Margen antes de intereses e impuestos (EBIT / Ventas)' },
+                { label: 'Margen neto', val: fmtPct(fz?.profitMarginPct ?? extras?.profitMarginPct), tip: 'Porcentaje de ventas que queda como ganancia limpia después de todos los gastos e impuestos' },
                 { label: 'FCF Yield', val: fmtPct(extras?.fcfYieldPct ?? multiples?.fcfYieldPct), tip: 'Rendimiento de flujo de caja libre sobre capitalización' },
+                { label: 'Payout', val: fmtPct(fz?.payoutPct), tip: 'Porcentaje de las ganancias que se reparte como dividendos' },
+                { label: 'Dividend Yield (TTM)', val: fmtPct(fz?.dividendTtmPct ?? extras?.dividendYieldPct), tip: 'Dividendo de los últimos 12 meses por cada US$100 invertidos' },
+                { label: 'Crec. dividendo 3/5 años', val: divGrowthVal, tip: 'Crecimiento anual promedio del dividendo: últimos 3 años / últimos 5 años' },
               ].map((m) => (
                 <div
                   key={m.label}
@@ -815,18 +878,58 @@ export const OpportunitySheet: React.FC<{
             </div>
           </div>
 
-          {/* Solvencia & Riesgo */}
+          {/* Solvencia y Balance */}
           <div>
             <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
-              Solvencia y Riesgo
+              Solvencia y Balance
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'Deuda / Patrimonio', val: fmtNum(extras?.debtToEquity ?? multiples?.debtToEquity), tip: 'Ratio de deuda total sobre patrimonio neto (Debt to Equity)' },
-                { label: 'Current Ratio', val: fmtNum(extras?.currentRatio), tip: 'Capacidad de cubrir deudas a corto plazo con activos corrientes (mayor a 1 indica solvencia)' },
-                { label: 'Quick Ratio', val: fmtNum(extras?.quickRatio), tip: 'Prueba ácida: solvencia de corto plazo sin depender de inventarios' },
-                { label: 'Short Float', val: fmtPct(extras?.shortFloatPct), tip: 'Porcentaje de acciones en circulación apostadas a la baja (short interest)' },
-                { label: 'Beta', val: fmtNum(extras?.beta), tip: 'Sensibilidad frente a la volatilidad del mercado general (S&P 500 = 1.0)' },
+                { label: 'Deuda / Patrimonio', val: fmtNum(fz?.debtToEquity ?? extras?.debtToEquity ?? multiples?.debtToEquity), tip: 'Ratio de deuda total sobre patrimonio neto (Debt to Equity)' },
+                { label: 'Deuda LP / Patrimonio', val: fmtNum(fz?.ltDebtToEquity), tip: 'Deuda de largo plazo sobre patrimonio neto: el apalancamiento que no vence en el corto plazo' },
+                { label: 'Current Ratio', val: fmtNum(fz?.currentRatio ?? extras?.currentRatio), tip: 'Capacidad de cubrir deudas a corto plazo con activos corrientes (mayor a 1 indica solvencia)' },
+                { label: 'Quick Ratio', val: fmtNum(fz?.quickRatio ?? extras?.quickRatio), tip: 'Prueba ácida: solvencia de corto plazo sin depender de inventarios' },
+                { label: 'Cash por acción', val: fmtUsd(fz?.cashPerShare), tip: 'Efectivo de la empresa por cada acción en circulación' },
+                { label: 'Valor libro por acción', val: fmtUsd(fz?.bookPerShare), tip: 'Valor contable (patrimonio neto) por cada acción' },
+                { label: 'Market Cap', val: fmtBig(fz?.marketCap ?? extras?.marketCap), tip: 'Valor total de mercado de la empresa (precio × acciones)' },
+                { label: 'Enterprise Value', val: fmtBig(fz?.enterpriseValue), tip: 'Valor total de la empresa: capitalización más deuda menos efectivo' },
+                { label: 'Ventas TTM', val: fmtBig(fz?.sales), tip: 'Ventas de los últimos 12 meses' },
+                { label: 'Ingreso neto TTM', val: fmtBig(fz?.income), tip: 'Ganancia neta de los últimos 12 meses' },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  title={m.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Propiedad y Riesgo */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+              Propiedad y Riesgo
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              {[
+                { label: 'Insider Own', val: fmtPct(fz?.insiderOwnPct), tip: 'Porcentaje de acciones en manos de directivos y fundadores (insiders)' },
+                { label: 'Insider Trans', val: fmtPct(fz?.insiderTransPct), tip: 'Variación reciente de la tenencia de insiders: positivo = compraron, negativo = vendieron' },
+                { label: 'Inst. Own', val: fmtPct(fz?.instOwnPct), tip: 'Porcentaje de acciones en manos de inversores institucionales (fondos)' },
+                { label: 'Inst. Trans', val: fmtPct(fz?.instTransPct), tip: 'Variación reciente de la tenencia institucional' },
+                { label: 'Short Float', val: fmtPct(fz?.shortFloatPct ?? extras?.shortFloatPct), tip: 'Porcentaje de acciones en circulación apostadas a la baja (short interest)' },
+                { label: 'Short Ratio', val: fmtNum(fz?.shortRatio), tip: 'Días que tardarían los vendidos en corto en recomprar todo (days to cover)' },
+                { label: 'Beta', val: fmtNum(fz?.beta ?? extras?.beta), tip: 'Sensibilidad frente a la volatilidad del mercado general (S&P 500 = 1.0)' },
+                { label: 'RSI (14)', val: fmtNum(fz?.rsi14), tip: 'Índice de fuerza relativa: sobre 70 suele indicar sobrecompra, bajo 30 sobreventa' },
+                { label: 'Volatilidad (mes)', val: fmtPct(fz?.volatilityMonthPct), tip: 'Cuánto se mueve típicamente el precio en un mes' },
               ].map((m) => (
                 <div
                   key={m.label}
@@ -846,6 +949,11 @@ export const OpportunitySheet: React.FC<{
             </div>
           </div>
         </div>
+
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '12px 0 0', borderTop: '1px solid var(--border-subtle)', paddingTop: 9 }}>
+          Fuentes: Finviz (foto del día) y Yahoo Finance en vivo. Si una fuente no publica un dato,
+          queda «—»: no se estima ni se completa con valores de ejemplo.
+        </p>
       </div>
 
       {persp(1, 'persp1Title', 'persp1Fav', 'persp1Con')}

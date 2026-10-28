@@ -8,3 +8,4 @@ export * from './opportunity.js';
 export * from './projection.js';
 export * from './nw.js';
 export * from './symbolCatalog.js';
+export * from './finvizParse.js';

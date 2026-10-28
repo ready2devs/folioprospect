@@ -471,8 +471,96 @@ export const PortfolioView: React.FC = () => {
   const maxGainerPct = Math.max(...movers.gainers.map((g: any) => Math.abs(g.dailyGain.p)), 1);
   const maxLoserPct = Math.max(...movers.losers.map((l: any) => Math.abs(l.dailyGain.p)), 1);
 
+  const recentEarnings = calendar.earnings.filter((e: any) => e.group === 'recent');
   const todayEarnings = calendar.earnings.filter((e: any) => e.group === 'today');
   const next30Earnings = calendar.earnings.filter((e: any) => e.group === 'next30');
+
+  const earningSessionOf = (e: any): 'BMO' | 'AMC' | null =>
+    e.session === 'BMO' || e.session === 'before'
+      ? 'BMO'
+      : e.session === 'AMC' || e.session === 'after'
+        ? 'AMC'
+        : null;
+
+  const renderEarningRow = (e: any) => {
+    const session = earningSessionOf(e);
+    return (
+      <tr
+        key={e.symbol + '_' + e.date}
+        onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
+        style={{ cursor: 'pointer' }}
+      >
+        <td>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="ticker-avatar">{e.symbol[0]}</span>
+            <div>
+              <span className="ticker-pill">{e.symbol}</span>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{e.name}</div>
+            </div>
+          </div>
+        </td>
+        <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.date}</td>
+        <td className="mono">
+          {session === 'BMO' ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Sun size={12} color="var(--accent-amber)" /> BMO
+            </span>
+          ) : session === 'AMC' ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Moon size={12} color="var(--accent-amber)" /> AMC
+            </span>
+          ) : e.time ? (
+            e.time
+          ) : (
+            '—'
+          )}
+        </td>
+        <td className="num-col">
+          {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
+        </td>
+        <td className="num-col">
+          {e.actualEps != null ? `${e.actualEps.toFixed(2)} USD` : '—'}
+        </td>
+        <td className={`num-col ${e.surprise == null ? '' : e.surprise >= 0 ? 'pos' : 'neg'}`}>
+          {e.surprise != null ? formatPct(e.surprise) : '—'}
+        </td>
+        <td className="num-col">
+          {e.marketCap != null ? formatMoney(e.marketCap, 'USD', fxRates, { compact: true }) : '—'}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderEarningSection = (title: string, rows: any[]) => (
+    <>
+      <tr>
+        <td
+          colSpan={7}
+          style={{
+            fontSize: 10.5,
+            fontWeight: 700,
+            color: 'var(--accent-cyan)',
+            background: 'var(--bg-elevated)',
+            padding: '5px 10px',
+          }}
+        >
+          {title}
+        </td>
+      </tr>
+      {rows.length === 0 ? (
+        <tr>
+          <td
+            colSpan={7}
+            style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 10px' }}
+          >
+            Sin balances en este período
+          </td>
+        </tr>
+      ) : (
+        rows.map(renderEarningRow)
+      )}
+    </>
+  );
 
   const lastProjPoint = activeProj.points[activeProj.points.length - 1];
   const proj10FinVal = projShowReal ? activeProj.summary10Y.realBase : activeProj.summary10Y.base;
@@ -1019,111 +1107,9 @@ export const PortfolioView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td
-                      colSpan={7}
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        color: 'var(--accent-cyan)',
-                        background: 'var(--bg-elevated)',
-                        padding: '5px 10px',
-                      }}
-                    >
-                      TODAY & YESTERDAY
-                    </td>
-                  </tr>
-                  {todayEarnings.map((e: any) => (
-                    <tr
-                      key={e.symbol}
-                      onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="ticker-avatar">{e.symbol[0]}</span>
-                          <div>
-                            <span className="ticker-pill">{e.symbol}</span>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              {e.name}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.date}</td>
-                      <td className="mono">
-                        {e.time ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Moon size={12} color="var(--accent-amber)" /> {e.time}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="num-col">
-                        {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
-                      </td>
-                      <td className="num-col">
-                        {e.actualEps != null ? `${e.actualEps.toFixed(2)} USD` : '—'}
-                      </td>
-                      <td
-                        className={`num-col ${
-                          e.surprise == null ? '' : e.surprise >= 0 ? 'pos' : 'neg'
-                        }`}
-                      >
-                        {e.surprise != null ? formatPct(e.surprise) : '—'}
-                      </td>
-                      <td className="num-col">
-                        {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
-                      </td>
-                    </tr>
-                  ))}
-
-                  <tr>
-                    <td
-                      colSpan={7}
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        color: 'var(--accent-cyan)',
-                        background: 'var(--bg-elevated)',
-                        padding: '5px 10px',
-                      }}
-                    >
-                      NEXT 30 DAYS
-                    </td>
-                  </tr>
-                  {next30Earnings.map((e: any) => (
-                    <tr
-                      key={e.symbol}
-                      onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="ticker-avatar">{e.symbol[0]}</span>
-                          <div>
-                            <span className="ticker-pill">{e.symbol}</span>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              {e.name}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.date}</td>
-                      <td className="mono">
-                        <Sun size={12} color="var(--text-muted)" />
-                      </td>
-                      <td className="num-col">
-                        {e.estimateEps != null ? `${e.estimateEps.toFixed(2)} USD` : '—'}
-                      </td>
-                      <td className="num-col">—</td>
-                      <td className="num-col">—</td>
-                      <td className="num-col">
-                        {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
-                      </td>
-                    </tr>
-                  ))}
+                  {renderEarningSection('RECIENTES · ÚLTIMOS 14 DÍAS', recentEarnings)}
+                  {renderEarningSection('HOY Y MAÑANA', todayEarnings)}
+                  {renderEarningSection('PRÓXIMOS 30 DÍAS', next30Earnings)}
                 </tbody>
               </table>
             </div>

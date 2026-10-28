@@ -627,7 +627,7 @@ export const MarketView: React.FC = () => {
                         {e.estimateEps != null ? "$" + e.estimateEps.toFixed(2) : '—'}
                       </td>
                       <td className="num-col">
-                        {formatMoney(e.marketCap, 'USD', fxRates, { compact: true })}
+                        {e.marketCap != null ? formatMoney(e.marketCap, 'USD', fxRates, { compact: true }) : '—'}
                       </td>
                     </tr>
                   ))}

@@ -8,6 +8,7 @@ import type {
   CandlestickData,
   LineData,
   HistogramData,
+  SeriesMarker,
   Time,
 } from 'lightweight-charts';
 
@@ -25,6 +26,10 @@ export interface FinvizChartProps {
   /** Cierres [epochMs, close] por si el backend viejo no manda velas. */
   fallbackPoints?: [number, number][];
   fairValue?: number | null;
+  /** Fechas de balances (YYYY-MM-DD) a marcar con un círculo ámbar «E». */
+  earningsDates?: string[];
+  /** Dividendos ex-date a marcar con un círculo azul «D» sobre el eje temporal. */
+  dividendEvents?: { date: string; amount: number }[];
   height?: number;
 }
 
@@ -275,6 +280,8 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   candles: rawCandles,
   fallbackPoints,
   fairValue,
+  earningsDates,
+  dividendEvents,
   height = 380,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -298,6 +305,101 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   const sma50Data = useMemo(() => smaSeries(closes, 50), [closes]);
   const sma200Data = useMemo(() => smaSeries(closes, 200), [closes]);
   const hasVolume = useMemo(() => candles.some(c => c.v > 0), [candles]);
+
+  // Marcadores de balances: anclados a la vela de la fecha del earning,
+  // pegados al eje temporal (belowBar), en ámbar y con la fecha corta en el
+  // propio texto del marcador («E 15/10») para que se lea sobre el eje X.
+  // Si la fecha cae fin de semana/feriado, se usa la primera vela posterior
+  // dentro de los 4 días siguientes. El PRÓXIMO earning solo se puede
+  // marcar si su fecha tiene vela (está dentro del rango de velas
+  // disponibles); si cae a futuro sin vela, queda cubierto por la tarjeta
+  // de balances de AssetView (respaldo obligatorio).
+  const earningsMarks = useMemo<{ candle: AssetCandle; earnDate: string }[]>(() => {
+    if (!earningsDates || earningsDates.length === 0 || candles.length === 0) return [];
+    const byDate = new Map<string, AssetCandle>();
+    for (const c of candles) byDate.set(new Date(c.t).toISOString().slice(0, 10), c);
+    // Ajuste a vela: exacta, o la primera posterior dentro de 4 días si la
+    // fecha cae en un día no hábil (fin de semana / feriado).
+    const findCandle = (d: string): AssetCandle | undefined => {
+      const exact = byDate.get(d);
+      if (exact) return exact;
+      const base = Date.parse(d + 'T00:00:00Z');
+      for (const c of candles) {
+        const cd = new Date(c.t).toISOString().slice(0, 10);
+        const diff = (Date.parse(cd + 'T00:00:00Z') - base) / 86400000;
+        if (diff > 0 && diff <= 4) return c;
+      }
+      return undefined;
+    };
+    const used = new Set<number>();
+    const marks: { candle: AssetCandle; earnDate: string }[] = [];
+    for (const d of earningsDates) {
+      const target = findCandle(d);
+      if (target && !used.has(target.t)) {
+        used.add(target.t);
+        marks.push({ candle: target, earnDate: d });
+      }
+    }
+    return marks.sort((a, b) => a.candle.t - b.candle.t);
+  }, [earningsDates, candles]);
+
+  // Dividendos ex-date: misma regla de ajuste a la vela de su fecha.
+  const dividendMarks = useMemo<{ candle: AssetCandle; divDate: string; amount: number }[]>(() => {
+    if (!dividendEvents || dividendEvents.length === 0 || candles.length === 0) return [];
+    const byDate = new Map<string, AssetCandle>();
+    for (const c of candles) byDate.set(new Date(c.t).toISOString().slice(0, 10), c);
+    const findCandle = (d: string): AssetCandle | undefined => {
+      const exact = byDate.get(d);
+      if (exact) return exact;
+      const base = Date.parse(d + 'T00:00:00Z');
+      for (const c of candles) {
+        const cd = new Date(c.t).toISOString().slice(0, 10);
+        const diff = (Date.parse(cd + 'T00:00:00Z') - base) / 86400000;
+        if (diff > 0 && diff <= 4) return c;
+      }
+      return undefined;
+    };
+    const used = new Set<number>();
+    const marks: { candle: AssetCandle; divDate: string; amount: number }[] = [];
+    for (const ev of dividendEvents) {
+      const target = findCandle(ev.date);
+      if (target && !used.has(target.t)) {
+        used.add(target.t);
+        marks.push({ candle: target, divDate: ev.date, amount: ev.amount });
+      }
+    }
+    return marks.sort((a, b) => a.candle.t - b.candle.t);
+  }, [dividendEvents, candles]);
+
+  // UNA sola llamada a setMarkers con el arreglo combinado y ordenado:
+  // «E» ámbar para balances y «D» azul para dividendos ex-date, ambos
+  // belowBar pegados al eje temporal, con la fecha corta en el texto.
+  const allMarkers = useMemo<SeriesMarker<Time>[]>(() => {
+    // En los bordes del gráfico (primeras/últimas 2 velas) el texto con
+    // fecha se corta contra el eje: ahí va solo la letra y la fecha
+    // completa queda en el chip de la leyenda.
+    const edgeShort = (candle: AssetCandle): boolean => {
+      const idx = candles.indexOf(candle);
+      return idx >= 0 && (idx <= 1 || idx >= candles.length - 2);
+    };
+    const ms: SeriesMarker<Time>[] = [
+      ...earningsMarks.map(({ candle, earnDate }) => ({
+        time: toUTC(candle.t) as Time,
+        position: 'belowBar' as const,
+        shape: 'circle' as const,
+        color: '#F59E0B',
+        text: edgeShort(candle) ? 'E' : `E ${earnDate.slice(8, 10)}/${earnDate.slice(5, 7)}`,
+      })),
+      ...dividendMarks.map(({ candle, divDate }) => ({
+        time: toUTC(candle.t) as Time,
+        position: 'belowBar' as const,
+        shape: 'circle' as const,
+        color: '#3B82F6',
+        text: edgeShort(candle) ? 'D' : `D ${divDate.slice(8, 10)}/${divDate.slice(5, 7)}`,
+      })),
+    ];
+    return ms.sort((a, b) => (a.time as number) - (b.time as number));
+  }, [earningsMarks, dividendMarks]);
 
   // Análisis técnico estilo Finviz (pivotes, líneas ancladas y patrón)
   const trendPattern = useMemo(() => computeTrendPattern(candles), [candles]);
@@ -390,6 +492,11 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
       close: c.c,
     }));
     candleSeries.setData(candleData);
+
+    // ── 1b. Marcadores sobre el eje temporal: balances «E» + dividendos «D» ──
+    if (allMarkers.length > 0) {
+      candleSeries.setMarkers(allMarkers);
+    }
 
     // ── 2. Fair Value como PriceLine ──
     if (fairValue != null && Number.isFinite(fairValue) && fairValue > 0) {
@@ -509,7 +616,7 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, topTrendData, botTrendData, hasVolume, height]);
+  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, topTrendData, botTrendData, hasVolume, height, allMarkers]);
 
   // Leyenda de SMAs (valores del último cierre)
   const lastIdx = candles.length - 1;
@@ -565,6 +672,70 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
             FV US$ {fairValue.toFixed(fairValue >= 100 ? 0 : 2)}
           </span>
         )}
+        {earningsMarks.map(({ earnDate }) => {
+          const dObj = new Date(earnDate + 'T12:00:00');
+          const lbl =
+            dObj.getDate() +
+            '-' +
+            dObj.toLocaleDateString('es-AR', { month: 'short' }).replace(/\./g, '');
+          return (
+            <span
+              key={earnDate}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#F59E0B', fontWeight: 600 }}
+              title={`Balance (earnings) del ${earnDate}: marcador ámbar sobre el eje temporal`}
+            >
+              <span
+                style={{
+                  width: 13,
+                  height: 13,
+                  borderRadius: '50%',
+                  background: '#F59E0B',
+                  color: '#111827',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                E
+              </span>
+              E · Balance {lbl}
+            </span>
+          );
+        })}
+        {dividendMarks.map(({ divDate, amount }) => {
+          const dObj = new Date(divDate + 'T12:00:00');
+          const lbl =
+            dObj.getDate() +
+            '-' +
+            dObj.toLocaleDateString('es-AR', { month: 'short' }).replace(/\./g, '');
+          return (
+            <span
+              key={'div-' + divDate}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#3B82F6', fontWeight: 600 }}
+              title={`Dividendo ex-date del ${divDate}: US$ ${amount.toFixed(4)} por acción — marcador azul sobre el eje temporal`}
+            >
+              <span
+                style={{
+                  width: 13,
+                  height: 13,
+                  borderRadius: '50%',
+                  background: '#3B82F6',
+                  color: '#FFFFFF',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                D
+              </span>
+              D · Dividendo {lbl}
+            </span>
+          );
+        })}
         {topTrendData.length >= 2 && (
           <span style={{ color: '#EC4899', fontWeight: 600 }}>
             Resistencia · {topTrendData[topTrendData.length - 1].value.toFixed(2)}

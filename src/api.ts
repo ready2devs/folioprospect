@@ -59,6 +59,8 @@ export interface PortfolioEvaluationResponse {
     earnings: any[];
     dividends: any[];
     news: any[];
+    earningsSource?: 'nasdaq' | 'snapshot';
+    earningsUpdatedAt?: string;
   };
   tvReference: any;
   defaultProjection: ProjectionResult;
@@ -114,6 +116,16 @@ export interface AssetExtras {
   dividendYieldPct: number | null;
   /** Forward dividend yield en porcentaje (ej: 0.99 para 0.99%) desde summaryDetail.yield o annualDividendYield */
   forwardDividendYieldPct: number | null;
+  /** Próxima fecha ex-dividendo (YYYY-MM-DD): Yahoo calendarEvents o respaldo Finviz */
+  nextExDividendDate?: string | null;
+  /** Fecha de pago del próximo dividendo (YYYY-MM-DD) si la fuente la publica */
+  dividendDate?: string | null;
+  /** Dividendo anual por acción en US$ (summaryDetail.dividendRate) */
+  dividendRate?: number | null;
+  /** Próxima fecha de balance (YYYY-MM-DD) según Yahoo calendarEvents */
+  nextEarningsDate?: string | null;
+  /** EPS promedio estimado para ese próximo balance */
+  nextEarningsEstimate?: number | null;
   marketCap: number | null;
   /** Trailing P/E ratio (precio sobre ganancias pasadas 12M) */
   trailingPE: number | null;
@@ -155,6 +167,10 @@ export interface AssetExtras {
   operatingMarginPct: number | null;
   /** Proxy de ROIC calculado en porcentaje */
   roicProxyPct: number | null;
+  /** ROIC real de Finviz en porcentaje (null si Finviz no lo trae) */
+  roicPct?: number | null;
+  /** Catálogo completo de fundamentales de Finviz */
+  finviz?: import('@shared/engine/finvizParse').FinvizFundamentals | null;
   /** Ratio corriente (Current Ratio) */
   currentRatio: number | null;
   /** Ratio rápido / prueba ácida (Quick Ratio) */
@@ -170,14 +186,41 @@ export interface AssetExtras {
   businessSummary: string;
 }
 
+export interface AssetEarningsInfo {
+  next: {
+    date: string;
+    session: 'BMO' | 'AMC' | null;
+    estimateEps: number | null;
+    fiscalQuarterEnding: string;
+  } | null;
+  last: {
+    date: string;
+    actualEps: number | null;
+    estimateEps: number | null;
+    surprise: number | null;
+  } | null;
+  events: {
+    date: string;
+    actualEps: number | null;
+    estimateEps: number | null;
+    surprise: number | null;
+  }[];
+}
+
 export interface AssetDetailResponse {
   symbol: string;
   meta: AssetMeta;
   quote: QuoteData;
   sparkline: { prevClose: number; points: number[] };
-  chart: { points: [number, number][]; prevClose: number; candles?: AssetCandle[] };
+  chart: {
+    points: [number, number][];
+    prevClose: number;
+    candles?: AssetCandle[];
+    dividendEvents?: { date: string; amount: number }[];
+  };
   fairValue: FairValueResult;
   extras?: AssetExtras;
+  earningsInfo?: AssetEarningsInfo | null;
   holding: ComputedHolding | null;
   trades: any[];
   projection: ProjectionResult;
@@ -766,6 +809,23 @@ export const api = {
       `/api/asset/${encodeURIComponent(normSym)}?range=${encodeURIComponent(range)}`
     );
     return r.json();
+  },
+  /**
+   * Balances del activo desde el endpoint dedicado (escaneo Nasdaq con
+   * deadline en el servidor). El detalle principal ya no espera ese
+   * escaneo: la vista lo pide aparte y actualiza tarjeta y marcadores
+   * cuando llega. Ante cualquier fallo devuelve null.
+   */
+  async getAssetEarnings(symbol: string): Promise<AssetEarningsInfo | null> {
+    try {
+      const normSym = normalizeTradingViewSymbol(symbol);
+      const r = await fetch(`/api/asset/${encodeURIComponent(normSym)}/earnings`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      return (j as AssetEarningsInfo) ?? null;
+    } catch {
+      return null;
+    }
   },
   async runProjection(params: Record<string, any>): Promise<ProjectionResult> {
     const r = await fetch('/api/projection', {

@@ -19,6 +19,14 @@ import {
 } from './yahoo.js';
 import { fetchArgFxRates } from './argFx.js';
 import {
+  fetchEarningsForTickers,
+  fetchEarningsInfoForTicker,
+  cacheOnlyEarningsInfo,
+  regroupSeedEarnings,
+  filterSeedDividends,
+  todayInNewYork,
+} from './earnings.js';
+import {
   evaluateLedger,
   buildPortfolioSeries,
   computeRiskMetrics,
@@ -36,6 +44,26 @@ import type {
   IlliquidAsset,
   Trade,
 } from '../shared/engine/types.js';
+
+
+/** Completa `next` (respaldo Yahoo) y lo suma a `events` si no estaba:
+ *  sin esto, el próximo balance se veía en la tarjeta pero NO tenía
+ *  marcador ni chip en el gráfico (su fecha no entraba a events). */
+function withNextEvent(info: any, next: any): any {
+  const events = Array.isArray(info?.events) ? [...info.events] : [];
+  if (next && !events.some((e: any) => e.date === next.date)) {
+    events.push({
+      date: next.date,
+      actualEps: null,
+      estimateEps: next.estimateEps ?? null,
+      surprise: null,
+    });
+    events.sort((a: any, b: any) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+  return info
+    ? { ...info, next, events }
+    : { next, last: null, events };
+}
 
 export async function registerRoutes(app: Express): Promise<void> {
   // On Vercel, hydrate the durable database from KV before serving requests;
@@ -184,6 +212,39 @@ export async function registerRoutes(app: Express): Promise<void> {
       portfolioPriceToFairValue: 0.87,
     });
 
+    // Earnings EN VIVO desde Nasdaq (la foto seed del 2026-10-22 quedaba
+    // congelada: mostraba balances ya pasados como «today»/futuros).
+    // Deadline interno de 8s en el escaneo; si Nasdaq no trae nada de la
+    // cartera, fallback a la foto seed con grupos recalculados contra hoy.
+    const earningsTickers = new Set<string>(
+      portfolio.trades
+        .map((t) => t.symbol)
+        .filter((s) => !s.startsWith('BINANCE:') && !cleanTicker(s).endsWith('USDT'))
+        .map((s) => cleanTicker(s).toUpperCase())
+        .filter(Boolean)
+    );
+    let liveEarnings: Awaited<ReturnType<typeof fetchEarningsForTickers>> = [];
+    try {
+      // Deadline interno: devuelve lo juntado (parcial pero en vivo) en
+      // vez de descartar todo por timeout; la caché por fecha hace que la
+      // próxima llamada complete la ventana.
+      liveEarnings = await fetchEarningsForTickers(earningsTickers, 14, 30, {
+        deadlineMs: 8000,
+      });
+    } catch {
+      liveEarnings = [];
+    }
+    const useLiveEarnings = liveEarnings.length > 0;
+    const calendar = {
+      ...seedCalendar,
+      earnings: useLiveEarnings
+        ? liveEarnings
+        : regroupSeedEarnings(seedCalendar.earnings),
+      dividends: filterSeedDividends(seedCalendar.dividends),
+      earningsSource: useLiveEarnings ? 'nasdaq' : 'snapshot',
+      earningsUpdatedAt: new Date().toISOString(),
+    };
+
     res.json({
       portfolio,
       quotes: quotesMap,
@@ -208,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         gainers: dailyGainers,
         losers: dailyLosers,
       },
-      calendar: seedCalendar,
+      calendar,
       tvReference,
       defaultProjection,
       cached,
@@ -477,11 +538,37 @@ export async function registerRoutes(app: Express): Promise<void> {
       };
     });
 
+    // Próximos balances de la cartera (hoy en adelante, máx 6), en vivo.
+    const marketPortfolio = db.portfolios[0];
+    const marketTickers = new Set<string>(
+      (marketPortfolio?.trades || [])
+        .map((t) => t.symbol)
+        .filter((s) => !s.startsWith('BINANCE:') && !cleanTicker(s).endsWith('USDT'))
+        .map((s) => cleanTicker(s).toUpperCase())
+        .filter(Boolean)
+    );
+    let marketEarnings: any[] = [];
+    try {
+      const all = await fetchEarningsForTickers(marketTickers, 0, 45, {
+        deadlineMs: 8000,
+      });
+      const todayStr = todayInNewYork();
+      marketEarnings = all.filter((e) => e.date >= todayStr).slice(0, 6);
+    } catch {
+      marketEarnings = [];
+    }
+    if (marketEarnings.length === 0) {
+      const todayStr = todayInNewYork();
+      marketEarnings = regroupSeedEarnings(seedCalendar.earnings)
+        .filter((e) => e.date >= todayStr)
+        .slice(0, 6);
+    }
+
     res.json({
       indices,
       sectors,
       news: seedCalendar.news,
-      earnings: seedCalendar.earnings.slice(0, 6),
+      earnings: marketEarnings,
     });
   });
 
@@ -532,6 +619,28 @@ export async function registerRoutes(app: Express): Promise<void> {
       (t) => t.symbol === matchedKey || cleanTicker(t.symbol) === cleanTicker(matchedKey)
     );
 
+    // Balances de este activo: SOLO caché (cero red nueva en este handler).
+    // El escaneo inline de 155 días tardaba ~65 s en frío y bloqueaba toda
+    // la ficha; el escaneo vivo vive en GET /api/asset/:symbol/earnings y
+    // la vista lo pide aparte. Acá respondemos al instante con lo que la
+    // caché por fecha ya tenga (evaluate/market la calientan) y, si falta
+    // el próximo balance, lo completamos con el calendarEvents de Yahoo
+    // que ya vino en `extras` (sin costo extra).
+    const tickerClean = cleanTicker(matchedKey).toUpperCase();
+    let earningsInfo: any = null;
+    if (!matchedKey.startsWith('BINANCE:') && !tickerClean.endsWith('USDT')) {
+      earningsInfo = cacheOnlyEarningsInfo(tickerClean);
+      if ((!earningsInfo || !earningsInfo.next) && extras.nextEarningsDate) {
+        const yahooNext = {
+          date: extras.nextEarningsDate,
+          session: null,
+          estimateEps: extras.nextEarningsEstimate ?? null,
+          fiscalQuarterEnding: '',
+        };
+        earningsInfo = withNextEvent(earningsInfo, yahooNext);
+      }
+    }
+
     const initialForAsset = holding ? holding.value : quote.price * 10;
     const assetProjection = runPortfolioProjection({
       horizonYears: 20,
@@ -552,10 +661,72 @@ export async function registerRoutes(app: Express): Promise<void> {
       chart,
       fairValue,
       extras,
+      earningsInfo,
       holding,
       trades: assetTrades,
       projection: assetProjection,
     });
+  });
+
+  // Balances de un activo (escaneo Nasdaq priorizado con deadline de 9 s).
+  // Endpoint separado para que /api/asset nunca se bloquee: la vista lo
+  // pide después de renderizar y actualiza tarjeta y marcadores al llegar.
+  app.get('/api/asset/:symbol/earnings', async (req: Request, res: Response) => {
+    const rawSym = decodeURIComponent(String(req.params.symbol)).toUpperCase();
+    const matchedKey =
+      Object.keys(db.assetMeta).find(
+        (k) => k === rawSym || cleanTicker(k) === cleanTicker(rawSym)
+      ) || (rawSym.includes(':') ? rawSym : `NASDAQ:${rawSym}`);
+    const tickerClean = cleanTicker(matchedKey).toUpperCase();
+
+    if (matchedKey.startsWith('BINANCE:') || tickerClean.endsWith('USDT')) {
+      res.json(null);
+      return;
+    }
+
+    // El respaldo de Yahoo (extras) se dispara EN PARALELO con el escaneo
+    // y solo se espera si el escaneo no encontró próximo balance: la
+    // respuesta es la misma, pero su latencia no se suma al total.
+    const extrasPromise: Promise<any> = (async () => {
+      try {
+        const { quotes } = await fetchQuotesWithSparklines([matchedKey]);
+        return await fetchAssetExtras(matchedKey, quotes[matchedKey]?.price ?? 0);
+      } catch {
+        return null;
+      }
+    })();
+
+    let info: any = null;
+    try {
+      info = await fetchEarningsInfoForTicker(tickerClean, { deadlineMs: 9000 });
+    } catch {
+      info = null;
+    }
+
+    // Si el escaneo no encontró próximo balance, respaldo con el
+    // calendarEvents de Yahoo vía extras (cacheado 10 min: es barato;
+    // con timeout de 3 s para no colgar el endpoint).
+    if (!info || !info.next) {
+      try {
+        const extras = await Promise.race([
+          extrasPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        if (extras && extras.nextEarningsDate) {
+          const yahooNext = {
+            date: extras.nextEarningsDate,
+            session: null,
+            estimateEps: extras.nextEarningsEstimate ?? null,
+            fiscalQuarterEnding: '',
+          };
+          info = withNextEvent(info, yahooNext);
+        }
+      } catch {
+        // sin respaldo: se responde lo que haya (o null)
+      }
+    }
+
+    res.json(info ?? null);
   });
 
   app.get('/api/search', async (req: Request, res: Response) => {
