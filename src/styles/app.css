@@ -33,14 +33,18 @@ html, body, #root {
   animation: fp-spin 0.9s linear infinite;
 }
 
-/* Workspace Layout: TopBar + Split Left / Right */
+/* Workspace Layout: TopBar + Split Left / Right (Enmarcado centrado conjunto) */
 .app-shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100%;
-  max-width: 100vw;
+  max-width: 1680px;
+  margin: 0 auto;
   overflow: hidden;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .topbar {
@@ -682,12 +686,9 @@ html, body, #root {
      permite que el contenido fluya de manera natural al 100% sin márgenes vacíos.
    ========================================================================== */
 @media (min-width: 1024px) {
-  /* Sólo el wrapper de la vista se centra; no se fuerzan widgets auxiliares. */
+  /* El cuerpo principal se mantiene adyacente al panel izquierdo de cartera sin separación artificial */
   .right-panel > div {
-    width: min(100%, 1440px);
-    max-width: 1440px;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
     box-sizing: border-box;
   }
 }

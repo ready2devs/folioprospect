@@ -140,7 +140,14 @@ function bestAnchoredLine(pivots: Pivot[], candles: AssetCandle[], side: 'H' | '
   return { i0: anchor1.i, v0: anchor1.v, slope: (q.v - anchor1.v) / (q.i - anchor1.i) };
 }
 
-function detectTrendLabel(candles: AssetCandle[]): string {
+export interface TechnicalTrendResult {
+  topLine: TrendLine | null;
+  botLine: TrendLine | null;
+  label: string;
+}
+
+function computeTrendPattern(candles: AssetCandle[]): TechnicalTrendResult {
+  if (candles.length < 10) return { topLine: null, botLine: null, label: '' };
   const medianRangePct = (() => {
     const rs = candles
       .map(c => (c.c > 0 ? (c.h - c.l) / c.c : 0))
@@ -178,15 +185,33 @@ function detectTrendLabel(candles: AssetCandle[]): string {
   const FLAT = 4;
   const rDown = driftR < -FLAT; const rUp = driftR > FLAT;
   const sDown = driftS < -FLAT; const sUp = driftS > FLAT;
-  if (rDown && sUp) return 'Cuña convergente';
-  if (rUp && sDown) return 'Cuña expansiva';
-  if (rDown && sDown) return Math.abs(driftR - driftS) < 6 ? 'Canal bajista' : 'Cuña bajista';
-  if (rUp && sUp) return Math.abs(driftR - driftS) < 6 ? 'Canal alcista' : 'Cuña alcista';
-  if (!rDown && !rUp && sUp) return 'Triángulo ascendente';
-  if (rDown && !sDown && !sUp) return 'Triángulo descendente';
-  if (rUp && !sDown && !sUp) return 'Soporte roto al alza';
-  if (sDown && !rDown && !rUp) return 'Resistencia en caída';
-  return 'Canal lateral';
+  let label = 'Canal lateral';
+  if (rDown && sUp) label = 'Cuña convergente';
+  else if (rUp && sDown) label = 'Cuña expansiva';
+  else if (rDown && sDown) label = Math.abs(driftR - driftS) < 6 ? 'Canal bajista' : 'Cuña bajista';
+  else if (rUp && sUp) label = Math.abs(driftR - driftS) < 6 ? 'Canal alcista' : 'Cuña alcista';
+  else if (!rDown && !rUp && sUp) label = 'Triángulo ascendente';
+  else if (rDown && !sDown && !sUp) label = 'Triángulo descendente';
+  else if (rUp && !sDown && !sUp) label = 'Soporte roto al alza';
+  else if (sDown && !rDown && !rUp) label = 'Resistencia en caída';
+
+  return { topLine, botLine, label };
+}
+
+function trendLineToSeriesData(line: TrendLine | null, candles: AssetCandle[]): LineData<Time>[] {
+  if (!line || candles.length < 2) return [];
+  const points: LineData<Time>[] = [];
+  const startIdx = Math.max(0, Math.min(line.i0, candles.length - 2));
+  for (let i = startIdx; i < candles.length; i++) {
+    const val = lineAt(line, i);
+    if (val > 0 && Number.isFinite(val)) {
+      points.push({
+        time: toUTC(candles[i].t) as Time,
+        value: Number(val.toFixed(2)),
+      });
+    }
+  }
+  return points;
 }
 
 /* ─── Fallback simple (sin velas) ────────────────────────────── */
@@ -274,11 +299,10 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   const sma200Data = useMemo(() => smaSeries(closes, 200), [closes]);
   const hasVolume = useMemo(() => candles.some(c => c.v > 0), [candles]);
 
-  // Etiqueta de patrón técnico
-  const trendLabel = useMemo(() => {
-    if (candles.length < 10) return '';
-    return detectTrendLabel(candles);
-  }, [candles]);
+  // Análisis técnico estilo Finviz (pivotes, líneas ancladas y patrón)
+  const trendPattern = useMemo(() => computeTrendPattern(candles), [candles]);
+  const topTrendData = useMemo(() => trendLineToSeriesData(trendPattern.topLine, candles), [trendPattern.topLine, candles]);
+  const botTrendData = useMemo(() => trendLineToSeriesData(trendPattern.botLine, candles), [trendPattern.botLine, candles]);
 
   // Si no hay velas suficientes, mostrar fallback
   if (candles.length < 2) {
@@ -450,6 +474,34 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
       volumeSeries.setData(volData);
     }
 
+    // ── 7. Línea de resistencia técnica superior (estilo Finviz: magenta/fucsia #EC4899) ──
+    if (topTrendData.length >= 2) {
+      const topSeries = chart.addLineSeries({
+        color: '#EC4899',
+        lineWidth: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        lineStyle: LineStyle.Solid,
+        title: 'Resistencia',
+      });
+      topSeries.setData(topTrendData);
+    }
+
+    // ── 8. Línea de soporte técnico inferior (estilo Finviz: amarillo/oro #EAB308) ──
+    if (botTrendData.length >= 2) {
+      const botSeries = chart.addLineSeries({
+        color: '#EAB308',
+        lineWidth: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        lineStyle: LineStyle.Solid,
+        title: 'Soporte',
+      });
+      botSeries.setData(botTrendData);
+    }
+
     // Ajustar vista para mostrar todo el contenido
     chart.timeScale().fitContent();
 
@@ -457,7 +509,7 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, hasVolume, height]);
+  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, topTrendData, botTrendData, hasVolume, height]);
 
   // Leyenda de SMAs (valores del último cierre)
   const lastIdx = candles.length - 1;
@@ -513,7 +565,17 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
             FV US$ {fairValue.toFixed(fairValue >= 100 ? 0 : 2)}
           </span>
         )}
-        {trendLabel && (
+        {topTrendData.length >= 2 && (
+          <span style={{ color: '#EC4899', fontWeight: 600 }}>
+            Resistencia · {topTrendData[topTrendData.length - 1].value.toFixed(2)}
+          </span>
+        )}
+        {botTrendData.length >= 2 && (
+          <span style={{ color: '#EAB308', fontWeight: 600 }}>
+            Soporte · {botTrendData[botTrendData.length - 1].value.toFixed(2)}
+          </span>
+        )}
+        {trendPattern.label && (
           <span
             style={{
               marginLeft: 'auto',
@@ -521,11 +583,13 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
               padding: '1px 8px',
               borderRadius: 999,
               border: '1px solid var(--border-subtle)',
-              color: 'var(--text-muted)',
+              color: 'var(--accent-cyan)',
+              fontWeight: 600,
+              background: 'rgba(56, 189, 248, 0.08)',
             }}
-            title="Patrón técnico inferido analíticamente mediante pivotes (método estilo Finviz)"
+            title="Formación técnica detectada por pivotes (método estilo Finviz)"
           >
-            {trendLabel}
+            {trendPattern.label}
           </span>
         )}
       </div>
