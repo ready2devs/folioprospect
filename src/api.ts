@@ -110,8 +110,59 @@ export interface AssetExtras {
   hold: number | null;
   sell: number | null;
   strongSell: number | null;
+  /** Trailing / current dividend yield en porcentaje (ej: 0.31 para 0.31%) */
   dividendYieldPct: number | null;
+  /** Forward dividend yield en porcentaje (ej: 0.99 para 0.99%) desde summaryDetail.yield o annualDividendYield */
+  forwardDividendYieldPct: number | null;
   marketCap: number | null;
+  /** Trailing P/E ratio (precio sobre ganancias pasadas 12M) */
+  trailingPE: number | null;
+  /** Forward P/E ratio (precio sobre ganancias proyectadas prox. 12M) */
+  forwardPE: number | null;
+  /** PEG ratio (P/E to Growth ratio) */
+  pegRatio: number | null;
+  /** Price to Sales (P/S trailing 12M) */
+  priceToSales: number | null;
+  /** Price to Book (P/B precio sobre valor libros) */
+  priceToBook: number | null;
+  /** Price to Free Cash Flow (P/FCF = marketCap / freeCashflow) */
+  priceToFreeCashFlow: number | null;
+  /** Free Cash Flow Yield en porcentaje (freeCashflow / marketCap * 100) */
+  fcfYieldPct: number | null;
+  /** Return on Equity (ROE) en porcentaje (ej: 148.75 para 148.75%) */
+  roePct: number | null;
+  /** Return on Assets (ROA) en porcentaje (ej: 27.08 para 27.08%) */
+  roaPct: number | null;
+  /** Deuda sobre patrimonio (Debt / Equity ratio reportado por Yahoo) */
+  debtToEquity: number | null;
+  /** Short interest como porcentaje del float (ej: 0.83 para 0.83%) */
+  shortFloatPct: number | null;
+  /** EV / EBITDA (Enterprise Value sobre EBITDA) */
+  evToEbitda: number | null;
+  /** Crecimiento interanual de ganancias (Earnings Growth) en porcentaje (ej: 28.7 para 28.7%) */
+  earningsGrowthPct: number | null;
+  /** Crecimiento interanual de ingresos (Revenue Growth) en porcentaje (ej: 16.4 para 16.4%) */
+  revenueGrowthPct: number | null;
+  /** Crecimiento de EPS estimado prox. año (+1y) en porcentaje (ej: 8.25 para 8.25%) */
+  epsNextYearGrowthPct: number | null;
+  /** Crecimiento de EPS estimado a 5 años (+5y) en porcentaje si Yahoo lo informa */
+  epsNext5YGrowthPct: number | null;
+  /** Margen neto (Profit Margin) en porcentaje */
+  profitMarginPct: number | null;
+  /** Margen bruto (Gross Margin) en porcentaje */
+  grossMarginPct: number | null;
+  /** Margen operativo (Operating Margin) en porcentaje */
+  operatingMarginPct: number | null;
+  /** Proxy de ROIC calculado en porcentaje */
+  roicProxyPct: number | null;
+  /** Ratio corriente (Current Ratio) */
+  currentRatio: number | null;
+  /** Ratio rápido / prueba ácida (Quick Ratio) */
+  quickRatio: number | null;
+  /** Coeficiente Beta */
+  beta: number | null;
+  /** Beneficio por acción de los últimos 12 meses (EPS TTM) */
+  epsTrailing: number | null;
   ceo: string;
   employees: number | null;
   hq: string;

@@ -201,7 +201,11 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
     moatDesc,
     mcap: fmtMcap(extras?.marketCap ?? quote?.marketCap),
     divYield:
-      extras?.dividendYieldPct != null ? extras.dividendYieldPct.toFixed(2).replace('.', ',') : '',
+      extras?.forwardDividendYieldPct != null
+        ? extras.forwardDividendYieldPct.toFixed(2).replace('.', ',')
+        : extras?.dividendYieldPct != null
+          ? extras.dividendYieldPct.toFixed(2).replace('.', ',')
+          : '',
     consAvg: num(extras?.targetMean ?? analyst),
     consMin: num(extras?.targetLow),
     consMax: num(extras?.targetHigh),

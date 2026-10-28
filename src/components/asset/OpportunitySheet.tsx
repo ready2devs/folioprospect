@@ -58,6 +58,10 @@ export const OpportunitySheet: React.FC<{
 }> = ({ detail, isMobile }) => {
   const [form, setForm] = useState<OpportunityFormState>(() => seedOpportunityForm(detail));
   const [formOpen, setFormOpen] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(!isMobile);
+  const [editingPersp, setEditingPersp] = useState<number | null>(null);
+  const [editingVerdict, setEditingVerdict] = useState(false);
+  const [coreExpanded, setCoreExpanded] = useState(false);
 
   const set = (k: keyof OpportunityFormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -161,6 +165,14 @@ export const OpportunitySheet: React.FC<{
 
   const divY = parseLocalNum(form.divYield);
   const multiples = detail.fairValue?.multiples;
+  const extras = detail.extras;
+
+  const fmtRatio = (v: number | null | undefined, suffix = 'x', dec = 2): string =>
+    v != null && Number.isFinite(v) ? fmtLocal(v, dec) + suffix : '—';
+  const fmtPct = (v: number | null | undefined, dec = 1): string =>
+    v != null && Number.isFinite(v) ? fmtLocal(v, dec) + '%' : '—';
+  const fmtNum = (v: number | null | undefined, dec = 2): string =>
+    v != null && Number.isFinite(v) ? fmtLocal(v, dec) : '—';
 
   const formCard = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
@@ -266,112 +278,171 @@ export const OpportunitySheet: React.FC<{
           </div>
         </div>
 
-        <label style={labelStyle}>Lectura 1 · título</label>
-        <input style={inputStyle} value={form.persp1Title} onChange={set('persp1Title')} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 8 }}>
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp1Fav} onChange={set('persp1Fav')} aria-label="Lectura 1 a favor" />
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp1Con} onChange={set('persp1Con')} aria-label="Lectura 1 en contra" />
-        </div>
-        <label style={labelStyle}>Lectura 2 · título</label>
-        <input style={inputStyle} value={form.persp2Title} onChange={set('persp2Title')} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 8 }}>
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp2Fav} onChange={set('persp2Fav')} aria-label="Lectura 2 a favor" />
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp2Con} onChange={set('persp2Con')} aria-label="Lectura 2 en contra" />
-        </div>
-        <label style={labelStyle}>Lectura 3 · título</label>
-        <input style={inputStyle} value={form.persp3Title} onChange={set('persp3Title')} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 8 }}>
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp3Fav} onChange={set('persp3Fav')} aria-label="Lectura 3 a favor" />
-          <textarea style={{ ...inputStyle, minHeight: 62, resize: 'vertical' }} value={form.persp3Con} onChange={set('persp3Con')} aria-label="Lectura 3 en contra" />
-        </div>
-        <label style={labelStyle}>Veredicto · cómo se pondera este caso</label>
-        <textarea
-          style={{ ...inputStyle, minHeight: 74, resize: 'vertical' }}
-          value={form.verdictDetail}
-          onChange={set('verdictDetail')}
-        />
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>{form.seedNote}</p>
       </div>
 
       <div className="card" style={{ padding: 18 }}>
-        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>Resumen de la empresa</div>
-        {(
-          [
-            ['Símbolo', 'rSymbol'],
-            ['Bolsa', 'rExchange'],
-            ['Fundación', 'rFounded'],
-            ['Salida a bolsa', 'rIpo'],
-            ['CEO', 'rCeo'],
-            ['Empleados', 'rEmployees'],
-            ['Sector', 'rSector'],
-            ['Industria', 'rIndustry'],
-            ['País / sede', 'rHq'],
-          ] as [string, keyof OpportunityFormState][]
-        ).map(([label, key]) => (
-          <div
-            key={key}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              gap: 10,
-              borderBottom: '1px solid var(--border-subtle)',
-              padding: '6px 0',
-            }}
-          >
-            <span style={{ color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {label}
-            </span>
-            <input
-              value={form[key]}
-              onChange={set(key)}
-              aria-label={label}
-              placeholder="—"
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text-primary)',
-                font: 'inherit',
-                fontSize: 13.5,
-                fontWeight: 600,
-                textAlign: 'right',
-                flex: 1,
-                minWidth: 0,
-                padding: '1px 3px',
-              }}
+        <button
+          type="button"
+          onClick={() => setResumeOpen(o => !o)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            color: 'var(--text-primary)',
+          }}
+        >
+          <span style={{ fontWeight: 800, fontSize: 14 }}>Resumen de la empresa</span>
+          <ChevronDown
+            size={16}
+            color="var(--text-muted)"
+            style={{ transition: 'transform 0.2s', transform: resumeOpen ? 'rotate(180deg)' : undefined }}
+          />
+        </button>
+        {resumeOpen && (
+          <div style={{ marginTop: 8 }}>
+            {(
+              [
+                ['Símbolo', 'rSymbol'],
+                ['Bolsa', 'rExchange'],
+                ['Fundación', 'rFounded'],
+                ['Salida a bolsa', 'rIpo'],
+                ['CEO', 'rCeo'],
+                ['Empleados', 'rEmployees'],
+                ['Sector', 'rSector'],
+                ['Industria', 'rIndustry'],
+                ['País / sede', 'rHq'],
+              ] as [string, keyof OpportunityFormState][]
+            ).map(([label, key]) => (
+              <div
+                key={key}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  gap: 10,
+                  borderBottom: '1px solid var(--border-subtle)',
+                  padding: '6px 0',
+                }}
+              >
+                <span style={{ color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {label}
+                </span>
+                <input
+                  value={form[key]}
+                  onChange={set(key)}
+                  aria-label={label}
+                  placeholder="—"
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-primary)',
+                    font: 'inherit',
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    textAlign: 'right',
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '1px 3px',
+                  }}
+                />
+              </div>
+            ))}
+            <label style={labelStyle}>Qué hace la empresa (un párrafo, en simple)</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 150, resize: 'vertical', lineHeight: 1.55 }}
+              value={form.core}
+              onChange={set('core')}
+              placeholder="Descripción simple del negocio: qué vende, a quién, y de qué depende su resultado."
             />
           </div>
-        ))}
-        <label style={labelStyle}>Qué hace la empresa (un párrafo, en simple)</label>
-        <textarea
-          style={{ ...inputStyle, minHeight: 150, resize: 'vertical', lineHeight: 1.55 }}
-          value={form.core}
-          onChange={set('core')}
-          placeholder="Descripción simple del negocio: qué vende, a quién, y de qué depende su resultado."
-        />
+        )}
       </div>
     </div>
   );
 
-  const persp = (title: string, fav: string, con: string) => (
-    <div key={title} style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 14, paddingTop: 12 }}>
-      <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 8 }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-        <div style={{ borderRadius: 8, padding: '10px 12px', fontSize: 13.5, background: 'var(--pos-bg)' }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', color: 'var(--pos-bright)', marginBottom: 4 }}>
-            A FAVOR
-          </div>
-          <p style={{ margin: 0 }}>{fav}</p>
+  const persp = (
+    perspIdx: number,
+    titleKey: keyof OpportunityFormState,
+    favKey: keyof OpportunityFormState,
+    conKey: keyof OpportunityFormState,
+  ) => {
+    const title = form[titleKey] as string;
+    const fav = form[favKey] as string;
+    const con = form[conKey] as string;
+    const isEditing = editingPersp === perspIdx;
+    return (
+      <div key={titleKey} style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 14, paddingTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          {isEditing ? (
+            <input
+              style={{ ...inputStyle, fontSize: 15.5, fontWeight: 700, flex: 1 }}
+              value={title}
+              onChange={set(titleKey)}
+              autoFocus
+            />
+          ) : (
+            <span style={{ fontSize: 15.5, fontWeight: 700, flex: 1 }}>{title}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setEditingPersp(isEditing ? null : perspIdx)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              color: isEditing ? 'var(--accent-cyan)' : 'var(--text-muted)',
+              fontSize: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              borderRadius: 4,
+              flexShrink: 0,
+            }}
+            title={isEditing ? 'Listo' : 'Editar lectura'}
+          >
+            <Pencil size={12} /> {isEditing ? '✓' : ''}
+          </button>
         </div>
-        <div style={{ borderRadius: 8, padding: '10px 12px', fontSize: 13.5, background: 'var(--neg-bg)' }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', color: 'var(--neg-bright)', marginBottom: 4 }}>
-            EN CONTRA
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+          <div style={{ borderRadius: 8, padding: '10px 12px', fontSize: 13.5, background: 'var(--pos-bg)' }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', color: 'var(--pos-bright)', marginBottom: 4 }}>
+              A FAVOR
+            </div>
+            {isEditing ? (
+              <textarea
+                style={{ ...inputStyle, minHeight: 60, resize: 'vertical', background: 'transparent', border: '1px solid var(--pos-primary)' }}
+                value={fav}
+                onChange={set(favKey)}
+              />
+            ) : (
+              <p style={{ margin: 0 }}>{fav}</p>
+            )}
           </div>
-          <p style={{ margin: 0 }}>{con}</p>
+          <div style={{ borderRadius: 8, padding: '10px 12px', fontSize: 13.5, background: 'var(--neg-bg)' }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', color: 'var(--neg-bright)', marginBottom: 4 }}>
+              EN CONTRA
+            </div>
+            {isEditing ? (
+              <textarea
+                style={{ ...inputStyle, minHeight: 60, resize: 'vertical', background: 'transparent', border: '1px solid var(--neg-primary)' }}
+                value={con}
+                onChange={set(conKey)}
+              />
+            ) : (
+              <p style={{ margin: 0 }}>{con}</p>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const ficha = (
     <div
@@ -398,6 +469,59 @@ export const OpportunitySheet: React.FC<{
           Evaluación de oportunidad
         </div>
       </div>
+
+      {form.core && (
+        <div style={{ paddingTop: 10, position: 'relative' }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+              overflow: coreExpanded ? undefined : 'hidden',
+              maxHeight: coreExpanded ? undefined : '2.95em',
+            }}
+          >
+            {form.core}
+          </p>
+          {form.core.length > 120 && !coreExpanded && (
+            <button
+              type="button"
+              onClick={() => setCoreExpanded(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-cyan)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '2px 0',
+                marginTop: 2,
+              }}
+            >
+              ver más ▾
+            </button>
+          )}
+          {coreExpanded && (
+            <button
+              type="button"
+              onClick={() => setCoreExpanded(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-cyan)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '2px 0',
+                marginTop: 2,
+              }}
+            >
+              ver menos ▴
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={{ padding: '14px 0 4px' }}>
         <div style={fldLabel}>% hasta el Fair Value (upside) — lo que ganarías si el precio converge</div>
@@ -570,14 +694,188 @@ export const OpportunitySheet: React.FC<{
         </p>
       </div>
 
-      {form.core && <p style={{ paddingTop: 14, fontSize: 14.5, margin: 0 }}>{form.core}</p>}
+      {/* Indicadores fundamentales y valuación (método estilo Finviz) */}
+      <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 14, marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div>
+            <div style={fldLabel}>Indicadores fundamentales y valuación</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Métricas clave de valuación, crecimiento y calidad del negocio (método estilo Finviz).
+            </div>
+          </div>
+          <span
+            style={{
+              padding: '3px 9px',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            {detail.meta.ticker}
+          </span>
+        </div>
 
-      {persp(form.persp1Title, form.persp1Fav, form.persp1Con)}
-      {persp(form.persp2Title, form.persp2Fav, form.persp2Con)}
-      {persp(form.persp3Title, form.persp3Fav, form.persp3Con)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Valuación */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+              Valuación
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              {[
+                { label: 'P/E (TTM)', val: fmtRatio(extras?.trailingPE ?? multiples?.pe), tip: 'Precio sobre ganancias pasadas de 12 meses' },
+                { label: 'Forward P/E', val: fmtRatio(extras?.forwardPE ?? multiples?.forwardPe), tip: 'Precio sobre ganancias estimadas a 1 año' },
+                { label: 'PEG', val: fmtNum(extras?.pegRatio), tip: 'P/E dividido crecimiento esperado (menor a 1 suele indicar buen precio)' },
+                { label: 'P/S', val: fmtRatio(extras?.priceToSales), tip: 'Precio sobre ventas (Price to Sales)' },
+                { label: 'P/B', val: fmtRatio(extras?.priceToBook), tip: 'Precio sobre valor libros contable (Price to Book)' },
+                { label: 'P/FCF', val: fmtRatio(extras?.priceToFreeCashFlow), tip: 'Precio sobre flujo de caja libre (Price to Free Cash Flow)' },
+                { label: 'EV/EBITDA', val: fmtRatio(extras?.evToEbitda ?? multiples?.evToEbitda), tip: 'Enterprise Value sobre EBITDA' },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  title={m.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Crecimiento */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+              Crecimiento
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              {[
+                { label: 'EPS próx. año', val: fmtPct(extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
+                { label: 'EPS próx. 5 años', val: fmtPct(extras?.epsNext5YGrowthPct), tip: 'Crecimiento estimado anualizado de EPS a 5 años' },
+                { label: 'Crec. ganancias YoY', val: fmtPct(extras?.earningsGrowthPct), tip: 'Crecimiento interanual de ganancias (Earnings Growth)' },
+                { label: 'Crec. ingresos YoY', val: fmtPct(extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), tip: 'Crecimiento interanual de ingresos (Revenue Growth)' },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  title={m.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Rentabilidad & Calidad */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+              Rentabilidad y Calidad
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              {[
+                { label: 'Margen neto', val: fmtPct(extras?.profitMarginPct), tip: 'Porcentaje de ventas que queda como ganancia limpia después de todos los gastos e impuestos' },
+                { label: 'Margen operativo', val: fmtPct(extras?.operatingMarginPct ?? multiples?.operatingMarginPct), tip: 'Margen antes de intereses e impuestos (EBIT / Ventas)' },
+                { label: 'Margen bruto', val: fmtPct(extras?.grossMarginPct ?? multiples?.grossMarginPct), tip: 'Ganancia bruta sobre ingresos' },
+                { label: 'ROE', val: fmtPct(extras?.roePct ?? multiples?.roePct), tip: 'Rentabilidad sobre el patrimonio neto (Return on Equity)' },
+                { label: 'ROA', val: fmtPct(extras?.roaPct), tip: 'Rentabilidad sobre los activos totales (Return on Assets)' },
+                { label: 'ROIC (proxy)', val: fmtPct(extras?.roicProxyPct ?? multiples?.roicProxyPct), tip: 'Retorno sobre el capital invertido estimado' },
+                { label: 'FCF Yield', val: fmtPct(extras?.fcfYieldPct ?? multiples?.fcfYieldPct), tip: 'Rendimiento de flujo de caja libre sobre capitalización' },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  title={m.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Solvencia & Riesgo */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+              Solvencia y Riesgo
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              {[
+                { label: 'Deuda / Patrimonio', val: fmtNum(extras?.debtToEquity ?? multiples?.debtToEquity), tip: 'Ratio de deuda total sobre patrimonio neto (Debt to Equity)' },
+                { label: 'Current Ratio', val: fmtNum(extras?.currentRatio), tip: 'Capacidad de cubrir deudas a corto plazo con activos corrientes (mayor a 1 indica solvencia)' },
+                { label: 'Quick Ratio', val: fmtNum(extras?.quickRatio), tip: 'Prueba ácida: solvencia de corto plazo sin depender de inventarios' },
+                { label: 'Short Float', val: fmtPct(extras?.shortFloatPct), tip: 'Porcentaje de acciones en circulación apostadas a la baja (short interest)' },
+                { label: 'Beta', val: fmtNum(extras?.beta), tip: 'Sensibilidad frente a la volatilidad del mercado general (S&P 500 = 1.0)' },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  title={m.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {persp(1, 'persp1Title', 'persp1Fav', 'persp1Con')}
+      {persp(2, 'persp2Title', 'persp2Fav', 'persp2Con')}
+      {persp(3, 'persp3Title', 'persp3Fav', 'persp3Con')}
 
       <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 16, paddingTop: 12 }}>
-        <div style={fldLabel}>Veredicto: ¿comprar, mantener o vender?</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ ...fldLabel, flex: 1 }}>Veredicto: ¿comprar, mantener o vender?</div>
+          <button
+            type="button"
+            onClick={() => setEditingVerdict(v => !v)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              color: editingVerdict ? 'var(--accent-cyan)' : 'var(--text-muted)',
+              fontSize: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              borderRadius: 4,
+              flexShrink: 0,
+            }}
+            title={editingVerdict ? 'Listo' : 'Editar veredicto'}
+          >
+            <Pencil size={12} /> {editingVerdict ? '✓' : ''}
+          </button>
+        </div>
         <div style={{ fontSize: 'clamp(20px, 3.5vw, 26px)', fontWeight: 800, lineHeight: 1.15, margin: '4px 0 6px' }}>
           {result ? result.verdict : '—'}
         </div>
@@ -587,42 +885,19 @@ export const OpportunitySheet: React.FC<{
             <p style={{ fontSize: 13.5, fontWeight: 700, margin: '0 0 8px' }}>{result.verdictNote}</p>
           </>
         )}
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>{form.verdictDetail}</p>
+        {editingVerdict ? (
+          <textarea
+            style={{ ...inputStyle, minHeight: 60, resize: 'vertical', marginTop: 4 }}
+            value={form.verdictDetail}
+            onChange={set('verdictDetail')}
+            placeholder="Tu análisis personal del veredicto..."
+          />
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>{form.verdictDetail}</p>
+        )}
       </div>
 
-      {multiples && (
-        <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 14, paddingTop: 12 }}>
-          <div style={{ ...fldLabel, marginBottom: 8 }}>Múltiplos clave (en vivo)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 7 }}>
-            {[
-              { label: 'P/E', val: multiples.pe ? multiples.pe.toFixed(1) + 'x' : '—' },
-              { label: 'Forward P/E', val: multiples.forwardPe ? multiples.forwardPe.toFixed(1) + 'x' : '—' },
-              { label: 'EV/EBITDA', val: multiples.evToEbitda ? multiples.evToEbitda.toFixed(1) + 'x' : '—' },
-              { label: 'FCF Yield', val: multiples.fcfYieldPct != null ? multiples.fcfYieldPct.toFixed(1) + '%' : '—' },
-              { label: 'ROIC (proxy)', val: multiples.roicProxyPct != null ? multiples.roicProxyPct.toFixed(1) + '%' : '—' },
-              { label: 'Margen bruto', val: multiples.grossMarginPct != null ? multiples.grossMarginPct.toFixed(1) + '%' : '—' },
-              { label: 'Margen operativo', val: multiples.operatingMarginPct != null ? multiples.operatingMarginPct.toFixed(1) + '%' : '—' },
-              { label: 'ROE', val: multiples.roePct != null ? multiples.roePct.toFixed(1) + '%' : '—' },
-              { label: 'Crec. ventas', val: multiples.revenueGrowthPct != null ? multiples.revenueGrowthPct.toFixed(1) + '%' : '—' },
-              { label: 'Deuda/Patrimonio', val: multiples.debtToEquity != null ? multiples.debtToEquity.toFixed(2) : '—' },
-            ].map((m) => (
-              <div
-                key={m.label}
-                style={{
-                  padding: '8px 9px',
-                  borderRadius: 6,
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-subtle)',
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                <div className="mono" style={{ fontWeight: 700, fontSize: 12.5 }}>{m.val}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 14, borderTop: '1px solid var(--border-subtle)', paddingTop: 9 }}>
         Ranking y Fair Value propios de este modelo: bandas de exigencia Precio/Fair Value según la
@@ -653,7 +928,7 @@ export const OpportunitySheet: React.FC<{
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(290px, 370px) minmax(0, 1fr)',
+        gridTemplateColumns: 'minmax(260px, 320px) minmax(0, 1fr)',
         gap: 20,
         alignItems: 'start',
       }}

@@ -840,8 +840,59 @@ export interface AssetExtras {
   hold: number | null;
   sell: number | null;
   strongSell: number | null;
+  /** Trailing / current dividend yield en porcentaje (ej: 0.31 para 0.31%) */
   dividendYieldPct: number | null;
+  /** Forward dividend yield en porcentaje (ej: 0.99 para 0.99%) desde summaryDetail.yield o annualDividendYield */
+  forwardDividendYieldPct: number | null;
   marketCap: number | null;
+  /** Trailing P/E ratio (precio sobre ganancias pasadas 12M) */
+  trailingPE: number | null;
+  /** Forward P/E ratio (precio sobre ganancias proyectadas prox. 12M) */
+  forwardPE: number | null;
+  /** PEG ratio (P/E to Growth ratio) */
+  pegRatio: number | null;
+  /** Price to Sales (P/S trailing 12M) */
+  priceToSales: number | null;
+  /** Price to Book (P/B precio sobre valor libros) */
+  priceToBook: number | null;
+  /** Price to Free Cash Flow (P/FCF = marketCap / freeCashflow) */
+  priceToFreeCashFlow: number | null;
+  /** Free Cash Flow Yield en porcentaje (freeCashflow / marketCap * 100) */
+  fcfYieldPct: number | null;
+  /** Return on Equity (ROE) en porcentaje (ej: 148.75 para 148.75%) */
+  roePct: number | null;
+  /** Return on Assets (ROA) en porcentaje (ej: 27.08 para 27.08%) */
+  roaPct: number | null;
+  /** Deuda sobre patrimonio (Debt / Equity ratio reportado por Yahoo) */
+  debtToEquity: number | null;
+  /** Short interest como porcentaje del float (ej: 0.83 para 0.83%) */
+  shortFloatPct: number | null;
+  /** EV / EBITDA (Enterprise Value sobre EBITDA) */
+  evToEbitda: number | null;
+  /** Crecimiento interanual de ganancias (Earnings Growth) en porcentaje (ej: 28.7 para 28.7%) */
+  earningsGrowthPct: number | null;
+  /** Crecimiento interanual de ingresos (Revenue Growth) en porcentaje (ej: 16.4 para 16.4%) */
+  revenueGrowthPct: number | null;
+  /** Crecimiento de EPS estimado prox. año (+1y) en porcentaje (ej: 8.25 para 8.25%) */
+  epsNextYearGrowthPct: number | null;
+  /** Crecimiento de EPS estimado a 5 años (+5y) en porcentaje si Yahoo lo informa */
+  epsNext5YGrowthPct: number | null;
+  /** Margen neto (Profit Margin) en porcentaje */
+  profitMarginPct: number | null;
+  /** Margen bruto (Gross Margin) en porcentaje */
+  grossMarginPct: number | null;
+  /** Margen operativo (Operating Margin) en porcentaje */
+  operatingMarginPct: number | null;
+  /** Proxy de ROIC calculado en porcentaje */
+  roicProxyPct: number | null;
+  /** Ratio corriente (Current Ratio) */
+  currentRatio: number | null;
+  /** Ratio rápido / prueba ácida (Quick Ratio) */
+  quickRatio: number | null;
+  /** Coeficiente Beta */
+  beta: number | null;
+  /** Beneficio por acción de los últimos 12 meses (EPS TTM) */
+  epsTrailing: number | null;
   ceo: string;
   employees: number | null;
   hq: string;
@@ -863,7 +914,32 @@ const EMPTY_EXTRAS: AssetExtras = {
   sell: null,
   strongSell: null,
   dividendYieldPct: null,
+  forwardDividendYieldPct: null,
   marketCap: null,
+  trailingPE: null,
+  forwardPE: null,
+  pegRatio: null,
+  priceToSales: null,
+  priceToBook: null,
+  priceToFreeCashFlow: null,
+  fcfYieldPct: null,
+  roePct: null,
+  roaPct: null,
+  debtToEquity: null,
+  shortFloatPct: null,
+  evToEbitda: null,
+  earningsGrowthPct: null,
+  revenueGrowthPct: null,
+  epsNextYearGrowthPct: null,
+  epsNext5YGrowthPct: null,
+  profitMarginPct: null,
+  grossMarginPct: null,
+  operatingMarginPct: null,
+  roicProxyPct: null,
+  currentRatio: null,
+  quickRatio: null,
+  beta: null,
+  epsTrailing: null,
   ceo: '',
   employees: null,
   hq: '',
@@ -936,7 +1012,7 @@ export async function fetchAssetExtras(
     try {
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
         ySym
-      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price&crumb=${encodeURIComponent(
+      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price,earningsTrend&crumb=${encodeURIComponent(
         auth.crumb
       )}`;
       const res = await fetch(url, {
@@ -953,14 +1029,57 @@ export async function fetchAssetExtras(
           const ap = r0.assetProfile || {};
           const priceMod = r0.price || {};
           const trend = (r0.recommendationTrend?.trend || [])[0] || {};
+          const eTrendList: any[] = Array.isArray(r0.earningsTrend?.trend) ? r0.earningsTrend.trend : [];
           const raw = (x: any): number | null =>
             x?.raw != null && Number.isFinite(x.raw) ? Number(x.raw) : null;
+          const toPct = (val: number | null): number | null =>
+            val != null && Number.isFinite(val) ? val * 100 : null;
           const officers: any[] = Array.isArray(ap.companyOfficers) ? ap.companyOfficers : [];
           const ceoOfficer =
             officers.find((o) => /chief executive|\bceo\b/i.test(String(o?.title || ''))) ||
             officers[0];
           const hqParts = [ap.city, ap.state, ap.country].filter(Boolean);
           const shares = raw(ks.sharesOutstanding) ?? raw(ks.impliedSharesOutstanding);
+          const marketCap =
+            raw(priceMod.marketCap) ??
+            raw(sd.marketCap) ??
+            (shares != null && currentPrice > 0 && Number.isFinite(shares * currentPrice)
+              ? shares * currentPrice
+              : null);
+
+          const fcf = raw(fd.freeCashflow);
+          const priceToFreeCashFlow =
+            raw((sd as any).priceToFreeCashFlow) ??
+            (marketCap != null && marketCap > 0 && fcf != null && fcf > 0 && Number.isFinite(marketCap / fcf)
+              ? marketCap / fcf
+              : null);
+
+          const fcfYieldPct =
+            fcf != null && marketCap != null && marketCap > 0 && Number.isFinite((fcf / marketCap) * 100)
+              ? (fcf / marketCap) * 100
+              : null;
+
+          const fwdYieldRaw = raw(sd.yield) ?? raw((sd as any).annualDividendYield);
+          const forwardDividendYieldPct = toPct(fwdYieldRaw);
+
+          const trendPlus1y = eTrendList.find((t: any) => t?.period === '+1y');
+          const epsNextYearGrowthRaw =
+            raw(trendPlus1y?.earningsEstimate?.growth) ?? raw(trendPlus1y?.growth);
+          const epsNextYearGrowthPct = toPct(epsNextYearGrowthRaw);
+
+          const trend5y = eTrendList.find((t: any) => t?.period === '+5y' || t?.period === '5y');
+          const epsNext5YGrowthRaw =
+            raw(trend5y?.earningsEstimate?.growth) ?? raw(trend5y?.growth);
+          const epsNext5YGrowthPct = toPct(epsNext5YGrowthRaw);
+
+          const ev = raw(ks.enterpriseValue);
+          const ebitda = raw(fd.ebitda);
+          const evToEbitda =
+            raw(ks.enterpriseToEbitda) ??
+            (ev != null && ebitda != null && ebitda > 0 && Number.isFinite(ev / ebitda)
+              ? ev / ebitda
+              : null);
+
           const extras: AssetExtras = {
             targetLow: raw(fd.targetLowPrice),
             targetMean: raw(fd.targetMeanPrice),
@@ -974,9 +1093,40 @@ export async function fetchAssetExtras(
             strongSell: trend.strongSell != null ? Number(trend.strongSell) : null,
             dividendYieldPct:
               raw(sd.dividendYield) != null ? (raw(sd.dividendYield) as number) * 100 : null,
-            marketCap:
-              raw(priceMod.marketCap) ??
-              (shares != null && currentPrice > 0 ? shares * currentPrice : null),
+            forwardDividendYieldPct,
+            marketCap,
+            trailingPE: raw(sd.trailingPE) ?? raw(ks.trailingPE),
+            forwardPE: raw(ks.forwardPE) ?? raw(sd.forwardPE),
+            pegRatio: raw(ks.pegRatio),
+            priceToSales: raw(sd.priceToSalesTrailing12Months) ?? raw(ks.priceToSalesTrailing12Months),
+            priceToBook: raw(ks.priceToBook),
+            priceToFreeCashFlow,
+            fcfYieldPct,
+            roePct: toPct(raw(fd.returnOnEquity)),
+            roaPct: toPct(raw(fd.returnOnAssets)),
+            debtToEquity: raw(fd.debtToEquity),
+            shortFloatPct: toPct(raw(ks.shortPercentOfFloat)),
+            evToEbitda,
+            earningsGrowthPct: toPct(raw(fd.earningsGrowth) ?? raw(ks.earningsQuarterlyGrowth)),
+            revenueGrowthPct: toPct(raw(fd.revenueGrowth) ?? raw(ks.revenueQuarterlyGrowth)),
+            epsNextYearGrowthPct,
+            epsNext5YGrowthPct,
+            profitMarginPct: toPct(raw(fd.profitMargins)),
+            grossMarginPct: toPct(raw(fd.grossMargins)),
+            operatingMarginPct: toPct(raw(fd.operatingMargins)),
+            roicProxyPct: (() => {
+              const roe = toPct(raw(fd.returnOnEquity));
+              const roa = toPct(raw(fd.returnOnAssets));
+              const opM = toPct(raw(fd.operatingMargins));
+              if (roe != null && roa != null) return Number((roe * 0.6 + roa * 0.4).toFixed(2));
+              if (roe != null) return roe;
+              if (opM != null) return Number((opM * 0.85).toFixed(2));
+              return null;
+            })(),
+            currentRatio: raw(fd.currentRatio),
+            quickRatio: raw(fd.quickRatio),
+            beta: raw(ks.beta) ?? raw(sd.beta),
+            epsTrailing: raw(ks.trailingEps),
             ceo: ceoOfficer?.name
               ? String(ceoOfficer.name).replace(/\s*\([^)]*\)\s*/g, ' ').trim()
               : '',
