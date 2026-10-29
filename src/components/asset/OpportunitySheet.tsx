@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import type { AssetDetailResponse } from '@/api';
 import {
   computeOpportunity,
@@ -63,6 +63,21 @@ export const OpportunitySheet: React.FC<{
   const [editingVerdict, setEditingVerdict] = useState(false);
   const [coreExpanded, setCoreExpanded] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<string | null>(null);
+  // Activación/desactivación de marcadores del consenso, a prueba de la
+  // secuencia de eventos táctil (mouseenter/focus sintetizados → click).
+  const lastMarkerActivationRef = useRef(0);
+  const activateMarker = (key: string) => {
+    lastMarkerActivationRef.current = Date.now();
+    setHoveredMarker(key);
+  };
+  const deactivateMarker = (key: string) => {
+    const t = lastMarkerActivationRef.current;
+    setTimeout(() => {
+      if (lastMarkerActivationRef.current === t) {
+        setHoveredMarker((cur) => (cur === key ? null : cur));
+      }
+    }, 80);
+  };
 
   const set = (k: keyof OpportunityFormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -124,69 +139,126 @@ export const OpportunitySheet: React.FC<{
     const shift = m.pct <= 10 ? '-12%' : m.pct >= 90 ? '-88%' : '-50%';
     const valueText = 'US$ ' + fmtLocal(m.val, m.val % 1 === 0 ? 0 : 2);
     const hovered = hoveredMarker === m.key;
-    // El Promedio muestra su valor SIEMPRE; el resto, al pasar el mouse,
-    // tocar o enfocar con teclado (burbuja con el valor de ese punto).
-    const showBubble = m.showValue || hovered;
+    // UNA sola burbuja visible a la vez: si hay un punto activo (hover,
+    // toque o foco) se muestra la suya y la permanente del Promedio se
+    // oculta — antes ambas píldoras se pisaban cuando los puntos quedaban
+    // cerca (captura del usuario en TSM). Sin interacción, el Promedio
+    // muestra su valor siempre.
+    const showBubble = hoveredMarker ? hovered : m.showValue;
+    // Capas globales (sin stacking context por marcador): botón-punto
+    // zIndex 1, nombre 3, burbuja 5. Así, cuando dos marcadores caen casi
+    // en el mismo X (TSM: Actual 439,51 vs Mínimo 440), el NOMBRE siempre
+    // le gana el tap al botón del vecino y ambos valores quedan
+    // alcanzables; antes el marcador «activo» (zIndex de raíz) tapaba
+    // con todo su contenido a los demás.
+    // El marcador cuelga de un ancla de ancho 0 en left: pct%. El punto,
+    // la burbuja y el nombre son absolutos centrados sobre esa ancla con
+    // anchos propios CONSTANTES: nada entra en el flujo, así que al
+    // aparecer la burbuja el punto NO se mueve (antes el contenedor
+    // cambiaba de ancho con la burbuja y el translateX porcentual
+    // corría el punto en el eje).
+    // Interacción por tipo de puntero (medido en QA real): en táctil,
+    // Chromium sintetiza mouseenter/focus ANTES del click y un
+    // mouseleave DESPUÉS del click, así que (a) un toggle en onClick se
+    // cancelaba solo y (b) desactivar por mouseleave revertía el tap.
+    // Reglas: el tap/click ACTIVA siempre; entrar/salir solo cuenta con
+    // puntero fino (mouse/pen) vía pointer events con pointerType; el
+    // blur desactiva diferido y con guarda de última activación.
+    const handlers = {
+      onPointerEnter: (e: React.PointerEvent) => {
+        if (e.pointerType !== 'touch') activateMarker(m.key);
+      },
+      onPointerLeave: (e: React.PointerEvent) => {
+        if (e.pointerType !== 'touch') deactivateMarker(m.key);
+      },
+      onClick: () => activateMarker(m.key),
+      onFocus: () => activateMarker(m.key),
+      onBlur: () => deactivateMarker(m.key),
+    };
     return (
       <div
         key={m.key}
-        role="button"
-        tabIndex={0}
-        aria-label={`${m.name}: ${valueText}`}
-        title={`${m.name}: ${valueText}`}
-        onMouseEnter={() => setHoveredMarker(m.key)}
-        onMouseLeave={() => setHoveredMarker(null)}
-        onClick={() => setHoveredMarker((h) => (h === m.key ? null : m.key))}
-        onFocus={() => setHoveredMarker(m.key)}
-        onBlur={() => setHoveredMarker(null)}
         style={{
           position: 'absolute',
           left: m.pct + '%',
           top: 0,
-          transform: `translateX(${shift})`,
-          textAlign: 'center',
-          cursor: 'pointer',
-          zIndex: showBubble ? 6 : 2,
-          outline: 'none',
+          width: 0,
+          height: 66,
         }}
       >
-        <div style={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
-          {showBubble && (
-            <span
-              className="mono"
-              style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 999,
-                padding: '1px 7px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-              }}
-            >
-              {valueText}
-            </span>
-          )}
+        {showBubble && (
+          <span
+            className="mono"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              transform: `translateX(${shift})`,
+              fontSize: 10.5,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 999,
+              padding: '1px 7px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          >
+            {valueText}
+          </span>
+        )}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`${m.name}: ${valueText}`}
+          {...handlers}
+          style={{
+            position: 'absolute',
+            top: 13,
+            left: 0,
+            width: 32,
+            height: 32,
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            outline: 'none',
+            zIndex: 1,
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: m.color,
+              border: '2px solid var(--bg-surface)',
+              marginTop: 6,
+              flexShrink: 0,
+              boxShadow: hovered ? '0 0 0 3px rgba(148, 163, 184, 0.35)' : 'none',
+            }}
+          />
         </div>
         <div
+          role="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          {...handlers}
           style={{
-            width: hovered ? 13 : 9,
-            height: hovered ? 13 : 9,
-            borderRadius: '50%',
-            background: m.color,
-            margin: '1px auto',
-            border: '2px solid var(--bg-surface)',
-            transition: 'width 0.12s ease, height 0.12s ease',
-          }}
-        />
-        <div
-          style={{
+            position: 'absolute',
+            top: m.nameLow ? 46 : 35,
+            left: 0,
+            transform: `translateX(${shift})`,
             fontSize: 10,
             color: hovered ? 'var(--text-primary)' : 'var(--text-secondary)',
             fontWeight: hovered ? 700 : 400,
             whiteSpace: 'nowrap',
-            marginTop: m.nameLow ? 11 : 1,
+            cursor: 'pointer',
+            padding: '1px 3px',
+            zIndex: 3,
           }}
         >
           {m.name}

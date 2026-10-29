@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AssetCandle } from '@/api';
 import { createChart, ColorType, LineStyle, CrosshairMode } from 'lightweight-charts';
 import type {
@@ -8,7 +8,6 @@ import type {
   CandlestickData,
   LineData,
   HistogramData,
-  SeriesMarker,
   Time,
 } from 'lightweight-charts';
 
@@ -286,6 +285,12 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Etiquetas «E»/«D» sobre el eje X (overlay HTML, estilo Finviz): las
+  // posiciones en px las calcula el efecto del gráfico con
+  // timeToCoordinate y se recalculan con scroll/zoom/resize.
+  const [axisMarks, setAxisMarks] = useState<
+    { key: string; x: number; bottom: number; letter: string; text: string; color: string }[]
+  >([]);
 
   // Preparar velas limpias
   const candles = useMemo(() => {
@@ -306,9 +311,9 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   const sma200Data = useMemo(() => smaSeries(closes, 200), [closes]);
   const hasVolume = useMemo(() => candles.some(c => c.v > 0), [candles]);
 
-  // Marcadores de balances: anclados a la vela de la fecha del earning,
-  // pegados al eje temporal (belowBar), en ámbar y con la fecha corta en el
-  // propio texto del marcador («E 15/10») para que se lea sobre el eje X.
+  // Eventos de balances: se resuelve la vela de cada fecha y el efecto
+  // del gráfico los dibuja como etiquetas («E 15/10») SOBRE EL EJE X con
+  // un overlay HTML (estilo Finviz), no sobre las velas.
   // Si la fecha cae fin de semana/feriado, se usa la primera vela posterior
   // dentro de los 4 días siguientes. El PRÓXIMO earning solo se puede
   // marcar si su fecha tiene vela (está dentro del rango de velas
@@ -370,36 +375,6 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
     }
     return marks.sort((a, b) => a.candle.t - b.candle.t);
   }, [dividendEvents, candles]);
-
-  // UNA sola llamada a setMarkers con el arreglo combinado y ordenado:
-  // «E» ámbar para balances y «D» azul para dividendos ex-date, ambos
-  // belowBar pegados al eje temporal, con la fecha corta en el texto.
-  const allMarkers = useMemo<SeriesMarker<Time>[]>(() => {
-    // En los bordes del gráfico (primeras/últimas 2 velas) el texto con
-    // fecha se corta contra el eje: ahí va solo la letra y la fecha
-    // completa queda en el chip de la leyenda.
-    const edgeShort = (candle: AssetCandle): boolean => {
-      const idx = candles.indexOf(candle);
-      return idx >= 0 && (idx <= 1 || idx >= candles.length - 2);
-    };
-    const ms: SeriesMarker<Time>[] = [
-      ...earningsMarks.map(({ candle, earnDate }) => ({
-        time: toUTC(candle.t) as Time,
-        position: 'belowBar' as const,
-        shape: 'circle' as const,
-        color: '#F59E0B',
-        text: edgeShort(candle) ? 'E' : `E ${earnDate.slice(8, 10)}/${earnDate.slice(5, 7)}`,
-      })),
-      ...dividendMarks.map(({ candle, divDate }) => ({
-        time: toUTC(candle.t) as Time,
-        position: 'belowBar' as const,
-        shape: 'circle' as const,
-        color: '#3B82F6',
-        text: edgeShort(candle) ? 'D' : `D ${divDate.slice(8, 10)}/${divDate.slice(5, 7)}`,
-      })),
-    ];
-    return ms.sort((a, b) => (a.time as number) - (b.time as number));
-  }, [earningsMarks, dividendMarks]);
 
   // Análisis técnico estilo Finviz (pivotes, líneas ancladas y patrón)
   const trendPattern = useMemo(() => computeTrendPattern(candles), [candles]);
@@ -492,11 +467,6 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
       close: c.c,
     }));
     candleSeries.setData(candleData);
-
-    // ── 1b. Marcadores sobre el eje temporal: balances «E» + dividendos «D» ──
-    if (allMarkers.length > 0) {
-      candleSeries.setMarkers(allMarkers);
-    }
 
     // ── 2. Fair Value como PriceLine ──
     if (fairValue != null && Number.isFinite(fairValue) && fairValue > 0) {
@@ -612,11 +582,66 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
     // Ajustar vista para mostrar todo el contenido
     chart.timeScale().fitContent();
 
+    // ── 9. Etiquetas «E»/«D» SOBRE EL EJE X (estilo Finviz) ──
+    // Los markers nativos de lightweight-charts se anclan a la vela
+    // (belowBar sigue al precio) y el usuario los quiere fijos en la
+    // franja del eje temporal, como en Finviz. Van como overlay HTML
+    // posicionado con timeToCoordinate, recalculado al hacer
+    // scroll/zoom (rango visible) y al cambiar el tamaño.
+    const computeAxisMarks = () => {
+      const ts = chart.timeScale();
+      const paneW = ts.width();
+      let axisH = 26;
+      try {
+        axisH = ts.height() || 26;
+      } catch {
+        axisH = 26;
+      }
+      const raw: { key: string; x: number; letter: string; text: string; color: string }[] = [];
+      const push = (key: string, t: number, letter: string, date: string, color: string) => {
+        const x0 = ts.timeToCoordinate(toUTC(t) as Time);
+        if (x0 == null || x0 < -30 || x0 > paneW + 30) return;
+        raw.push({
+          key,
+          x: Math.max(26, Math.min(paneW - 26, x0)),
+          letter,
+          text: date.slice(8, 10) + '/' + date.slice(5, 7),
+          color,
+        });
+      };
+      for (const mk of earningsMarks) push('e-' + mk.earnDate, mk.candle.t, 'E', mk.earnDate, '#F59E0B');
+      for (const mk of dividendMarks) push('d-' + mk.divDate, mk.candle.t, 'D', mk.divDate, '#3B82F6');
+      raw.sort((a, b) => a.x - b.x);
+      // Si dos etiquetas quedan a menos de 40 px, la segunda sube una fila.
+      let prevX = -Infinity;
+      let prevRow = 1;
+      setAxisMarks(
+        raw.map((r) => {
+          const row = r.x - prevX < 40 ? (prevRow === 0 ? 1 : 0) : 0;
+          prevX = r.x;
+          prevRow = row;
+          return { ...r, bottom: axisH + 2 + row * 13 };
+        })
+      );
+    };
+    const onRangeChange = () => computeAxisMarks();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+    const ro =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => computeAxisMarks()) : null;
+    if (ro) ro.observe(el);
+    computeAxisMarks();
+
     return () => {
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+      } catch {
+        /* el chart ya fue removido */
+      }
+      if (ro) ro.disconnect();
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, topTrendData, botTrendData, hasVolume, height, allMarkers]);
+  }, [candles, fairValue, sma20Data, sma50Data, sma200Data, topTrendData, botTrendData, hasVolume, height, earningsMarks, dividendMarks]);
 
   // Leyenda de SMAs (valores del último cierre)
   const lastIdx = candles.length - 1;
@@ -765,8 +790,31 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
         )}
       </div>
 
-      {/* Contenedor del gráfico interactivo */}
-      <div ref={containerRef} style={{ width: '100%' }} />
+      {/* Contenedor del gráfico interactivo + etiquetas E/D sobre el eje X */}
+      <div style={{ position: 'relative' }}>
+        <div ref={containerRef} style={{ width: '100%' }} />
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+          {axisMarks.map((am) => (
+            <span
+              key={am.key}
+              className="mono"
+              style={{
+                position: 'absolute',
+                left: am.x,
+                bottom: am.bottom,
+                transform: 'translateX(-50%)',
+                fontSize: 9.5,
+                fontWeight: 600,
+                color: am.color,
+                whiteSpace: 'nowrap',
+                textShadow: '0 1px 4px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9)',
+              }}
+            >
+              <span style={{ fontWeight: 800 }}>{am.letter}</span> {am.text}
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

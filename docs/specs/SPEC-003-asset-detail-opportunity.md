@@ -128,3 +128,24 @@
   priorizado de Nasdaq (deadline 9 s) y la vía rápida
   `api/company/{ticker}/earnings-surprise` para los últimos 4 trimestres. La
   vista pide ese endpoint sin bloquear la ficha.
+
+## v1.2.1 — Corrección tras la prueba del usuario en su celular (2026-10-28)
+
+- **Etiquetas E/D**: los markers nativos de lightweight-charts (`belowBar`)
+  seguían al precio y quedaban sobre las velas. Reemplazados por un overlay
+  HTML fijo sobre el eje X (posición con `timeToCoordinate`, recalculado con
+  scroll/zoom/resize; si dos etiquetas se pisan, la segunda sube una fila;
+  en los bordes se clampea para que no se corten). Como en Finviz.
+- **Consenso, interacción**: (1) el punto se movía al mostrar la burbuja
+  porque el contenedor cambiaba de ancho y el centrado era porcentual —
+  ahora todo cuelga de un ancla de ancho 0 con elementos absolutos de
+  ancho constante; (2) en táctil el navegador sintetiza mouseenter/focus
+  antes del click y un mouseleave después: el toggle de onClick se
+  cancelaba solo — ahora el click activa siempre y entrar/salir usa
+  pointer events filtrados por `pointerType` (touch no desactiva), con
+  desactivación por blur diferida y con guarda; (3) se ve UNA sola burbuja
+  a la vez (la del punto activo; la del Promedio solo sin interacción);
+  (4) capas globales (botón z1, nombre z3, burbuja z5, sin stacking
+  context por marcador) para que, cuando dos puntos caen casi en el
+  mismo X (TSM: Actual 439,51 vs Mínimo 440), el nombre reciba su tap y
+  no el botón del vecino.
