@@ -883,8 +883,8 @@ export const OpportunitySheet: React.FC<{
               Crecimiento
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
-              {([
-                { label: 'EPS próx. 5 años (CAGR)', val: fmtPct(fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), tip: 'Crecimiento anual compuesto esperado del beneficio por acción (EPS) según los analistas para los próximos 5 años (fuente: Finviz). Es el dato clave para valorar una empresa de crecimiento: con él se juzga si el P/E de hoy está caro o barato.', accent: true },
+              {[
+                { label: 'EPS próx. 5 años (CAGR)', val: fmtPct(fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), tip: 'Crecimiento anual compuesto esperado del beneficio por acción (EPS) según los analistas para los próximos 5 años (fuente: Finviz). Es el dato clave para valorar una empresa de crecimiento: con él se juzga si el P/E de hoy está caro o barato.' },
                 { label: 'EPS este año', val: fmtPct(fz?.epsThisYearPct), tip: 'Crecimiento del beneficio por acción esperado para este año' },
                 { label: 'EPS próx. año', val: fmtPct(fz?.epsNextYearPct ?? extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
                 { label: 'EPS Y/Y TTM', val: fmtPct(fz?.epsYoyTtmPct ?? extras?.earningsGrowthPct), tip: 'Crecimiento interanual del beneficio por acción de los últimos 12 meses (TTM)' },
@@ -895,20 +895,20 @@ export const OpportunitySheet: React.FC<{
                 { label: 'Ventas Q/Q', val: fmtPct(fz?.salesQqPct), tip: 'Crecimiento de ventas del último trimestre contra el mismo trimestre del año anterior' },
                 { label: 'Ventas pasadas 5 años', val: fmtPct(fz?.salesPast5YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 5 años (histórico)' },
                 { label: 'Ventas pasadas 3 años', val: fmtPct(fz?.salesPast3YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 3 años (histórico)' },
-              ] as { label: string; val: string; tip: string; accent?: boolean }[]).map((m) => (
+              ].map((m) => (
                 <div
                   key={m.label}
                   title={m.tip}
                   style={{
                     padding: '7px 8px',
                     borderRadius: 6,
-                    background: m.accent ? 'var(--bg-elevated)' : 'var(--bg-primary)',
-                    border: m.accent ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 9.5, color: m.accent ? 'var(--accent-cyan)' : 'var(--text-muted)', marginBottom: 2, fontWeight: m.accent ? 700 : 400 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: m.accent ? 13.5 : 12 }}>{m.val}</div>
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
                 </div>
               ))}
             </div>
