@@ -169,7 +169,10 @@ export const NwLiquidCard: React.FC = () => {
         overflow: 'hidden',
         padding: '14px 16px 12px',
         background: 'var(--nw-bg)',
-        borderBottom: '1px solid var(--border-subtle)',
+        /* Sin borde inferior: el negro profundo de la NW fluye directo al
+           inicio del degradado de la cabecera del Portafolio Financiero,
+           que arranca en este mismo color. */
+        borderBottom: 'none',
       }}
     >
       <NwConceptArt />

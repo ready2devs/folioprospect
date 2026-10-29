@@ -257,8 +257,16 @@ html, body, #root {
 /* Left Panel Fluid Table (Never overflows panel width) */
 .lp-header {
   padding: 12px 14px 10px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  /* Sin borde inferior: el degradado nace en el negro de la NW Líquido y
+     concluye en --bg-elevated, el color con el que arranca la sección de
+     posiciones (.lp-col-headers), para que ambas zonas fluyan sin corte. */
+  border-bottom: none;
+  background: linear-gradient(
+    180deg,
+    var(--lp-grad-top) 0%,
+    var(--lp-grad-mid) 58%,
+    var(--lp-grad-bottom) 100%
+  );
 }
 
 .lp-col-headers {
