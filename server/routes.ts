@@ -22,6 +22,7 @@ import {
   fetchEarningsForTickers,
   fetchEarningsInfoForTicker,
   cacheOnlyEarningsInfo,
+  enrichEarningsWithYahoo,
   regroupSeedEarnings,
   filterSeedDividends,
   todayInNewYork,
@@ -235,11 +236,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       liveEarnings = [];
     }
     const useLiveEarnings = liveEarnings.length > 0;
+    const rawEarnings = useLiveEarnings
+      ? liveEarnings
+      : regroupSeedEarnings(seedCalendar.earnings);
+    const enrichedEarnings = await enrichEarningsWithYahoo(rawEarnings);
     const calendar = {
       ...seedCalendar,
-      earnings: useLiveEarnings
-        ? liveEarnings
-        : regroupSeedEarnings(seedCalendar.earnings),
+      earnings: enrichedEarnings,
       dividends: filterSeedDividends(seedCalendar.dividends),
       earningsSource: useLiveEarnings ? 'nasdaq' : 'snapshot',
       earningsUpdatedAt: new Date().toISOString(),

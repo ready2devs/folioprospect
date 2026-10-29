@@ -21,7 +21,7 @@ const fundCache = new Map<string, CacheEntry<FundamentalInput>>();
 
 let yahooAuth: { cookie: string; crumb: string; expiresAt: number } | null = null;
 
-async function getYahooAuth(): Promise<{ cookie: string; crumb: string } | null> {
+export async function getYahooAuth(): Promise<{ cookie: string; crumb: string } | null> {
   if (yahooAuth && yahooAuth.expiresAt > Date.now()) {
     return yahooAuth;
   }

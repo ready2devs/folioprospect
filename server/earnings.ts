@@ -12,6 +12,8 @@
  * los días que la cartera también necesita.
  */
 
+import { getYahooAuth } from './yahoo.js';
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -140,6 +142,124 @@ export async function fetchNasdaqEarningsDay(dateStr: string): Promise<NasdaqEar
   return rows;
 }
 
+export interface YahooHistoryRow {
+  maxAge?: number;
+  epsActual?: { raw?: number; fmt?: string };
+  epsEstimate?: { raw?: number; fmt?: string };
+  epsDifference?: { raw?: number; fmt?: string };
+  surprisePercent?: { raw?: number; fmt?: string };
+  quarter?: { raw?: number; fmt?: string };
+  currency?: string;
+  period?: string;
+}
+
+const yahooHistoryCache = new Map<string, { rows: YahooHistoryRow[]; expiresAt: number }>();
+const YAHOO_HISTORY_TTL_MS = 5 * 60 * 1000; // 5 minutos de caché para resultados reportados en caliente
+
+export async function fetchYahooEarningsHistory(ticker: string): Promise<YahooHistoryRow[]> {
+  const sym = String(ticker || '').toUpperCase();
+  if (!sym) return [];
+  const now = Date.now();
+  const cached = yahooHistoryCache.get(sym);
+  if (cached && cached.expiresAt > now) return cached.rows;
+
+  try {
+    const auth = await getYahooAuth();
+    if (!auth) return [];
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+      sym
+    )}?modules=earningsHistory&crumb=${encodeURIComponent(auth.crumb)}`;
+    const res = await fetch(url, {
+      headers: { 'user-agent': UA, cookie: auth.cookie },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return [];
+    const j: any = await res.json();
+    const rows = j?.quoteSummary?.result?.[0]?.earningsHistory?.history;
+    const historyRows: YahooHistoryRow[] = Array.isArray(rows) ? rows : [];
+    yahooHistoryCache.set(sym, { rows: historyRows, expiresAt: now + YAHOO_HISTORY_TTL_MS });
+    return historyRows;
+  } catch {
+    return [];
+  }
+}
+
+export function matchQuarter(nasdaqFmt: string, yahooDate: string, earnDate: string): boolean {
+  if (nasdaqFmt && yahooDate) {
+    const monthMap: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    };
+    const m = nasdaqFmt.toLowerCase().match(/([a-z]{3}|\d{1,2})[\/\s-](\d{4})/);
+    if (m) {
+      const month = monthMap[m[1]] || m[1].padStart(2, '0');
+      const year = m[2];
+      if (yahooDate.startsWith(`${year}-${month}`)) return true;
+    }
+  }
+  // Fallback: verificar si la fecha del reporte cae entre 10 y 65 días luego del fin de trimestre
+  if (earnDate && yahooDate) {
+    const dEarn = new Date(earnDate).getTime();
+    const dQtr = new Date(yahooDate).getTime();
+    const diffDays = (dEarn - dQtr) / (1000 * 60 * 60 * 24);
+    if (diffDays >= 10 && diffDays <= 65) return true;
+  }
+  return false;
+}
+
+/**
+ * Enriquece balances recientes con datos de Yahoo Finance (earningsHistory),
+ * que actualiza en tiempo real (~15-30 min luego del reporte) a diferencia de
+ * Nasdaq cuyo lote público tiene desfase de 24-48 horas.
+ */
+export async function enrichEarningsWithYahoo(entries: EarningsEntry[]): Promise<EarningsEntry[]> {
+  const today = todayInNewYork();
+  const needEnrich = entries.filter(
+    (e) => e.date <= today && (e.actualEps == null || e.surprise == null)
+  );
+  if (needEnrich.length === 0) return entries;
+
+  const tickers = Array.from(new Set(needEnrich.map((e) => e.symbol)));
+  await Promise.all(tickers.map((t) => fetchYahooEarningsHistory(t)));
+
+  for (const e of needEnrich) {
+    const history = yahooHistoryCache.get(e.symbol)?.rows || [];
+    for (let i = history.length - 1; i >= 0; i--) {
+      const h = history[i];
+      if (!h || h.epsActual?.raw == null) continue;
+      // Descartar si viene en moneda distinta a USD (evita mezclar MXN/EUR en la columna en USD)
+      if (h.currency && h.currency !== 'USD') continue;
+      const qFmt = h.quarter?.fmt || '';
+      if (matchQuarter(e.fiscalQuarterEnding, qFmt, e.date)) {
+        e.actualEps = Number(h.epsActual.raw.toFixed(2));
+        if (e.estimateEps == null && h.epsEstimate?.raw != null) {
+          e.estimateEps = Number(h.epsEstimate.raw.toFixed(2));
+        }
+        if (h.surprisePercent?.raw != null) {
+          e.surprise = Number((h.surprisePercent.raw * 100).toFixed(2));
+        } else if (e.estimateEps != null && e.estimateEps !== 0) {
+          e.surprise = Number(
+            (((e.actualEps - e.estimateEps) / Math.abs(e.estimateEps)) * 100).toFixed(2)
+          );
+        }
+        // Actualizar dayCache si está cargado
+        const dayRows = dayCache.get(e.date)?.rows;
+        if (dayRows) {
+          const row = dayRows.find((r) => r.symbol === e.symbol);
+          if (row) {
+            row.eps = e.actualEps;
+            row.surprise = e.surprise;
+            if (row.epsForecast == null) row.epsForecast = e.estimateEps;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return entries;
+}
+
 /**
  * Junta los balances de un conjunto de tickers en la ventana
  * [hoy-daysBack, hoy+daysForward] consultando Nasdaq por fecha con un
@@ -219,6 +339,7 @@ export async function fetchEarningsForTickers(
   }
 
   entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.symbol.localeCompare(b.symbol)));
+  await enrichEarningsWithYahoo(entries);
   return entries;
 }
 
@@ -486,6 +607,24 @@ export async function fetchEarningsInfoForTicker(
       // completaría fechas sin este ticker (sin valor) — se omite.
       for (const e of surprise) {
         if (!collected.has(e.date)) collected.set(e.date, e);
+      }
+      // Enriquecer por si Nasdaq sorpresa aún no tiene el último trimestre recién reportado
+      const yHistory = await fetchYahooEarningsHistory(sym);
+      for (const h of yHistory) {
+        if (h.epsActual?.raw == null) continue;
+        if (h.currency && h.currency !== 'USD') continue;
+        const qFmt = h.quarter?.fmt || '';
+        for (const [date, e] of collected.entries()) {
+          if (date <= today && matchQuarter(e.fiscalQuarterEnding, qFmt, date)) {
+            e.actualEps = Number(h.epsActual.raw.toFixed(2));
+            if (e.estimateEps == null && h.epsEstimate?.raw != null) {
+              e.estimateEps = Number(h.epsEstimate.raw.toFixed(2));
+            }
+            if (h.surprisePercent?.raw != null) {
+              e.surprise = Number((h.surprisePercent.raw * 100).toFixed(2));
+            }
+          }
+        }
       }
       return;
     }
