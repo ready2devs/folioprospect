@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { AssetScore, PortfolioMetrics } from '@shared/engine';
+import { fmtPairPct, type AssetScore, type PortfolioMetrics } from '@shared/engine';
 import { InfoTip } from './InfoTip';
 
 export const fmtUsd = (n: number) => 'US$ ' + Math.round(n).toLocaleString('es-AR');
@@ -243,8 +243,8 @@ export const BubbleChart: React.FC<{
         {(mode === 'new' || mode === 'both') && avgMark(after, '#10B981', true, 'Promedio nuevo', -13)}
       </svg>
       <div className="opt-avgline">
-        <span>◆ <b>Promedio anterior:</b> riesgo {fmtPct(before.volatilityPct)} · beneficio {fmtPct(before.expectedReturnGeoPct)}</span>
-        <span className="opt-green">● <b>Promedio nuevo:</b> riesgo {fmtPct(after.volatilityPct)} · beneficio {fmtPct(after.expectedReturnGeoPct)}</span>
+        <span>◆ <b>Promedio anterior:</b> riesgo {fmtPairPct(before.volatilityPct, after.volatilityPct)[0]} · beneficio {fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct)[0]}</span>
+        <span className="opt-green">● <b>Promedio nuevo:</b> riesgo {fmtPairPct(before.volatilityPct, after.volatilityPct)[1]} · beneficio {fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct)[1]}</span>
         {mode === 'both' && <span>Burbuja punteada = posición anterior · llena = nueva</span>}
       </div>
       <div className={`opt-verdict ${verdict}`}>

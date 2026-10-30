@@ -5,6 +5,8 @@ import {
   consensusPct,
   yearsToDoubleFor,
   optimizePortfolio,
+  fmtPairPct,
+  fmtPairYears,
   type OptimizerAssetInput,
 } from '../optimizer.js';
 
@@ -182,5 +184,29 @@ describe('concentración', () => {
     const good = r.extractions.find((e) => e.ticker === 'GOOD');
     expect(good?.kind).toBe('parcial');
     expect(good?.reasonCode).toBe('concentracion');
+  });
+});
+
+describe('precisión de pares y narrativa marginal', () => {
+  it('fmtPairPct pasa a 2 decimales si con 1 se verían iguales', () => {
+    expect(fmtPairPct(14.01, 14.04)).toEqual(['14,01%', '14,04%']);
+    expect(fmtPairPct(14.0, 14.3)).toEqual(['14,0%', '14,3%']);
+    expect(fmtPairYears(5.29, 5.27)).toEqual(['5,29', '5,27']);
+    expect(fmtPairYears(5.2, 4.1)).toEqual(['5,2', '4,1']);
+  });
+
+  it('mejora marginal: la narrativa lo admite y no dice "baja de X a X"', () => {
+    // GOOD pesa 13,4% → solo dispara el recorte por concentración (impacto mínimo)
+    const p = portfolio().map((a) =>
+      a.ticker === 'GOOD' ? { ...a, value: 2400, qty: 24 } : a.ticker === 'BAD' ? { ...a, earningsGrowthTotalPct: 15, fvBase: 160, analystTarget: 150, opportunityScore: 88, volatilityPct: 24, roicPct: 20 } : a
+    );
+    const r = optimizePortfolio(p);
+    const text = r.narrative.join(' ');
+    if (r.extractions.length) {
+      expect(text).not.toMatch(/baja de ([\d,]+) a \1/);
+      if (r.after.expectedReturnGeoPct - r.before.expectedReturnGeoPct < 0.15) {
+        expect(text).toContain('marginal');
+      }
+    }
   });
 });

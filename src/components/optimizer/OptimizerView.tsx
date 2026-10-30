@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Sparkles, RefreshCw, Lock, Shield, Star } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { optimizePortfolio, type AssetScore } from '@shared/engine';
+import { optimizePortfolio, fmtPairPct, fmtPairYears, type AssetScore } from '@shared/engine';
 import { InfoTip } from './InfoTip';
 import { METHODOLOGY } from './methodology';
 import { EvolutionChart, BubbleChart, bandColor, BAND_COLORS, fmtPct, fmtUsd, fmtY } from './OptimizerCharts';
@@ -65,6 +65,9 @@ export const OptimizerView: React.FC = () => {
   }
   if (!result) return null;
   const { before, after } = result;
+  const [reB, reA] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
+  const [yB, yA] = fmtPairYears(before.yearsToDouble, after.yearsToDouble);
+  const [vB, vA] = fmtPairPct(before.volatilityPct, after.volatilityPct);
   const generated = new Date(optimizerData.generatedAt);
   const toggleDisabled = (ticker: string) =>
     setDisabled((prev) => {
@@ -123,18 +126,18 @@ export const OptimizerView: React.FC = () => {
       <div className="opt-kpis">
         <div className="opt-kpi">
           <div className="opt-kpi-l">RETORNO ESPERADO / AÑO <InfoTip k="retorno" /></div>
-          <div className="opt-kpi-v">{fmtPct(before.expectedReturnGeoPct)} → <em>{fmtPct(after.expectedReturnGeoPct)}</em></div>
+          <div className="opt-kpi-v">{reB} → <em>{reA}</em></div>
           <div className="opt-kpi-d">Geométrico (neto del arrastre de volatilidad)</div>
         </div>
         <div className="opt-kpi">
           <div className="opt-kpi-l">TIEMPO HASTA DUPLICAR <InfoTip k="duplicar" /></div>
-          <div className="opt-kpi-v">{fmtY(before.yearsToDouble)} años → <em>{fmtY(after.yearsToDouble)} años</em></div>
+          <div className="opt-kpi-v">{yB} años → <em>{yA} años</em></div>
           <div className="opt-kpi-d">Con la cartera optimizada</div>
         </div>
         <div className="opt-kpi">
           <div className="opt-kpi-l">RIESGO (VOLATILIDAD) <InfoTip k="riesgo" /></div>
-          <div className="opt-kpi-v">{fmtPct(before.volatilityPct)} → <em>{fmtPct(after.volatilityPct)}</em></div>
-          <div className="opt-kpi-d">{after.volatilityPct <= before.volatilityPct + 1 ? 'Similar o menor al actual' : 'Mayor que el actual'}</div>
+          <div className="opt-kpi-v">{vB} → <em>{vA}</em></div>
+          <div className="opt-kpi-d">{after.volatilityPct < before.volatilityPct - 0.05 ? 'Menor que el actual' : after.volatilityPct <= before.volatilityPct + 1 ? 'Similar al actual' : 'Mayor que el actual'}</div>
         </div>
         <div className="opt-kpi">
           <div className="opt-kpi-l">ACTIVOS</div>
@@ -194,8 +197,8 @@ export const OptimizerView: React.FC = () => {
             ))}
           </div>
           <div className="opt-foot">
-            <div className="opt-foot-big">Duplica en <em>{fmtY(before.yearsToDouble)} años</em></div>
-            <div className="opt-foot-small">Retorno esperado ponderado: {fmtPct(before.expectedReturnGeoPct)} anual</div>
+            <div className="opt-foot-big">Duplica en <em>{yB} años</em></div>
+            <div className="opt-foot-small">Retorno esperado ponderado: {reB} anual</div>
             <div className="opt-legend">
               <div className="opt-legend-t">Años para duplicar inversión <InfoTip k="duplicar" /></div>
               <div className="opt-lbar">{BAND_COLORS.map((c) => <div key={c} style={{ background: c }} />)}</div>
@@ -280,8 +283,8 @@ export const OptimizerView: React.FC = () => {
             )}
           </div>
           <div className="opt-foot">
-            <div className="opt-foot-big">Duplica en <em>{fmtY(after.yearsToDouble)} años</em></div>
-            <div className="opt-foot-small">Retorno esperado ponderado: {fmtPct(after.expectedReturnGeoPct)} anual · {after.positions} activos</div>
+            <div className="opt-foot-big">Duplica en <em>{yA} años</em></div>
+            <div className="opt-foot-small">Retorno esperado ponderado: {reA} anual · {after.positions} activos</div>
           </div>
         </section>
       </div>

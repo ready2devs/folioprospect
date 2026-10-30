@@ -415,6 +415,20 @@ export function portfolioMetrics(assets: AssetScore[], volPct: number): Portfoli
 const fmtUsd = (n: number) => 'US$ ' + Math.round(n).toLocaleString('es-AR');
 const fmtPct1 = (n: number) => n.toFixed(1).replace('.', ',') + '%';
 const fmtY = (n: number | null) => (n == null ? '—' : n.toFixed(1).replace('.', ','));
+/**
+ * Formato de un PAR antes/después: si con 1 decimal se verían iguales pero los
+ * valores difieren, pasa a 2 decimales (la mejora de una rotación chica es de
+ * centésimas y con 1 decimal el antes/después parece copiado).
+ */
+export const fmtPairPct = (a: number, b: number): [string, string] => {
+  const d = a.toFixed(1) === b.toFixed(1) && Math.abs(a - b) > 0.0001 ? 2 : 1;
+  return [a.toFixed(d).replace('.', ',') + '%', b.toFixed(d).replace('.', ',') + '%'];
+};
+export const fmtPairYears = (a: number | null, b: number | null): [string, string] => {
+  if (a == null || b == null) return [fmtY(a), fmtY(b)];
+  const d = a.toFixed(1) === b.toFixed(1) && Math.abs(a - b) > 0.001 ? 2 : 1;
+  return [a.toFixed(d).replace('.', ','), b.toFixed(d).replace('.', ',')];
+};
 
 export function optimizePortfolio(
   inputs: OptimizerAssetInput[],
@@ -672,12 +686,14 @@ export function optimizePortfolio(
   const riskSimilar = after.volatilityPct <= before.volatilityPct + opts.riskTolerancePp;
   let verdict: OptimizerResult['verdict'];
   let verdictText: string;
+  const [reBv, reAv] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
+  const [volBv, volAv] = fmtPairPct(before.volatilityPct, after.volatilityPct);
   if (benefitUp && riskSimilar) {
     verdict = 'valida';
-    verdictText = `Estrategia válida: riesgo similar (${fmtPct1(before.volatilityPct)} → ${fmtPct1(after.volatilityPct)}) y beneficio superior (${fmtPct1(before.expectedReturnGeoPct)} → ${fmtPct1(after.expectedReturnGeoPct)}). Vale la pena pensar en ejecutarla.`;
+    verdictText = `Estrategia válida: riesgo similar (${volBv} → ${volAv}) y beneficio superior (${reBv} → ${reAv}). Vale la pena pensar en ejecutarla.`;
   } else if (benefitUp) {
     verdict = 'evaluar';
-    verdictText = `Beneficio superior (${fmtPct1(before.expectedReturnGeoPct)} → ${fmtPct1(after.expectedReturnGeoPct)}), pero con más riesgo (${fmtPct1(before.volatilityPct)} → ${fmtPct1(after.volatilityPct)}). A evaluar con cuidado.`;
+    verdictText = `Beneficio superior (${reBv} → ${reAv}), pero con más riesgo (${volBv} → ${volAv}). A evaluar con cuidado.`;
   } else {
     verdict = 'sin-mejora';
     verdictText = 'Con los datos de hoy, ninguna rotación mejora el beneficio sin subir el riesgo: la cartera queda como está.';
@@ -738,9 +754,22 @@ export function buildNarrative(
   }
 
   if (extractions.length) {
-    out.push(
-      `Las posibilidades de mejora están en la cola de la cartera: liberando ${fmtUsd(extractions.reduce((s, e) => s + e.netUsd, 0))} desde ${extractions.map((e) => e.ticker).join(', ')} y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ') || 'las mejores posiciones'}, el retorno estimado sube a ${fmtPct1(after.expectedReturnGeoPct)} y el tiempo para duplicar baja de ${fmtY(before.yearsToDouble)} a ${fmtY(after.yearsToDouble)} años, con un riesgo de ${fmtPct1(after.volatilityPct)} (antes ${fmtPct1(before.volatilityPct)}).`
-    );
+    const deltaRE = after.expectedReturnGeoPct - before.expectedReturnGeoPct;
+    const [reB, reA] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
+    const [yB, yA] = fmtPairYears(before.yearsToDouble, after.yearsToDouble);
+    const [vB, vA] = fmtPairPct(before.volatilityPct, after.volatilityPct);
+    const yearsClause =
+      yB === yA
+        ? `el tiempo para duplicar se mantiene en ${yB} años`
+        : `el tiempo para duplicar ${after.yearsToDouble! < before.yearsToDouble! ? 'baja' : 'sube'} de ${yB} a ${yA} años`;
+    const moves = `liberando ${fmtUsd(extractions.reduce((s, e) => s + e.netUsd, 0))} desde ${extractions.map((e) => e.ticker).join(', ')} y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ') || 'las mejores posiciones'}, el retorno estimado ${deltaRE >= 0 ? 'pasa' : 'queda'} de ${reB} a ${reA} y ${yearsClause}, con un riesgo de ${vA} (antes ${vB})`;
+    if (deltaRE >= 0.15) {
+      out.push(`Las posibilidades de mejora están en la cola de la cartera: ${moves}.`);
+    } else {
+      out.push(
+        `La única rotación que disparan las reglas es marginal: ${moves}. Es un ajuste fino (concentración y prolijidad), no un cambio de panorama.`
+      );
+    }
   } else {
     out.push(
       'No aparecen rotaciones con fundamento suficiente: ninguna posición combina score bajo, sobreprecio contra su valor justo o un par sectorial claramente mejor. Mantener también es una decisión.'
