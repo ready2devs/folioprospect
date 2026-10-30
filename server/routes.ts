@@ -39,6 +39,7 @@ import {
   normalizeTradingViewSymbol,
   findCatalogEntry,
 } from '../shared/engine/index.js';
+import { buildOptimizerResult } from './optimizerData.js';
 import type {
   CashTx,
   DividendTx,
@@ -280,6 +281,34 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Custom projection simulation endpoint
+  // Optimizador de cartera (SPEC-004): scores, extracciones, reaplicación,
+  // riesgo/beneficio y narrativa. Cacheado 15 min en el servidor.
+  app.get('/api/portfolios/:id/optimizer', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const portfolio =
+      id === 'overview'
+        ? db.portfolios[0]
+        : db.portfolios.find((p) => p.id === id) || db.portfolios[0];
+    const symbols = Array.from(new Set(portfolio.trades.map((t) => t.symbol)));
+    const { quotes } = await fetchQuotesWithSparklines(symbols);
+    const ledger = evaluateLedger(portfolio, db.assetMeta, quotes, fallbackPrices);
+    const holdings = ledger.holdings
+      .filter((h) => h.value > 0)
+      .map((h) => ({
+        symbol: h.symbol,
+        ticker: h.ticker,
+        name: h.name,
+        sector: h.sector,
+        qty: h.qty,
+        lastPrice: h.lastPrice,
+        value: h.value,
+      }));
+    const force = req.query.refresh === '1';
+    const { result, inputs, peersByIndustry, generatedAt, cached } =
+      await buildOptimizerResult(holdings, 0.5, force);
+    res.json({ result, inputs, peersByIndustry, generatedAt, cached });
+  });
+
   app.post('/api/projection', (req: Request, res: Response) => {
     const body = req.body || {};
     const result = runPortfolioProjection({
