@@ -210,3 +210,63 @@ describe('precisión de pares y narrativa marginal', () => {
     }
   });
 });
+
+describe('obtener más fondos: manual, efectivo y sugerencias', () => {
+  it('venta manual parcial: extrae el monto pedido y reduce la posición final', () => {
+    const r = optimizePortfolio(portfolio(), {
+      sellCommissionPct: 0.5,
+      maxWeightPct: 90,
+      manualExtractions: [{ symbol: 'NASDAQ:MID', amountUsd: 1000 }],
+    });
+    const mid = r.extractions.find((e) => e.ticker === 'MID');
+    expect(mid?.reasonCode).toBe('manual');
+    expect(mid?.kind).toBe('parcial');
+    expect(mid?.grossUsd).toBeCloseTo(1000, 5);
+    const midFinal = r.finalAssets.find((a) => a.ticker === 'MID');
+    expect(midFinal?.value).toBeCloseTo(3000, 5);
+  });
+
+  it('venta manual por encima del saldo se acota y queda total', () => {
+    const r = optimizePortfolio(portfolio(), {
+      manualExtractions: [{ symbol: 'NASDAQ:MID', amountUsd: 99999 }],
+    });
+    const mid = r.extractions.find((e) => e.ticker === 'MID');
+    expect(mid?.kind).toBe('total');
+    expect(mid?.grossUsd).toBeCloseTo(4000, 5);
+    expect(r.finalAssets.find((a) => a.ticker === 'MID')).toBeUndefined();
+  });
+
+  it('la venta manual reemplaza a las reglas automáticas sobre ese activo', () => {
+    // BAD saldría total por reglas; con venta manual de 500 sale solo eso y como manual.
+    const r = optimizePortfolio(portfolio(), {
+      maxWeightPct: 90,
+      manualExtractions: [{ symbol: 'NASDAQ:BAD', amountUsd: 500 }],
+    });
+    const bad = r.extractions.filter((e) => e.ticker === 'BAD');
+    expect(bad.length).toBe(1);
+    expect(bad[0].reasonCode).toBe('manual');
+    expect(bad[0].grossUsd).toBeCloseTo(500, 5);
+  });
+
+  it('efectivo nuevo suma fondos y aumenta el total final', () => {
+    const base0 = optimizePortfolio(portfolio(), { maxWeightPct: 90 });
+    const r = optimizePortfolio(portfolio(), { maxWeightPct: 90, extraCashUsd: 3000 });
+    expect(r.fundsToReallocate).toBeCloseTo(base0.fundsToReallocate + 3000, 5);
+    expect(r.after.totalValue).toBeCloseTo(r.before.totalValue + 3000, 5);
+    expect(r.extractions.find((e) => e.kind === 'efectivo')?.grossUsd).toBe(3000);
+  });
+
+  it('sugerencias: excluye cripto y ya extraídas; aceptar una la convierte en extracción', () => {
+    const r0 = optimizePortfolio(portfolio(), { maxWeightPct: 90 });
+    const tickers = r0.suggestionCandidates.map((c) => c.ticker);
+    expect(tickers).not.toContain('BTC');
+    expect(tickers).not.toContain('BAD'); // ya extraída por las reglas
+    expect(tickers).toContain('MID');
+    const r1 = optimizePortfolio(portfolio(), { maxWeightPct: 90, acceptedSuggestions: ['MID'] });
+    const sug = r1.extractions.find((e) => e.ticker === 'MID');
+    expect(sug?.reasonCode).toBe('sugerencia');
+    expect(sug?.kind).toBe('parcial');
+    expect(sug?.grossUsd).toBeCloseTo(2000, 5); // 50% de la posición
+    expect(r1.suggestionCandidates.map((c) => c.ticker)).not.toContain('MID');
+  });
+});

@@ -90,6 +90,12 @@ export interface OptimizerOptions {
   peersByIndustry?: Record<string, ScoredPeer[]>;
   /** Tickers que el usuario desactivó en la UI: no se proponen extracciones. */
   excludeTickers?: string[];
+  /** Ventas manuales del usuario (botón «Obtener más fondos»): monto en US$ por símbolo. */
+  manualExtractions?: Array<{ symbol: string; amountUsd: number }>;
+  /** Efectivo nuevo que el usuario agrega como fondos (no es una venta). */
+  extraCashUsd?: number;
+  /** Tickers de sugerencias automáticas aceptadas por el usuario. */
+  acceptedSuggestions?: string[];
 }
 
 export interface AssetScore {
@@ -130,14 +136,28 @@ export interface Extraction {
   symbol: string;
   ticker: string;
   name: string;
-  kind: 'total' | 'parcial';
+  kind: 'total' | 'parcial' | 'efectivo';
   qtySold: number;
   price: number;
   grossUsd: number;
   netUsd: number;
   reason: string;
-  reasonCode: 'veredicto-vender' | 'score-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno';
+  reasonCode: 'veredicto-vender' | 'score-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno' | 'manual' | 'sugerencia';
   replacementTicker?: string;
+}
+
+/** Candidata a venta que la UI ofrece en «Obtener más fondos» (aún no aceptada). */
+export interface SuggestionCandidate {
+  symbol: string;
+  ticker: string;
+  name: string;
+  qtySold: number;
+  price: number;
+  grossUsd: number;
+  netUsd: number;
+  reason: string;
+  score: number | null;
+  expectedReturnPct: number | null;
 }
 
 export interface Allocation {
@@ -172,6 +192,8 @@ export interface OptimizerResult {
   extractions: Extraction[];
   allocations: Allocation[];
   fundsToReallocate: number;
+  /** Próximas ventas sugeridas (no dispararon reglas; la UI las ofrece de a una). */
+  suggestionCandidates: SuggestionCandidate[];
   before: PortfolioMetrics;
   after: PortfolioMetrics;
   /** Cartera final: posiciones resultantes con peso y score. */
@@ -243,7 +265,7 @@ function qualityScore(a: OptimizerAssetInput): number | null {
 export function scoreAsset(
   a: OptimizerAssetInput,
   totalValue: number,
-  opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers'>>
+  opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers' | 'manualExtractions' | 'extraCashUsd' | 'acceptedSuggestions'>>
 ): AssetScore {
   const isCrypto = !!a.isCrypto;
   const isCash = !!a.isCash;
@@ -434,7 +456,7 @@ export function optimizePortfolio(
   inputs: OptimizerAssetInput[],
   options: OptimizerOptions = {}
 ): OptimizerResult {
-  const opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers'>> = {
+  const opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers' | 'manualExtractions' | 'extraCashUsd' | 'acceptedSuggestions'>> = {
     sellCommissionPct: options.sellCommissionPct ?? 0.5,
     riskFreePct: options.riskFreePct ?? 4,
     yearsToCorrection: options.yearsToCorrection ?? 3,
@@ -456,8 +478,20 @@ export function optimizePortfolio(
   );
 
   // ---------- Extracciones ----------
+  // Fondos definidos por el usuario (botón «Obtener más fondos»): ventas
+  // manuales de posiciones vigentes y efectivo nuevo. Son decisión explícita:
+  // no consumen el tope de extracción automática y reemplazan a las reglas
+  // automáticas sobre esos mismos activos.
+  const extraCashUsd = Math.max(0, options.extraCashUsd ?? 0);
+  const manualBySymbol = new Map<string, number>();
+  for (const m of options.manualExtractions ?? []) {
+    if (!(m.amountUsd > 0)) continue;
+    manualBySymbol.set(m.symbol, (manualBySymbol.get(m.symbol) ?? 0) + m.amountUsd);
+  }
   const stockAssets = scored.filter(
-    (a) => !a.isCrypto && !a.isCash && !a.locked && !excluded.has(a.ticker.toUpperCase())
+    (a) =>
+      !a.isCrypto && !a.isCash && !a.locked && !excluded.has(a.ticker.toUpperCase()) &&
+      !manualBySymbol.has(a.symbol)
   );
   const medianRE = median(
     stockAssets.map((a) => a.expectedReturnPct).filter((x): x is number => x != null)
@@ -500,6 +534,31 @@ export function optimizePortfolio(
       replacementTicker,
     });
   };
+
+  // Aplicar los fondos manuales primero (venta por monto, acotada al saldo).
+  for (const [symbol, amountUsd] of manualBySymbol) {
+    const a = scored.find((x) => x.symbol === symbol);
+    if (!a || a.isCash || !(a.price > 0) || a.qty <= 0) continue;
+    const gross = Math.min(amountUsd, a.value);
+    const qtySold = gross / a.price;
+    if (qtySold <= 0 || gross <= 0) continue;
+    soldQty.set(a.symbol, (soldQty.get(a.symbol) ?? 0) + qtySold);
+    extractions.push({
+      symbol: a.symbol, ticker: a.ticker, name: a.name,
+      kind: qtySold >= a.qty * 0.999 ? 'total' : 'parcial',
+      qtySold: Math.round(qtySold * 1000) / 1000, price: a.price,
+      grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
+      reason: 'Venta definida por vos', reasonCode: 'manual',
+    });
+  }
+  if (extraCashUsd > 0) {
+    extractions.push({
+      symbol: 'CASH:NEW', ticker: 'EFECTIVO', name: 'Efectivo nuevo',
+      kind: 'efectivo', qtySold: 0, price: 1,
+      grossUsd: extraCashUsd, netUsd: extraCashUsd,
+      reason: 'Efectivo agregado por vos', reasonCode: 'manual',
+    });
+  }
 
   // Orden de prioridad: peor eficiencia retorno/riesgo primero (Euler) como desempate.
   const byRiskEfficiency = [...stockAssets].sort(
@@ -551,6 +610,58 @@ export function optimizePortfolio(
     ) {
       pushExtraction(a, 'parcial', 0.5,
         'Retorno esperado muy por debajo del resto de la cartera', 'bajo-retorno');
+    }
+  }
+
+  // ---------- Sugerencias automáticas adicionales ----------
+  // Candidatas a vender que NO dispararon las reglas duras, ordenadas por
+  // menor eficiencia retorno/riesgo (Euler), defensivas al final: son la
+  // "segunda o tercera opción" que la UI ofrece en «Obtener más fondos».
+  // Las aceptadas por el usuario (acceptedSuggestions) se convierten en
+  // extracción parcial del 50% y salen de la lista de candidatas.
+  const extractedSymbols = new Set(extractions.map((e) => e.symbol));
+  const sugPool = stockAssets
+    .filter((a) => !extractedSymbols.has(a.symbol) && a.value * 0.5 >= opts.minTradeUsd)
+    .sort((x, y) => {
+      const dx = x.defensive ? 1 : 0;
+      const dy = y.defensive ? 1 : 0;
+      if (dx !== dy) return dx - dy;
+      const ex = x.excessPerRisk ?? Infinity;
+      const ey = y.excessPerRisk ?? Infinity;
+      if (ex !== ey) return ex - ey;
+      const sx = x.score ?? 999;
+      const sy = y.score ?? 999;
+      if (sx !== sy) return sx - sy;
+      return (x.expectedReturnPct ?? Infinity) - (y.expectedReturnPct ?? Infinity);
+    });
+  let suggestionCandidates: SuggestionCandidate[] = sugPool.slice(0, 5).map((a) => {
+    const gross = a.value * 0.5;
+    return {
+      symbol: a.symbol, ticker: a.ticker, name: a.name,
+      qtySold: Math.round(a.qty * 0.5 * 1000) / 1000, price: a.price,
+      grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
+      reason:
+        `Sugerencia automática: la menor eficiencia retorno/riesgo entre las posiciones restantes ` +
+        `(score ${a.score != null ? a.score + '/100' : '—'} · retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual)` +
+        (a.defensive ? ' · ojo: cumple rol defensivo' : ''),
+      score: a.score, expectedReturnPct: a.expectedReturnPct,
+    };
+  });
+  const acceptedSug = new Set((options.acceptedSuggestions ?? []).map((t) => t.toUpperCase()));
+  if (acceptedSug.size) {
+    const appliedSyms = new Set<string>();
+    for (const c of suggestionCandidates) {
+      if (!acceptedSug.has(c.ticker.toUpperCase())) continue;
+      soldQty.set(c.symbol, (soldQty.get(c.symbol) ?? 0) + c.qtySold);
+      extractions.push({
+        symbol: c.symbol, ticker: c.ticker, name: c.name, kind: 'parcial',
+        qtySold: c.qtySold, price: c.price, grossUsd: c.grossUsd, netUsd: c.netUsd,
+        reason: c.reason, reasonCode: 'sugerencia',
+      });
+      appliedSyms.add(c.symbol);
+    }
+    if (appliedSyms.size) {
+      suggestionCandidates = suggestionCandidates.filter((c) => !appliedSyms.has(c.symbol));
     }
   }
 
@@ -663,7 +774,9 @@ export function optimizePortfolio(
   );
   // Recalcular pesos/riesgo con el total final (las ventas netas quedan como caja)
   const finalTotal = finalAssets.reduce((s, a) => s + a.value, 0);
-  const cashLeft = Math.max(0, totalValue - finalTotal);
+  // El efectivo nuevo (extraCashUsd) suma al total final: no es una venta.
+  const totalAfter = totalValue + extraCashUsd;
+  const cashLeft = Math.max(0, totalAfter - finalTotal);
   if (cashLeft > 1) {
     finalAssets.push({
       symbol: 'CASH:USD', ticker: 'USD', name: 'Efectivo sin asignar', sector: 'Efectivo',
@@ -676,7 +789,7 @@ export function optimizePortfolio(
     });
   }
   finalAssets.forEach((a) => {
-    a.weightPct = totalValue > 0 ? (a.value / totalValue) * 100 : 0;
+    a.weightPct = totalAfter > 0 ? (a.value / totalAfter) * 100 : 0;
   });
   const volAfter = applyRiskDecomposition(finalAssets, opts.riskFreePct);
   const after = portfolioMetrics(finalAssets, volAfter);
@@ -705,6 +818,7 @@ export function optimizePortfolio(
     extractions,
     allocations,
     fundsToReallocate,
+    suggestionCandidates,
     before,
     after,
     finalAssets,
@@ -762,7 +876,7 @@ export function buildNarrative(
       yB === yA
         ? `el tiempo para duplicar se mantiene en ${yB} años`
         : `el tiempo para duplicar ${after.yearsToDouble! < before.yearsToDouble! ? 'baja' : 'sube'} de ${yB} a ${yA} años`;
-    const moves = `liberando ${fmtUsd(extractions.reduce((s, e) => s + e.netUsd, 0))} desde ${extractions.map((e) => e.ticker).join(', ')} y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ') || 'las mejores posiciones'}, el retorno estimado ${deltaRE >= 0 ? 'pasa' : 'queda'} de ${reB} a ${reA} y ${yearsClause}, con un riesgo de ${vA} (antes ${vB})`;
+    const moves = `liberando ${fmtUsd(extractions.reduce((s, e) => s + e.netUsd, 0))} desde ${extractions.filter((e) => e.kind !== 'efectivo').map((e) => e.ticker).join(', ') || 'efectivo nuevo'} y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ') || 'las mejores posiciones'}, el retorno estimado ${deltaRE >= 0 ? 'pasa' : 'queda'} de ${reB} a ${reA} y ${yearsClause}, con un riesgo de ${vA} (antes ${vB})`;
     if (deltaRE >= 0.15) {
       out.push(`Las posibilidades de mejora están en la cola de la cartera: ${moves}.`);
     } else {

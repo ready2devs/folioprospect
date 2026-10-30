@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Sparkles, RefreshCw, Lock, Shield, Star } from 'lucide-react';
+import { Sparkles, RefreshCw, Lock, Shield, Star, Plus, X, Lightbulb } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { optimizePortfolio, fmtPairPct, fmtPairYears, type AssetScore } from '@shared/engine';
+import { optimizePortfolio, fmtPairPct, fmtPairYears, type AssetScore, type Extraction } from '@shared/engine';
 import { InfoTip } from './InfoTip';
 import { METHODOLOGY } from './methodology';
 import { EvolutionChart, BubbleChart, bandColor, BAND_COLORS, fmtPct, fmtUsd, fmtY } from './OptimizerCharts';
@@ -32,16 +32,42 @@ export const OptimizerView: React.FC = () => {
   const { optimizerData, optimizerLoading, loadOptimizer, evaluation } = useAppStore();
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
   const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
+  // «Obtener más fondos»: entradas libres del usuario (efectivo o venta de un
+  // activo vigente por el monto que elija) y sugerencias automáticas aceptadas.
+  type ManualFund = { id: string; type: 'cash' | 'sell'; symbol?: string; amountUsd: number };
+  const [manualFunds, setManualFunds] = useState<ManualFund[]>([]);
+  const [acceptedSug, setAcceptedSug] = useState<string[]>([]);
+  const [skippedSug, setSkippedSug] = useState<string[]>([]);
+  const [mfOpen, setMfOpen] = useState(false);
+  const [mfType, setMfType] = useState<'cash' | 'sell'>('sell');
+  const [mfSymbol, setMfSymbol] = useState('');
+  const [mfAmount, setMfAmount] = useState('');
+  const [mfError, setMfError] = useState<string | null>(null);
+
+  const manualExtractions = useMemo(() => {
+    const bySymbol = new Map<string, number>();
+    for (const m of manualFunds) {
+      if (m.type === 'sell' && m.symbol) bySymbol.set(m.symbol, (bySymbol.get(m.symbol) ?? 0) + m.amountUsd);
+    }
+    return [...bySymbol.entries()].map(([symbol, amountUsd]) => ({ symbol, amountUsd }));
+  }, [manualFunds]);
+  const extraCashUsd = useMemo(
+    () => manualFunds.filter((m) => m.type === 'cash').reduce((s, m) => s + m.amountUsd, 0),
+    [manualFunds]
+  );
 
   const result = useMemo(() => {
     if (!optimizerData) return null;
-    if (disabled.size === 0) return optimizerData.result;
+    if (disabled.size === 0 && manualFunds.length === 0 && acceptedSug.length === 0) return optimizerData.result;
     return optimizePortfolio(optimizerData.inputs, {
       sellCommissionPct: 0.5,
       peersByIndustry: optimizerData.peersByIndustry,
       excludeTickers: [...disabled],
+      manualExtractions,
+      extraCashUsd,
+      acceptedSuggestions: acceptedSug,
     });
-  }, [optimizerData, disabled]);
+  }, [optimizerData, disabled, manualFunds, manualExtractions, extraCashUsd, acceptedSug]);
 
   if (!optimizerData) {
     return (
@@ -90,6 +116,49 @@ export const OptimizerView: React.FC = () => {
   const lockedNames = result.assets.filter((a) => a.locked).map((a) => a.ticker);
   const defensiveNames = result.assets.filter((a) => a.defensive).map((a) => a.ticker);
   const colAssets = result.assets.filter((a) => !a.isCash);
+  // Activos que el usuario puede vender a mano (los de candado no se tocan).
+  const pickerAssets = colAssets.filter((a) => !a.locked && a.value > 0);
+  const selSymbol =
+    mfSymbol && pickerAssets.some((a) => a.symbol === mfSymbol) ? mfSymbol : pickerAssets[0]?.symbol ?? '';
+  const nextSug = result.suggestionCandidates.find(
+    (c) => !acceptedSug.includes(c.ticker) && !skippedSug.includes(c.ticker)
+  );
+  const removeExtraction = (e: Extraction) => {
+    if (e.reasonCode === 'sugerencia') {
+      setAcceptedSug((prev) => prev.filter((t) => t !== e.ticker));
+    } else if (e.kind === 'efectivo') {
+      setManualFunds((prev) => prev.filter((m) => m.type !== 'cash'));
+    } else {
+      setManualFunds((prev) => prev.filter((m) => !(m.type === 'sell' && m.symbol === e.symbol)));
+    }
+  };
+  const addManual = () => {
+    const raw = mfAmount.trim().replace(/\s/g, '');
+    const amt = Number(raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw);
+    if (!amt || !(amt > 0)) {
+      setMfError('Ingresá un monto válido en US$.');
+      return;
+    }
+    if (mfType === 'cash') {
+      setManualFunds((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, type: 'cash', amountUsd: amt }]);
+    } else {
+      const a = pickerAssets.find((x) => x.symbol === selSymbol);
+      if (!a) return;
+      const already = manualFunds
+        .filter((m) => m.type === 'sell' && m.symbol === a.symbol)
+        .reduce((s, m) => s + m.amountUsd, 0);
+      if (amt + already > a.value + 0.01) {
+        setMfError(`Supera el saldo disponible de ${a.ticker} (${fmtUsd(a.value - already)}).`);
+        return;
+      }
+      setManualFunds((prev) => [
+        ...prev,
+        { id: `${Date.now()}-${Math.random()}`, type: 'sell', symbol: a.symbol, amountUsd: amt },
+      ]);
+    }
+    setMfError(null);
+    setMfAmount('');
+  };
   const finalAssets = result.finalAssets.filter((a) => !a.isCash);
   const cashRow = result.finalAssets.find((a) => a.isCash);
 
@@ -222,22 +291,125 @@ export const OptimizerView: React.FC = () => {
               <article key={e.symbol} className="opt-card sell">
                 <div className="opt-r1">
                   <span className="opt-tk">{e.ticker}</span>
-                  <span className="opt-wt">{e.kind === 'total' ? 'Liquidación total' : 'Liquidación parcial'}</span>
+                  <span className="opt-wt">
+                    {e.kind === 'efectivo' ? 'Fondos nuevos' : e.kind === 'total' ? 'Liquidación total' : 'Liquidación parcial'}
+                  </span>
                 </div>
                 <div className="opt-nm">
-                  Vender {e.qtySold.toLocaleString('es-AR')} acc. · {fmtUsd(e.grossUsd)}
+                  {e.kind === 'efectivo'
+                    ? `Efectivo agregado por vos · ${fmtUsd(e.grossUsd)}`
+                    : `Vender ${e.qtySold.toLocaleString('es-AR')} acc. · ${fmtUsd(e.grossUsd)}`}
                 </div>
-                <span className={'opt-chip ' + (e.reasonCode === 'concentracion' ? 'amber' : 'red')}>{e.reason}</span>
-                <label className="opt-toggle">
-                  <input type="checkbox" checked={!disabled.has(e.ticker)} onChange={() => toggleDisabled(e.ticker)} />
-                  <span>{disabled.has(e.ticker) ? 'Desactivado' : 'Activo'}</span>
-                </label>
+                <span
+                  className={
+                    'opt-chip ' +
+                    (e.reasonCode === 'manual'
+                      ? 'sky'
+                      : e.reasonCode === 'sugerencia'
+                        ? 'violet'
+                        : e.reasonCode === 'concentracion'
+                          ? 'amber'
+                          : 'red')
+                  }
+                >
+                  {e.reason}
+                </span>
+                {e.reasonCode === 'manual' || e.reasonCode === 'sugerencia' ? (
+                  <div>
+                    <button type="button" className="opt-quitar" onClick={() => removeExtraction(e)}>
+                      <X size={11} /> Quitar
+                    </button>
+                  </div>
+                ) : (
+                  <label className="opt-toggle">
+                    <input type="checkbox" checked={!disabled.has(e.ticker)} onChange={() => toggleDisabled(e.ticker)} />
+                    <span>{disabled.has(e.ticker) ? 'Desactivado' : 'Activo'}</span>
+                  </label>
+                )}
               </article>
             ))}
             <div className="opt-note">
               {lockedNames.length > 0 && <>Con candado, no se tocan: <b>{lockedNames.join(', ')}</b>. </>}
               {defensiveNames.length > 0 && <>Defensivos (solo salida parcial extrema): <b>{defensiveNames.join(', ')}</b>.</>}
             </div>
+          </div>
+          <div className="opt-mf-wrap">
+            {!mfOpen ? (
+              <button type="button" className="opt-btn opt-mf-open" onClick={() => setMfOpen(true)}>
+                <Plus size={13} /> Obtener más fondos
+              </button>
+            ) : (
+              <div className="opt-mf">
+                <div className="opt-mf-head">
+                  <b>Obtener más fondos</b>
+                  <button type="button" className="opt-quitar" onClick={() => setMfOpen(false)} aria-label="Cerrar">
+                    <X size={11} />
+                  </button>
+                </div>
+                <div className="opt-mf-tabs" role="tablist" aria-label="Origen de los fondos">
+                  <button type="button" className={mfType === 'sell' ? 'on' : ''} onClick={() => { setMfType('sell'); setMfError(null); }}>
+                    Venta de activo
+                  </button>
+                  <button type="button" className={mfType === 'cash' ? 'on' : ''} onClick={() => { setMfType('cash'); setMfError(null); }}>
+                    Efectivo
+                  </button>
+                </div>
+                {mfType === 'sell' && (
+                  <>
+                    <select value={selSymbol} onChange={(ev) => setMfSymbol(ev.target.value)} aria-label="Activo a vender">
+                      {pickerAssets.map((a) => (
+                        <option key={a.symbol} value={a.symbol}>
+                          {a.ticker} · saldo {fmtUsd(a.value)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="opt-mf-hint">Se vende el monto que escribas, hasta el saldo de la posición.</div>
+                  </>
+                )}
+                {mfType === 'cash' && (
+                  <div className="opt-mf-hint">Efectivo nuevo que sumás a los fondos a reasignar (no es una venta).</div>
+                )}
+                <div className="opt-mf-row">
+                  <input
+                    inputMode="decimal"
+                    placeholder="Monto en US$"
+                    value={mfAmount}
+                    onChange={(ev) => setMfAmount(ev.target.value)}
+                    onKeyDown={(ev) => { if (ev.key === 'Enter') addManual(); }}
+                    aria-label="Monto en US$"
+                  />
+                  <button type="button" className="opt-btn" onClick={addManual}>
+                    Agregar
+                  </button>
+                </div>
+                {mfError && <div className="opt-mf-err">{mfError}</div>}
+                <div className="opt-mf-sug">
+                  <div className="opt-mf-sug-t">
+                    <Lightbulb size={12} /> Sugerencia automática
+                  </div>
+                  {nextSug ? (
+                    <>
+                      <p>
+                        <b>{nextSug.ticker}</b> · vender {nextSug.qtySold.toLocaleString('es-AR')} acc. ·{' '}
+                        {fmtUsd(nextSug.grossUsd)}
+                        <br />
+                        <small>{nextSug.reason}</small>
+                      </p>
+                      <div className="opt-mf-row">
+                        <button type="button" className="opt-btn" onClick={() => setAcceptedSug((prev) => [...prev, nextSug.ticker])}>
+                          Usar esta sugerencia
+                        </button>
+                        <button type="button" className="opt-btn ghost" onClick={() => setSkippedSug((prev) => [...prev, nextSug.ticker])}>
+                          Ver otra
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="opt-mf-hint">No quedan más sugerencias automáticas con los datos de hoy.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <div className="opt-foot">
             <div className="opt-foot-big">Fondos a reasignar: <em>{fmtUsd(result.fundsToReallocate)}</em></div>

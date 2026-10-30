@@ -60,3 +60,24 @@ metodología vive en íconos ⓘ y en la sección plegable «Cómo se calcula».
   para un «modo avanzado» v2.
 - La cartera local de desarrollo es la semilla del repo (20 posiciones); en
   producción corre sobre la cartera real sincronizada.
+
+## «Obtener más fondos» (2026-10-30)
+
+La columna de obtención de fondos permite seguir extrayendo más allá de las
+reglas automáticas, sin tocar candados ni cripto:
+
+- **Venta manual**: cualquier posición vigente sin candado, por el monto en US$
+  que el usuario escriba (acotado al saldo). Es decisión explícita: no consume
+  el tope de extracción automática (15%) y reemplaza a las reglas sobre ese
+  activo. Opciones del motor: `manualExtractions: {symbol, amountUsd}[]`.
+- **Efectivo nuevo**: suma fondos sin vender (tarjeta «EFECTIVO · Fondos
+  nuevos», sin comisión; aumenta el total final). Opción: `extraCashUsd`.
+- **Sugerencias automáticas**: el motor devuelve `suggestionCandidates` —
+  posiciones restantes (no extraídas, no cripto, sin candado) ordenadas por
+  menor eficiencia retorno/riesgo (Euler), defensivas al final, score y retorno
+  como desempate. La UI ofrece de a una («Usar esta sugerencia» / «Ver otra»);
+  aceptar una la convierte en extracción parcial del 50% (opción
+  `acceptedSuggestions: ticker[]`).
+
+Las tarjetas manuales/sugeridas se quitan con «Quitar» (sin toggle); las
+automáticas conservan el toggle Activo/Desactivado.
