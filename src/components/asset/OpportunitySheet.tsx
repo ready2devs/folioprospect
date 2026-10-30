@@ -297,6 +297,115 @@ export const OpportunitySheet: React.FC<{
     return 'US$ ' + fmtLocal(v, 0);
   };
 
+  const momentumStats = (() => {
+    const up = extras?.epsRevisionUp30 ?? null;
+    const down = extras?.epsRevisionDown30 ?? null;
+    const epsChg90 = extras?.epsEstimateChange90dPct ?? null;
+    const epsSurprise = fz?.epsSurprisePct ?? null;
+    const perfYear = fz?.perfYearPct ?? null;
+
+    let revVal = '—';
+    let revColor = 'inherit';
+    if (up != null || down != null) {
+      const u = up ?? 0;
+      const d = down ?? 0;
+      revVal = `▲${u} / ▼${d}`;
+      const diff = u - d;
+      if (diff > 0) revColor = 'var(--pos-bright)';
+      else if (diff < 0) revColor = 'var(--neg-bright)';
+    }
+
+    let chgVal = '—';
+    let chgColor = 'inherit';
+    if (epsChg90 != null && Number.isFinite(epsChg90)) {
+      chgVal = fmtSignedPct(epsChg90, 1);
+      if (epsChg90 > 0) chgColor = 'var(--pos-bright)';
+      else if (epsChg90 < 0) chgColor = 'var(--neg-bright)';
+    }
+
+    let surpVal = '—';
+    let surpColor = 'inherit';
+    if (epsSurprise != null && Number.isFinite(epsSurprise)) {
+      surpVal = fmtSignedPct(epsSurprise, 1);
+      if (epsSurprise > 0) surpColor = 'var(--pos-bright)';
+      else if (epsSurprise < 0) surpColor = 'var(--neg-bright)';
+    }
+
+    let perfVal = '—';
+    let perfColor = 'inherit';
+    if (perfYear != null && Number.isFinite(perfYear)) {
+      perfVal = fmtSignedPct(perfYear, 1);
+      if (perfYear > 0) perfColor = 'var(--pos-bright)';
+      else if (perfYear < 0) perfColor = 'var(--neg-bright)';
+    }
+
+    const hasAny =
+      up != null ||
+      down != null ||
+      (epsChg90 != null && Number.isFinite(epsChg90)) ||
+      (epsSurprise != null && Number.isFinite(epsSurprise));
+
+    let summaryText = 'Sin datos';
+    let summaryColor = 'inherit';
+
+    if (hasAny) {
+      let score = 0;
+      if (up != null || down != null) {
+        score += Math.sign((up ?? 0) - (down ?? 0));
+      }
+      if (epsChg90 != null && Number.isFinite(epsChg90)) {
+        if (epsChg90 > 2) score += 1;
+        else if (epsChg90 < -2) score -= 1;
+      }
+      if (epsSurprise != null && Number.isFinite(epsSurprise)) {
+        if (epsSurprise > 3) score += 1;
+        else if (epsSurprise < -3) score -= 1;
+      }
+
+      if (score >= 2) {
+        summaryText = 'Positivo';
+        summaryColor = 'var(--pos-bright)';
+      } else if (score <= -1) {
+        summaryText = 'Negativo';
+        summaryColor = 'var(--neg-bright)';
+      } else {
+        summaryText = 'Neutral';
+        summaryColor = 'var(--text-primary)';
+      }
+    }
+
+    return {
+      tiles: [
+        {
+          label: 'Revisiones EPS (30 d)',
+          val: revVal,
+          color: revColor,
+          tip: 'Cuántos analistas subieron (▲) o bajaron (▼) su estimación de ganancias por acción del próximo año en los últimos 30 días.',
+        },
+        {
+          label: 'Estimación EPS vs 90 d',
+          val: chgVal,
+          color: chgColor,
+          tip: 'Cuánto cambió la ganancia por acción esperada para el próximo año respecto de hace 3 meses. Si sube, el negocio va mejor de lo previsto.',
+        },
+        {
+          label: 'Sorpresa último balance',
+          val: surpVal,
+          color: surpColor,
+          tip: 'Cuánto superó (o no alcanzó) la ganancia del último trimestre a lo que esperaban los analistas.',
+        },
+        {
+          label: 'Rendimiento 1 año',
+          val: perfVal,
+          color: perfColor,
+          tip: 'Cuánto subió o bajó la acción en los últimos 12 meses (momentum de precio, solo como contexto).',
+        },
+      ],
+      summaryText,
+      summaryColor,
+    };
+  })();
+
   const formCard = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
       <div className="card form" style={{ padding: 18 }}>
@@ -476,12 +585,49 @@ export const OpportunitySheet: React.FC<{
                 />
               </div>
             ))}
-            <label style={labelStyle}>Qué hace la empresa (un párrafo, en simple)</label>
+            <label style={labelStyle}>¿Qué distingue a la empresa?</label>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 4 }}>
+              Su foso o ventaja competitiva frente al resto del sector: por qué un competidor no le puede copiar el negocio fácilmente.
+            </div>
             <textarea
-              style={{ ...inputStyle, minHeight: 150, resize: 'vertical', lineHeight: 1.55 }}
-              value={form.core}
-              onChange={set('core')}
-              placeholder="Descripción simple del negocio: qué vende, a quién, y de qué depende su resultado."
+              style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.55 }}
+              value={form.edge}
+              onChange={set('edge')}
+              placeholder="Marca, efecto red, costos de cambio, escala, patentes, costos bajos…"
+            />
+
+            <label style={labelStyle}>Momentum y opcionalidad</label>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 4 }}>
+              Señales de que el negocio está mejorando (o empeorando) más rápido de lo que esperaba el mercado. Es fundamental, no análisis técnico.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {momentumStats.tiles.map((t) => (
+                <div
+                  key={t.label}
+                  title={t.tip}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t.label}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 12, color: t.color }}>{t.val}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, marginTop: 6, color: 'var(--text-secondary)' }}>
+              Momentum fundamental: <b style={{ color: momentumStats.summaryColor }}>{momentumStats.summaryText}</b>
+            </div>
+
+            <label style={{ ...labelStyle, marginTop: 10 }}>Opcionalidad: apuestas que todavía no pesan en el precio</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 80, resize: 'vertical', lineHeight: 1.55 }}
+              value={form.optionality}
+              onChange={set('optionality')}
+              placeholder="Negocios nuevos, mercados por abrir, activos que podría vender o escindir, productos en desarrollo… Lo que podría sumar valor y hoy el mercado casi no paga."
             />
           </div>
         )}

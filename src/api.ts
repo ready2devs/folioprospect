@@ -179,6 +179,15 @@ export interface AssetExtras {
   beta: number | null;
   /** Beneficio por acción de los últimos 12 meses (EPS TTM) */
   epsTrailing: number | null;
+  /** Año de fundación (o de constitución) extraído de la descripción en inglés de Yahoo; null si no aparece */
+  foundedYear?: number | null;
+  /** Fecha del primer día de cotización (YYYY-MM-DD) según Yahoo quoteType.firstTradeDateEpochUtc */
+  ipoDate?: string | null;
+  /** Momentum fundamental: revisiones de EPS de analistas para el próximo año fiscal (+1y) */
+  epsRevisionUp30?: number | null;
+  epsRevisionDown30?: number | null;
+  /** Variación % de la estimación de EPS (+1y) actual vs hace 90 días */
+  epsEstimateChange90dPct?: number | null;
   ceo: string;
   employees: number | null;
   hq: string;

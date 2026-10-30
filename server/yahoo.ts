@@ -932,6 +932,15 @@ export interface AssetExtras {
   beta: number | null;
   /** Beneficio por acción de los últimos 12 meses (EPS TTM) */
   epsTrailing: number | null;
+  /** Año de fundación (o de constitución) extraído de la descripción en inglés de Yahoo; null si no aparece */
+  foundedYear: number | null;
+  /** Fecha del primer día de cotización (YYYY-MM-DD) según Yahoo quoteType.firstTradeDateEpochUtc */
+  ipoDate: string | null;
+  /** Momentum fundamental: revisiones de EPS de analistas para el próximo año fiscal (+1y) */
+  epsRevisionUp30: number | null;
+  epsRevisionDown30: number | null;
+  /** Variación % de la estimación de EPS (+1y) actual vs hace 90 días */
+  epsEstimateChange90dPct: number | null;
   ceo: string;
   employees: number | null;
   hq: string;
@@ -986,6 +995,11 @@ const EMPTY_EXTRAS: AssetExtras = {
   quickRatio: null,
   beta: null,
   epsTrailing: null,
+  foundedYear: null,
+  ipoDate: null,
+  epsRevisionUp30: null,
+  epsRevisionDown30: null,
+  epsEstimateChange90dPct: null,
   ceo: '',
   employees: null,
   hq: '',
@@ -1106,7 +1120,7 @@ export async function fetchAssetExtras(
     try {
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
         ySym
-      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price,earningsTrend,calendarEvents&crumb=${encodeURIComponent(
+      )}?modules=financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price,earningsTrend,calendarEvents,quoteType&crumb=${encodeURIComponent(
         auth.crumb
       )}`;
       const res = await fetch(url, {
@@ -1123,6 +1137,7 @@ export async function fetchAssetExtras(
           const ap = r0.assetProfile || {};
           const calEv = r0.calendarEvents || {};
           const priceMod = r0.price || {};
+          const qt = r0.quoteType || {};
           const trend = (r0.recommendationTrend?.trend || [])[0] || {};
           const eTrendList: any[] = Array.isArray(r0.earningsTrend?.trend) ? r0.earningsTrend.trend : [];
           const raw = (x: any): number | null =>
@@ -1163,6 +1178,40 @@ export async function fetchAssetExtras(
           const epsNextYearGrowthRaw =
             raw(trendPlus1y?.earningsEstimate?.growth) ?? raw(trendPlus1y?.growth);
           const epsNextYearGrowthPct = toPct(epsNextYearGrowthRaw);
+
+          const ftRawVal = (qt.firstTradeDateEpochUtc as any)?.raw ?? qt.firstTradeDateEpochUtc;
+          const ipoDate = epochToIsoDate(
+            Number.isFinite(Number(ftRawVal)) ? Number(ftRawVal) : null
+          );
+
+          const englishSummary = String(ap.longBusinessSummary || '');
+          const currentYear = new Date().getFullYear();
+          const foundedYearRegexes = [
+            /\bfounded in (\d{4})\b/i,
+            /\b(?:was )?established in (\d{4})\b/i,
+            /\bincorporated in (\d{4})\b/i,
+            /\bin (\d{4}) and is (?:headquartered|based)\b/i,
+          ];
+          let foundedYear: number | null = null;
+          for (const re of foundedYearRegexes) {
+            const match = englishSummary.match(re);
+            if (match && match[1]) {
+              const y = parseInt(match[1], 10);
+              if (Number.isFinite(y) && y >= 1600 && y <= currentYear) {
+                foundedYear = y;
+                break;
+              }
+            }
+          }
+
+          const epsRevisionUp30 = raw(trendPlus1y?.epsRevisions?.upLast30days);
+          const epsRevisionDown30 = raw(trendPlus1y?.epsRevisions?.downLast30days);
+          const epsCur = raw(trendPlus1y?.epsTrend?.current);
+          const epsAgo = raw(trendPlus1y?.epsTrend?.['90daysAgo']);
+          const epsEstimateChange90dPct =
+            epsCur != null && epsAgo != null && epsAgo !== 0
+              ? ((epsCur - epsAgo) / Math.abs(epsAgo)) * 100
+              : null;
 
           const trend5y = eTrendList.find((t: any) => t?.period === '+5y' || t?.period === '5y');
           const epsNext5YGrowthRaw =
@@ -1251,6 +1300,11 @@ export async function fetchAssetExtras(
             quickRatio: raw(fd.quickRatio),
             beta: raw(ks.beta) ?? raw(sd.beta),
             epsTrailing: raw(ks.trailingEps),
+            foundedYear,
+            ipoDate,
+            epsRevisionUp30,
+            epsRevisionDown30,
+            epsEstimateChange90dPct,
             ceo: ceoOfficer?.name
               ? String(ceoOfficer.name).replace(/\s*\([^)]*\)\s*/g, ' ').trim()
               : '',

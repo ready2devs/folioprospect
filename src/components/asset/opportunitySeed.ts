@@ -38,6 +38,10 @@ export interface OpportunityFormState {
   rIndustry: string;
   rHq: string;
   core: string;
+  /** ¿Qué distingue a la empresa? Foso / moat / ventaja competitiva frente al sector (editable). */
+  edge: string;
+  /** Opcionalidad: negocios o apuestas que todavía no pesan en el precio (editable). */
+  optionality: string;
   // Lecturas simples a favor / en contra (editables)
   persp1Title: string;
   persp1Fav: string;
@@ -74,6 +78,21 @@ const EXCHANGE_FULL: Record<string, string> = {
   BCBA: 'Bolsa de Comercio de Buenos Aires (BCBA)',
   BINANCE: 'Binance (cripto, 24/7)',
 };
+
+const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+export function fmtIsoDateEs(iso: string | null | undefined): string {
+  if (!iso || typeof iso !== 'string') return '';
+  const parts = iso.trim().split('-');
+  if (parts.length !== 3) return '';
+  const [yyyy, mmStr, ddStr] = parts;
+  const mm = parseInt(mmStr, 10);
+  const dd = parseInt(ddStr, 10);
+  if (!Number.isFinite(mm) || mm < 1 || mm > 12 || !Number.isFinite(dd) || dd < 1 || dd > 31) {
+    return '';
+  }
+  return `${Number(dd)} ${MONTHS_ES[mm - 1]} ${yyyy}`;
+}
 
 /**
  * Caso curado ALB: valores exactos del PMV del 21/10/2026 (Fair Value propio
@@ -113,6 +132,8 @@ function albPreset(detail: AssetDetailResponse): OpportunityFormState {
     rIndustry: 'Químicos especiales (Specialty Chemicals)',
     rHq: 'Estados Unidos · Charlotte, Carolina del Norte',
     core: 'Albemarle es una empresa global de químicos especiales y materiales para baterías, y uno de los mayores productores de litio del mundo. Trabaja en tres segmentos: Energy Storage (litio para vehículos eléctricos y para guardar energía en la red), Specialties (bromo y retardantes de llama, y especialidades de litio para farmacéuticas y seguridad) y Ketjen (catalizadores para refinerías). Su modelo combina recursos propios de salmuera y roca dura con plantas de conversión y refinación, y contratos con clientes en unos 70 países. Con unos 7.800 empleados y un valor de mercado cercano a los US$11 mil millones, su desempeño depende en buena medida del precio del litio y de la demanda de vehículos eléctricos y de almacenamiento de energía.',
+    edge: 'Foso estrecho por ventaja de costos: sus salmueras de Atacama (Chile) y Silver Peak (EE.UU.) están entre las fuentes de litio más baratas del mundo, y suma minas de roca dura de alta ley (Greenbushes, Australia) y plantas de conversión propias. Cuando el precio del litio cae, los productores caros cierran primero y Albemarle sigue ganando.',
+    optionality: 'Litio para almacenamiento de energía en la red (más allá del auto eléctrico), proyectos de refinación en EE.UU. que se benefician de incentivos locales, y el negocio de catalizadores Ketjen como activo separable.',
     persp1Title: 'El litio y las baterías: ¿hay demanda?',
     persp1Fav:
       'Las baterías gigantes que guardan energía (para autos eléctricos y para la red eléctrica) piden cada vez más litio. Hay analistas (Mizuho) que subieron los precios que esperan para el litio en 2027 y 2028, porque la oferta no crece tan rápido: eso juega a favor de las ganancias de Albemarle.',
@@ -187,6 +208,73 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
         ? 'Ventaja estrecha estimada por márgenes y rentabilidad del capital (ver múltiplos).'
         : 'Sin ventaja clara según márgenes y rentabilidad actuales (ver múltiplos).';
 
+  const fz = extras?.finviz;
+  const gross = fz?.grossMarginPct ?? extras?.grossMarginPct ?? m?.grossMarginPct;
+  const opm = fz?.operatingMarginPct ?? extras?.operatingMarginPct ?? m?.operatingMarginPct;
+  const roic = fz?.roicPct ?? extras?.roicPct ?? null;
+  const roe = fz?.roePct ?? extras?.roePct ?? m?.roePct;
+
+  const signals: string[] = [];
+  if (gross != null && Number.isFinite(gross)) {
+    const grossComment =
+      gross >= 60
+        ? ' (poder de precio: cobra bastante más de lo que le cuesta producir)'
+        : gross >= 40
+          ? ' (margen sano)'
+          : ' (margen ajustado: compite más por costo)';
+    signals.push(`margen bruto de ${gross.toFixed(1).replace('.', ',')}%${grossComment}`);
+  }
+  if (opm != null && Number.isFinite(opm)) {
+    signals.push(`margen operativo de ${opm.toFixed(1).replace('.', ',')}%`);
+  }
+  if (roic != null && Number.isFinite(roic)) {
+    const roicComment =
+      roic >= 20
+        ? ' (cada dólar invertido rinde muy por encima del costo del capital)'
+        : roic >= 10
+          ? ' (rinde por encima del costo del capital)'
+          : ' (rinde poco sobre lo invertido)';
+    signals.push(`ROIC de ${roic.toFixed(1).replace('.', ',')}%${roicComment}`);
+  } else if (roe != null && Number.isFinite(roe)) {
+    signals.push(`ROE de ${roe.toFixed(1).replace('.', ',')}%`);
+  }
+
+  const moatPrefix =
+    fairValue?.moat === 'Wide'
+      ? 'Foso amplio (estimado): '
+      : fairValue?.moat === 'Narrow'
+        ? 'Foso estrecho (estimado): '
+        : 'Sin foso claro (estimado): ';
+  // Sin señales (cripto, ETF o fuente caída): vacío, así se ve el placeholder
+  // en vez de un texto genérico que no aporta.
+  const edge = signals.length === 0 ? '' : `${moatPrefix}${signals.join('; ')}. Completá con lo cualitativo: marca, efecto red, costos de cambio para el cliente, escala o patentes que la separan de sus competidores dentro de ${meta?.industry || 'su industria'}.`;
+
+  const eps5Y = fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct;
+  const epsPast5Y = fz?.epsPast5YPct;
+  const salesYoy = fz?.salesYoyTtmPct ?? extras?.revenueGrowthPct ?? m?.revenueGrowthPct;
+  const fcfY = extras?.fcfYieldPct ?? m?.fcfYieldPct;
+
+  const optParts: string[] = [];
+  if (eps5Y != null && Number.isFinite(eps5Y)) {
+    let s = `crecimiento esperado de EPS a 5 años de ${eps5Y.toFixed(1).replace('.', ',')}% anual`;
+    if (epsPast5Y != null && Number.isFinite(epsPast5Y)) {
+      const accel = eps5Y >= epsPast5Y ? 'acelera frente al' : 'modera frente al';
+      s += ` (${accel} ${epsPast5Y.toFixed(1).replace('.', ',')}% histórico)`;
+    }
+    optParts.push(s);
+  }
+  if (salesYoy != null && Number.isFinite(salesYoy)) {
+    optParts.push(`ventas creciendo ${salesYoy.toFixed(1).replace('.', ',')}% interanual`);
+  }
+  if (fcfY != null && Number.isFinite(fcfY) && fcfY > 0) {
+    optParts.push(`FCF Yield de ${fcfY.toFixed(1).replace('.', ',')}% para financiar nuevas apuestas sin endeudarse`);
+  }
+
+  const optionality =
+    optParts.length === 0
+      ? ''
+      : `Base cuantitativa: ${optParts.join('; ')}. Sumá acá las apuestas cualitativas que el precio todavía no descuenta del todo (nuevas líneas de producto, expansión geográfica, IA/software, escisiones o recompras).`;
+
   return {
     name: (quote?.name && quote.name !== meta?.ticker ? quote.name : meta?.name) || meta?.ticker || '',
     ticker: meta?.ticker || '',
@@ -214,14 +302,16 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
     consBear: int((extras?.sell ?? 0) + (extras?.strongSell ?? 0)),
     rSymbol: meta?.ticker || '',
     rExchange: EXCHANGE_FULL[meta?.exchange || ''] || meta?.exchange || '',
-    rFounded: '',
-    rIpo: '',
+    rFounded: extras?.foundedYear != null ? String(extras.foundedYear) : '',
+    rIpo: fmtIsoDateEs(extras?.ipoDate),
     rCeo: extras?.ceo || '',
     rEmployees: extras?.employees != null ? extras.employees.toLocaleString('es-AR') : '',
     rSector: meta?.sector || '',
     rIndustry: meta?.industry || '',
     rHq: extras?.hq || meta?.country || '',
     core: extras?.businessSummary || '',
+    edge,
+    optionality,
     persp1Title: 'Demanda: ¿el negocio crece?',
     persp1Fav:
       revG != null && revG > 0
