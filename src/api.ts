@@ -26,9 +26,18 @@ import {
   normalizeTradingViewSymbol,
   findCatalogEntry,
   searchLocalCatalog,
+  type OptimizerResult,
 } from '@shared/engine';
 
 export type { ArgFxResponse };
+
+export interface OptimizerResponse {
+  result: OptimizerResult;
+  inputs: import('@shared/engine').OptimizerAssetInput[];
+  peersByIndustry: Record<string, import('@shared/engine').ScoredPeer[]>;
+  generatedAt: number;
+  cached: boolean;
+}
 
 export interface PortfolioEvaluationResponse {
   portfolio: Portfolio;
@@ -728,6 +737,13 @@ export function parseCsvTransactionsClient(csvText: string): Trade[] {
 }
 
 export const api = {
+  async getOptimizer(force = false): Promise<OptimizerResponse | null> {
+    try {
+      const r = await fetch(`/api/portfolios/overview/optimizer${force ? '?refresh=1' : ''}`);
+      if (r.ok) return (await r.json()) as OptimizerResponse;
+    } catch {}
+    return null;
+  },
   async getFx(): Promise<{ USD: number; ARS: number; EUR: number }> {
     try {
       const r = await fetch('/api/fx');
