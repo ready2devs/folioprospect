@@ -10,6 +10,7 @@ import {
   LineChart,
   RefreshCw,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { BrandMark } from '@/components/ui/BrandMark';
 
@@ -84,6 +85,17 @@ export const TopBar: React.FC = () => {
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <LineChart size={12} /> Activo & Fair Value
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`seg-btn ${rightState === 'optimizer' ? 'active' : ''}`}
+            onClick={() => setRightState('optimizer')}
+            style={{ padding: '4px 9px', fontSize: 11.5 }}
+            title="Optimizador de cartera: scores, rotaciones y riesgo/beneficio"
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Sparkles size={12} /> Optimizador
             </span>
           </button>
         </nav>

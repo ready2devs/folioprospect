@@ -10,6 +10,7 @@ import { AddDialog } from './components/left/AddDialog';
 import { MarketView } from './components/market/MarketView';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { AssetView } from './components/asset/AssetView';
+import { OptimizerView } from './components/optimizer/OptimizerView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { ArrowLeft } from 'lucide-react';
 
@@ -60,6 +61,8 @@ export const App: React.FC = () => {
                     ? 'Mercado Global'
                     : rightState === 'portfolio'
                     ? 'Portafolio Financiero'
+                    : rightState === 'optimizer'
+                    ? 'Optimizador de cartera'
                     : selectedSymbol}
                 </span>
               </div>
@@ -67,6 +70,7 @@ export const App: React.FC = () => {
                 {rightState === 'market' && <MarketView />}
                 {rightState === 'portfolio' && <PortfolioView />}
                 {rightState === 'asset' && <AssetView />}
+                {rightState === 'optimizer' && <OptimizerView />}
               </ErrorBoundary>
             </main>
           )}
@@ -88,6 +92,7 @@ export const App: React.FC = () => {
             {rightState === 'market' && <MarketView />}
             {rightState === 'portfolio' && <PortfolioView />}
             {rightState === 'asset' && <AssetView />}
+            {rightState === 'optimizer' && <OptimizerView />}
           </ErrorBoundary>
         </main>
       </div>

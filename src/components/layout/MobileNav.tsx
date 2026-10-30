@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppStore } from '@/store';
-import { Wallet, Globe, Briefcase, LineChart, Plus } from 'lucide-react';
+import { Wallet, Globe, Briefcase, LineChart, Sparkles } from 'lucide-react';
 
 export const MobileNav: React.FC = () => {
   const {
@@ -8,13 +8,13 @@ export const MobileNav: React.FC = () => {
     setMobileTab,
     rightState,
     setRightState,
-    openAddModal,
   } = useAppStore();
 
   const isHoldings = mobileTab === 'holdings';
   const isMarket = mobileTab === 'right' && rightState === 'market';
   const isPortfolio = mobileTab === 'right' && rightState === 'portfolio';
   const isAsset = mobileTab === 'right' && rightState === 'asset';
+  const isOptimizer = mobileTab === 'right' && rightState === 'optimizer';
 
   return (
     <nav className="mobile-nav" aria-label="Navegación Principal Móvil">
@@ -65,13 +65,16 @@ export const MobileNav: React.FC = () => {
 
       <button
         type="button"
-        className="mobile-nav-btn mobile-nav-btn-action"
-        onClick={() => openAddModal('trade')}
+        className={'mobile-nav-btn ' + (isOptimizer ? 'active' : '')}
+        onClick={() => {
+          setRightState('optimizer');
+          setMobileTab('right');
+        }}
       >
         <div className="mobile-nav-plus-pill">
-          <Plus size={16} />
+          <Sparkles size={16} />
         </div>
-        <span>+Operar</span>
+        <span>Optimizer</span>
       </button>
     </nav>
   );

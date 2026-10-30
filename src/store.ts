@@ -15,7 +15,7 @@ import {
 
 export type { ArgFxQuote, ArgFxResponse, NwSettings };
 
-export type RightPanelState = 'market' | 'portfolio' | 'asset';
+export type RightPanelState = 'market' | 'portfolio' | 'asset' | 'optimizer';
 export type PortfolioTab = 'overview' | 'holdings' | 'transactions' | 'analysis' | 'prospectiva';
 export type MobileTab = 'holdings' | 'right';
 export type AddModalTab = 'trade' | 'cash' | 'illiquid' | 'dividend' | 'csv';
@@ -98,6 +98,8 @@ export interface AppState {
   addModalSymbol: string;
   loading: boolean;
   evaluation: PortfolioEvaluationResponse | null;
+  optimizerData: import('./api').OptimizerResponse | null;
+  optimizerLoading: boolean;
   marketData: MarketOverviewResponse | null;
   assetDetail: AssetDetailResponse | null;
   assetError: string | null;
@@ -108,6 +110,7 @@ export interface AppState {
   setPricingMode: (m: 'tv_snapshot' | 'live') => void;
   setPortfolioScope: (s: 'personal' | 'overview') => void;
   setRightState: (s: RightPanelState) => void;
+  loadOptimizer: (force?: boolean) => Promise<void>;
   setPortfolioTab: (t: PortfolioTab) => void;
   setMobileTab: (t: MobileTab) => void;
   selectAsset: (symbol: string, range?: string) => Promise<void>;
@@ -144,6 +147,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addModalSymbol: '',
   loading: false,
   evaluation: null,
+  optimizerData: null,
+  optimizerLoading: false,
   marketData: null,
   assetDetail: null,
   assetError: null,
@@ -174,6 +179,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRightState: (rightState) => {
     set({ rightState, mobileTab: 'right' });
     scrollTopOnMobile();
+    if (rightState === 'optimizer' && !get().optimizerData) {
+      void get().loadOptimizer();
+    }
+  },
+  loadOptimizer: async (force = false) => {
+    if (get().optimizerLoading) return;
+    set({ optimizerLoading: true });
+    try {
+      const data = await api.getOptimizer(force);
+      if (data) set({ optimizerData: data });
+    } finally {
+      set({ optimizerLoading: false });
+    }
   },
   setPortfolioTab: (portfolioTab) => {
     set({ portfolioTab, rightState: 'portfolio', mobileTab: 'right' });
