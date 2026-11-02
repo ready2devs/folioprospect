@@ -67,6 +67,14 @@ export const TRADINGVIEW_CATALOG: CatalogSymbolEntry[] = [
   { symbol: 'NASDAQ:SIMO', ticker: 'SIMO', name: 'Silicon Motion Technology Corp.', exchange: 'NASDAQ', type: 'Dr', sector: 'Technology', yahoo: 'SIMO', refPrice: 97.4 },
   { symbol: 'NASDAQ:HSAI', ticker: 'HSAI', name: 'Hesai Group', exchange: 'NASDAQ', type: 'Dr', sector: 'Consumer Cyclical', yahoo: 'HSAI', refPrice: 23.8 },
 
+  // Watchlist / shortlist multibaggers del usuario (verificados en Yahoo Finance el 2026-11-02)
+  // NOTA: ONTO cotiza en NYSE, no en NASDAQ — el fallback viejo lo normalizaba mal a NASDAQ:ONTO.
+  { symbol: 'NYSE:ONTO', ticker: 'ONTO', name: 'Onto Innovation Inc.', exchange: 'NYSE', type: 'Stock', sector: 'Technology', yahoo: 'ONTO', refPrice: 202.02 },
+  { symbol: 'NASDAQ:UCTT', ticker: 'UCTT', name: 'Ultra Clean Holdings, Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Technology', yahoo: 'UCTT', refPrice: 49.55 },
+  { symbol: 'NASDAQ:APLD', ticker: 'APLD', name: 'Applied Digital Corporation', exchange: 'NASDAQ', type: 'Stock', sector: 'Technology', yahoo: 'APLD', refPrice: 17.33 },
+  { symbol: 'AMEX:LEU', ticker: 'LEU', name: 'Centrus Energy Corp.', exchange: 'AMEX', type: 'Stock', sector: 'Energy', yahoo: 'LEU', refPrice: 105.49 },
+  { symbol: 'NASDAQ:VIAV', ticker: 'VIAV', name: 'Viavi Solutions Inc.', exchange: 'NASDAQ', type: 'Stock', sector: 'Technology', yahoo: 'VIAV', refPrice: 29.19 },
+
   // Major Crypto on BINANCE
   { symbol: 'BINANCE:SOLUSDT', ticker: 'SOLUSDT', name: 'Solana / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'SOL-USD', refPrice: 103.50 },
   { symbol: 'BINANCE:BNBUSDT', ticker: 'BNBUSDT', name: 'BNB / TetherUS', exchange: 'BINANCE', type: 'Crypto', sector: 'Crypto', yahoo: 'BNB-USD', refPrice: 741.00 },
@@ -271,6 +279,10 @@ export function normalizeTradingViewSymbol(rawInput: string): string {
     const candidate = `${fixedEx}:${fixedTicker}`;
     const exact = CATALOG_BY_SYMBOL.get(candidate);
     if (exact) return exact.symbol;
+    // Bolsa equivocada para un ticker conocido (ej. "NASDAQ:ONTO" cuando ONTO
+    // cotiza en NYSE): el catálogo manda y devuelve el símbolo canónico.
+    const byTicker = CATALOG_BY_TICKER.get(fixedTicker);
+    if (byTicker) return byTicker.symbol;
     return candidate;
   }
 

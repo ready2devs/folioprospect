@@ -1441,9 +1441,10 @@ function normalizeYahooExchange(rawExchange: string, ticker: string): string {
   const upper = (rawExchange || '').toUpperCase().trim();
   const map: Record<string, string> = {
     NMS: 'NASDAQ', NGM: 'NASDAQ', NCM: 'NASDAQ', NASDAQGS: 'NASDAQ',
-    NASDAQGM: 'NASDAQ', NASDAQCM: 'NASDAQ', NASDAQ: 'NASDAQ',
+    NASDAQGM: 'NASDAQ', NASDAQCM: 'NASDAQ', NASDAQ: 'NASDAQ', NAS: 'NASDAQ',
     NYQ: 'NYSE', NYSE: 'NYSE',
     PCX: 'AMEX', ASE: 'AMEX', NYSEARCA: 'AMEX', ARCA: 'AMEX', BATS: 'AMEX', AMEX: 'AMEX',
+    BTS: 'AMEX', 'BATS TRADING': 'AMEX', 'NYSE AMERICAN': 'AMEX', 'NYSE ARCA': 'AMEX',
     CCC: 'BINANCE', CRYPTO: 'BINANCE',
     BUE: 'BCBA', BCBA: 'BCBA', BYMA: 'BCBA',
     LSE: 'LSE', HKSE: 'HKSE', TSE: 'TSE',
@@ -1479,6 +1480,67 @@ function mapYahooQuoteType(quoteType: string): string {
   return map[(quoteType || '').toUpperCase()] || 'Stock';
 }
 
+const SEARCHABLE_QUOTE_TYPES = new Set([
+  'EQUITY',
+  'ETF',
+  'MUTUALFUND',
+  'CRYPTOCURRENCY',
+  'INDEX',
+]);
+
+// Bolsas que la app sabe cotizar/mostrar. Todo lo demás que devuelve Yahoo
+// (listados secundarios extranjeros tipo Munich/Frankfurt/Stuttgart, opciones
+// OPR, futuros, etc.) es ruido para el buscador: ensuciaba resultados como
+// ONTO con "MUNICH:NNM.MU", "FRANKFURT:NNM.F" y calls/puts "OPR:ONTO261120P…".
+const SEARCHABLE_EXCHANGES = new Set([
+  'NASDAQ',
+  'NYSE',
+  'AMEX',
+  'BINANCE',
+  'BCBA',
+  'LSE',
+  'HKSE',
+  'TSE',
+]);
+
+const OPTION_TICKER_RE = /\d{6}[CP]\d{5,}/;
+
+/**
+ * Convierte las quotes crudas de Yahoo Search en símbolos usables por la app.
+ * Pura y exportada para tests: filtra opciones, listados extranjeros
+ * secundarios y tipos no operables, y normaliza la bolsa usando el CÓDIGO de
+ * exchange de Yahoo (NYQ, NMS, BTS…) y no su nombre visible (exchDisp), que
+ * devolvía cosas como "BATS TRADING" o "Munich" sin normalizar.
+ */
+export function mapYahooSearchResults(quotes: any[]): any[] {
+  const out: any[] = [];
+  const seen = new Set<string>();
+  for (const q of quotes || []) {
+    if (!q?.symbol) continue;
+    const quoteType = String(q.quoteType || '').toUpperCase();
+    if (!SEARCHABLE_QUOTE_TYPES.has(quoteType)) continue;
+    if (OPTION_TICKER_RE.test(q.symbol)) continue;
+    // Códigos de fondos mutuos de Yahoo (ej. "0P000103FC.L") no son operables.
+    if (/^[0-9]/.test(q.symbol)) continue;
+    const rawExchange = q.exchange || q.exchDisp || 'NASDAQ';
+    const tvExchange = normalizeYahooExchange(rawExchange, q.symbol);
+    if (!SEARCHABLE_EXCHANGES.has(tvExchange)) continue;
+    const tvSymbol = yahooTickerToTvSymbol(q.symbol, rawExchange);
+    if (seen.has(tvSymbol)) continue;
+    seen.add(tvSymbol);
+    const tvTicker = tvSymbol.includes(':') ? tvSymbol.split(':')[1] : q.symbol;
+    out.push({
+      symbol: tvSymbol,
+      ticker: tvTicker,
+      name: q.longname || q.shortname || q.symbol,
+      exchange: tvExchange,
+      type: mapYahooQuoteType(quoteType),
+      sector: q.sectorDisp || q.sector || '',
+    });
+  }
+  return out;
+}
+
 export async function searchSymbols(query: string): Promise<any[]> {
   if (!query || !query.trim()) return [];
   try {
@@ -1491,22 +1553,7 @@ export async function searchSymbols(query: string): Promise<any[]> {
     });
     if (res.ok) {
       const j: any = await res.json();
-      return (j.quotes || [])
-        .filter((q: any) => q.symbol)
-        .map((q: any) => {
-          const rawExchange = q.exchDisp || q.exchange || 'NASDAQ';
-          const tvSymbol = yahooTickerToTvSymbol(q.symbol, rawExchange);
-          const tvExchange = normalizeYahooExchange(rawExchange, q.symbol);
-          const tvTicker = tvSymbol.includes(':') ? tvSymbol.split(':')[1] : q.symbol;
-          return {
-            symbol: tvSymbol,
-            ticker: tvTicker,
-            name: q.longname || q.shortname || q.symbol,
-            exchange: tvExchange,
-            type: mapYahooQuoteType(q.quoteType || ''),
-            sector: q.sectorDisp || q.sector || '',
-          };
-        });
+      return mapYahooSearchResults(j.quotes || []);
     }
   } catch {
     // Yahoo search unavailable — caller falls back to local catalog

@@ -795,19 +795,33 @@ export async function registerRoutes(app: Express): Promise<void> {
       try {
         const remote = await searchSymbols(q);
         const seen = new Set(results.map((m) => m.symbol));
+        // Mismo ticker ya cubierto por el catálogo local (ej. LEU existe como
+        // AMEX:LEU y Yahoo lo devuelve como NYSE:LEU): no duplicar la fila.
+        const seenTickers = new Set(
+          results
+            .filter((m) => m.exchange !== 'BINANCE')
+            .map((m) => String(m.ticker || '').toUpperCase())
+        );
         for (const r of remote) {
-          if (!seen.has(r.symbol)) {
-            seen.add(r.symbol);
-            results.push({
-              ...r,
-              inPortfolio: portfolioSymbols.has(r.symbol),
-            });
-          }
+          const rTicker = String(r.ticker || '').toUpperCase();
+          if (seen.has(r.symbol)) continue;
+          if (r.exchange !== 'BINANCE' && rTicker && seenTickers.has(rTicker)) continue;
+          seen.add(r.symbol);
+          if (rTicker) seenTickers.add(rTicker);
+          results.push({
+            ...r,
+            inPortfolio: portfolioSymbols.has(r.symbol),
+          });
         }
       } catch {
         // Yahoo unavailable — catalog results are sufficient
       }
     }
-    res.json(results.slice(0, 25));
+    // Un match exacto de ticker (aunque venga de Yahoo, ej. APP) va primero,
+    // por encima de coincidencias difusas de nombre del catálogo local.
+    const qUpper = q.toUpperCase();
+    const exact = results.filter((r) => String(r.ticker || '').toUpperCase() === qUpper);
+    const rest = results.filter((r) => String(r.ticker || '').toUpperCase() !== qUpper);
+    res.json([...exact, ...rest].slice(0, 25));
   });
 }

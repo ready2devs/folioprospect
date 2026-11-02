@@ -406,10 +406,104 @@ const SymbolAutocompleteInput: React.FC<SymbolAutocompleteInputProps> = ({
   const [open, setOpen] = useState(false);
   const [catFilter, setCatFilter] = useState<SymbolCategory>('ALL');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [remoteResults, setRemoteResults] = useState<
+    (CatalogSymbolEntry & { inPortfolio?: boolean })[]
+  >([]);
+  const [searchingRemote, setSearchingRemote] = useState(false);
 
-  const matches = useMemo(() => {
+  const localMatches = useMemo(() => {
     return searchLocalCatalog(value, portfolioMeta, openSymbolsSet, catFilter, 25);
   }, [value, portfolioMeta, openSymbolsSet, catFilter]);
+
+  // Término a buscar en el servidor: si el campo ya tiene formato
+  // "NASDAQ:NVDA" se busca por la parte del ticker.
+  const remoteTerm = useMemo(() => {
+    const raw = value.trim();
+    if (!raw.includes(':')) return raw;
+    return raw.split(':')[1]?.trim() || raw;
+  }, [value]);
+
+  // Búsqueda remota (Yahoo Finance vía /api/search) con debounce.
+  // ANTES este input solo buscaba en el catálogo local fijo (~140 símbolos):
+  // cualquier activo fuera de esa lista —ej. ONTO— caía directo en
+  // "símbolo personalizado" aunque existiera y cotizara. Ahora, igual que el
+  // buscador global (SearchModal), combina catálogo local + resultados
+  // remotos, así se reconoce la gran mayoría de los activos listados.
+  useEffect(() => {
+    if (remoteTerm.length < 2) {
+      setRemoteResults([]);
+      setSearchingRemote(false);
+      return;
+    }
+    let active = true;
+    setSearchingRemote(true);
+    const timer = setTimeout(() => {
+      api
+        .search(remoteTerm)
+        .then((res) => {
+          if (!active) return;
+          const mapped: (CatalogSymbolEntry & { inPortfolio?: boolean })[] = (
+            Array.isArray(res) ? res : []
+          ).map((rem: any) => {
+            const sym = normalizeTradingViewSymbol(rem.symbol || rem.ticker || '');
+            const ticker = rem.ticker || (sym.includes(':') ? sym.split(':')[1] : sym);
+            return {
+              symbol: sym,
+              ticker,
+              name: rem.name || ticker,
+              exchange: rem.exchange || (sym.includes(':') ? sym.split(':')[0] : 'NASDAQ'),
+              type: (rem.type || 'Stock') as CatalogSymbolEntry['type'],
+              sector: rem.sector || '',
+              yahoo: rem.yahoo || ticker,
+              refPrice: rem.refPrice,
+              inPortfolio: openSymbolsSet.has(sym) || Boolean(rem.inPortfolio),
+            };
+          });
+          setRemoteResults(mapped);
+        })
+        .catch(() => {
+          if (active) setRemoteResults([]);
+        })
+        .finally(() => {
+          if (active) setSearchingRemote(false);
+        });
+    }, 300);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [remoteTerm, openSymbolsSet]);
+
+  const matches = useMemo(() => {
+    const seenSymbols = new Set<string>();
+    const seenTickers = new Set<string>();
+    const out: (CatalogSymbolEntry & { inPortfolio?: boolean })[] = [];
+    for (const item of localMatches) {
+      seenSymbols.add(item.symbol.toUpperCase());
+      if (item.exchange !== 'BINANCE') seenTickers.add(item.ticker.toUpperCase());
+      out.push(item);
+    }
+    for (const rem of remoteResults) {
+      if (catFilter === 'PORTFOLIO' && !rem.inPortfolio) continue;
+      if (catFilter !== 'ALL' && catFilter !== 'PORTFOLIO' && rem.type !== catFilter) continue;
+      const symKey = rem.symbol.toUpperCase();
+      const tickKey = rem.ticker.toUpperCase();
+      if (seenSymbols.has(symKey)) continue;
+      if (rem.exchange !== 'BINANCE' && seenTickers.has(tickKey)) continue;
+      seenSymbols.add(symKey);
+      if (rem.exchange !== 'BINANCE') seenTickers.add(tickKey);
+      out.push(rem);
+    }
+    // Match exacto de ticker primero (estilo TradingView), aunque haya
+    // llegado por la búsqueda remota y el catálogo local tenga difusos.
+    const termUpper = remoteTerm.trim().toUpperCase();
+    if (termUpper) {
+      const exact = out.filter((e) => e.ticker.toUpperCase() === termUpper);
+      const rest = out.filter((e) => e.ticker.toUpperCase() !== termUpper);
+      return [...exact, ...rest].slice(0, 25);
+    }
+    return out.slice(0, 25);
+  }, [localMatches, remoteResults, catFilter, remoteTerm]);
 
   const normalizedPreview = useMemo(() => normalizeTradingViewSymbol(value), [value]);
 
@@ -523,7 +617,13 @@ const SymbolAutocompleteInput: React.FC<SymbolAutocompleteInputProps> = ({
           </div>
 
           <div className="tv-autocomplete-list">
-            {matches.length === 0 ? (
+            {matches.length === 0 && searchingRemote ? (
+              <div className="tv-autocomplete-item" style={{ cursor: 'default' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Buscando "{remoteTerm}" en el catálogo completo…
+                </div>
+              </div>
+            ) : matches.length === 0 ? (
               <div
                 className="tv-autocomplete-item"
                 onPointerDown={(e) => {
@@ -585,6 +685,18 @@ const SymbolAutocompleteInput: React.FC<SymbolAutocompleteInputProps> = ({
                   )}
                 </div>
               ))
+            )}
+            {matches.length > 0 && searchingRemote && (
+              <div
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 11,
+                  color: 'var(--text-secondary)',
+                  borderTop: '1px solid var(--border-subtle)',
+                }}
+              >
+                Buscando más resultados en el catálogo completo…
+              </div>
             )}
           </div>
         </div>
