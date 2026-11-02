@@ -1268,6 +1268,12 @@ html, body, #root {
 .opt-chart-full{position:relative;width:100%;max-height:calc(100dvh - 20px);overflow:auto;margin-top:0}
 .opt-chart-full .opt-svg{max-height:calc(100dvh - 210px)}
 .opt-chart-close{position:absolute;top:8px;right:8px;z-index:2;background:var(--bg-elevated);border:1px solid var(--border-strong);color:var(--text-primary);border-radius:8px;padding:6px;display:inline-flex;cursor:pointer}
+.opt-chart-solo-btn{position:absolute;top:8px;right:52px;z-index:2;display:inline-flex;align-items:center;gap:5px;background:var(--bg-elevated);border:1px solid var(--border-strong);color:var(--text-primary);border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer}
+.opt-chart.opt-chart-solo-mode{position:fixed;inset:0;z-index:320;background:#04070D;border:none;border-radius:0;margin:0;padding:0;display:flex;align-items:center;justify-content:center}
+.opt-chart-solo-mode .opt-chart-head,.opt-chart-solo-mode .opt-avgline,.opt-chart-solo-mode .opt-verdict{display:none}
+.opt-chart-solo-mode .opt-svg-wrap{cursor:default;width:100vw;height:100dvh}
+.opt-chart-solo-mode .opt-svg{width:100vw;height:100dvh;margin-top:0}
+.opt-solo-x{position:fixed;top:10px;right:10px;z-index:330;background:rgba(13,20,32,.88);border:1px solid var(--border-strong);color:var(--text-primary);border-radius:8px;padding:7px;display:inline-flex;cursor:pointer}
 .opt-card.clickable{cursor:pointer}
 .opt-card.clickable:hover{border-color:var(--border-strong)}
 .opt-avgline{display:flex;gap:18px;margin-top:9px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap}

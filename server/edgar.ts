@@ -33,6 +33,17 @@ export interface EdgarCashflow {
   freeCashflow: number | null;
   /** Fecha de cierre del año fiscal usado (YYYY-MM-DD). */
   fiscalYearEnd: string;
+  /** Caja al cierre del último balance (USD), si el filer la traduce. */
+  totalCash: number | null;
+  /**
+   * Tasa de traducción moneda de reporte → USD implícita en el propio
+   * balance: mismo concepto (caja) y misma fecha en ambas monedas
+   * (ej. TWD 2.127,63 B / USD 64,89 B = 32,79 para TSM). Sirve para
+   * convertir los absolutos TTM que Yahoo sirve en moneda de reporte.
+   */
+  fxRate: number | null;
+  /** Moneda de reporte detectada (la unidad no-USD del par de caja). */
+  reportingCurrency: string | null;
 }
 
 interface FactValue {
@@ -46,6 +57,38 @@ interface FactValue {
 
 const OCF_CONCEPTS = ['NetCashProvidedByUsedInOperatingActivities', 'CashFlowsFromUsedInOperatingActivities'];
 const CAPEX_CONCEPTS = ['PaymentsToAcquirePropertyPlantAndEquipment', 'PurchaseOfPropertyAndEquipment'];
+const CASH_CONCEPTS = ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalents'];
+
+/** Último instante de balance en USD + tasa implícita contra la otra moneda. */
+function latestCashWithFx(facts: any): { usd: number; fxRate: number | null; ccy: string | null } | null {
+  const taxonomies = ['us-gaap', 'ifrs-full'];
+  for (const concept of CASH_CONCEPTS) {
+    for (const tax of taxonomies) {
+      const units = facts?.[tax]?.[concept]?.units;
+      if (!units?.USD || !Array.isArray(units.USD)) continue;
+      let bestUsd: { val: number; end: string } | null = null;
+      for (const v of units.USD as FactValue[]) {
+        if (typeof v.val !== 'number' || !v.end) continue;
+        if (!bestUsd || v.end > bestUsd.end) bestUsd = { val: v.val, end: v.end };
+      }
+      if (!bestUsd) continue;
+      // Misma fecha en otra moneda → tasa de traducción del propio balance.
+      let fxRate: number | null = null;
+      let ccy: string | null = null;
+      for (const [unit, vals] of Object.entries(units)) {
+        if (unit === 'USD' || !Array.isArray(vals)) continue;
+        const pair = (vals as FactValue[]).find((v) => v.end === bestUsd!.end && typeof v.val === 'number');
+        if (pair && bestUsd.val > 0) {
+          fxRate = pair.val! / bestUsd.val;
+          ccy = unit;
+          break;
+        }
+      }
+      return { usd: bestUsd.val, fxRate, ccy };
+    }
+  }
+  return null;
+}
 
 /** Último valor anual (período ≥300 días) en USD de un concepto, entre taxonomías. */
 function latestAnnualUsd(facts: any, concepts: string[]): { val: number; end: string } | null {
@@ -83,11 +126,15 @@ export function parseEdgarCashflow(factsJson: any): EdgarCashflow | null {
   if (!ocf) return null;
   const capexRaw = latestAnnualUsd(facts, CAPEX_CONCEPTS);
   const capex = capexRaw && capexRaw.end === ocf.end ? Math.abs(capexRaw.val) : null;
+  const cash = latestCashWithFx(facts);
   return {
     operatingCashflow: ocf.val,
     capex,
     freeCashflow: capex != null ? ocf.val - capex : null,
     fiscalYearEnd: ocf.end,
+    totalCash: cash?.usd ?? null,
+    fxRate: cash?.fxRate ?? null,
+    reportingCurrency: cash?.ccy ?? null,
   };
 }
 

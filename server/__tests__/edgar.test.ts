@@ -62,6 +62,34 @@ describe('parseEdgarCashflow', () => {
     expect(r!.freeCashflow).toBeNull();
   });
 
+  it('extrae la tasa de traducción y la caja USD del par de monedas (TSM)', () => {
+    const tsmFacts = {
+      facts: {
+        'ifrs-full': {
+          CashFlowsFromUsedInOperatingActivities: {
+            units: {
+              TWD: [{ end: '2024-12-31', start: '2024-01-01', val: 1826.18e9, form: '20-F', fp: 'FY', filed: '2025-03-18' }],
+              USD: [{ end: '2024-12-31', start: '2024-01-01', val: 55.69e9, form: '20-F', fp: 'FY', filed: '2025-03-18' }],
+            },
+          },
+          CashAndCashEquivalents: {
+            units: {
+              TWD: [{ end: '2024-12-31', val: 2127.63e9, form: '20-F', fp: '', filed: '2025-03-18' }],
+              USD: [{ end: '2024-12-31', val: 64.89e9, form: '20-F', fp: '', filed: '2025-03-18' }],
+            },
+          },
+        },
+      },
+    };
+    const r = parseEdgarCashflow(tsmFacts);
+    expect(r).not.toBeNull();
+    expect(r!.operatingCashflow).toBeCloseTo(55.69e9, 0);
+    expect(r!.totalCash).toBeCloseTo(64.89e9, 0);
+    expect(r!.reportingCurrency).toBe('TWD');
+    expect(r!.fxRate).toBeCloseTo(2127.63 / 64.89, 2);
+    expect(r!.freeCashflow).toBeNull(); // sin concepto de capex en el fixture
+  });
+
   it('sin hechos o sin concepto de OCF devuelve null', () => {
     expect(parseEdgarCashflow(null)).toBeNull();
     expect(parseEdgarCashflow({})).toBeNull();

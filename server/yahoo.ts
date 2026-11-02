@@ -1401,22 +1401,49 @@ export async function fetchFundamentals(
             debtToEquity: fd.debtToEquity?.raw ?? null,
             beta: ks.beta?.raw ?? sd.beta?.raw ?? 1.2,
           };
-          // Respaldo SEC EDGAR: si Yahoo no trae FCF útil (bancos sin FCF,
-          // emisores semestrales con TTM negativo), completar con el último
-          // flujo anual auditado (20-F/10-K). Nunca pisa un FCF positivo.
-          if (input.freeCashflow == null || input.freeCashflow <= 0) {
+          // Respaldo SEC EDGAR, dos disparadores:
+          // (a) Yahoo no trae FCF útil (bancos sin FCF, emisores semestrales
+          //     con TTM negativo): completar con el flujo anual auditado.
+          // (b) Contaminación de moneda: para ADRs cuyo balance se reporta en
+          //     otra moneda (TSM reporta en TWD), Yahoo sirve los absolutos
+          //     del balance en esa moneda mientras el precio es el ADR en
+          //     USD — un FCF «yield» imposible (>40% del market cap) lo
+          //     delata. Se convierten los absolutos TTM con la tasa de
+          //     traducción que el propio balance publicado en la SEC trae
+          //     (mismo concepto y fecha en ambas monedas).
+          // Nunca pisa un FCF positivo ya expresado en USD.
+          const mcapUsd =
+            input.sharesOutstanding && input.currentPrice > 0
+              ? input.sharesOutstanding * input.currentPrice
+              : null;
+          const fcfYieldRaw =
+            input.freeCashflow != null && mcapUsd ? input.freeCashflow / mcapUsd : null;
+          const contaminated = fcfYieldRaw != null && fcfYieldRaw > 0.4;
+          if (input.freeCashflow == null || input.freeCashflow <= 0 || contaminated) {
             try {
               const ed = await fetchEdgarAnnualCashflow(ySym);
               if (ed) {
-                if (ed.freeCashflow != null && ed.freeCashflow > 0) {
-                  input.freeCashflow = ed.freeCashflow;
-                }
-                if (
-                  ed.operatingCashflow != null &&
-                  ed.operatingCashflow > 0 &&
-                  (input.operatingCashflow == null || input.operatingCashflow <= 0)
-                ) {
-                  input.operatingCashflow = ed.operatingCashflow;
+                if (contaminated && ed.fxRate != null && ed.fxRate > 2) {
+                  const fx = ed.fxRate;
+                  if (input.freeCashflow != null) input.freeCashflow /= fx;
+                  if (input.operatingCashflow != null) input.operatingCashflow /= fx;
+                  if (input.totalCash != null) input.totalCash /= fx;
+                  if (input.totalDebt != null) input.totalDebt /= fx;
+                  if (input.ebitda != null) input.ebitda /= fx;
+                  if (mcapUsd && input.totalCash != null && input.totalDebt != null) {
+                    input.enterpriseValue = mcapUsd + input.totalDebt - input.totalCash;
+                  }
+                } else {
+                  if (ed.freeCashflow != null && ed.freeCashflow > 0) {
+                    input.freeCashflow = ed.freeCashflow;
+                  }
+                  if (
+                    ed.operatingCashflow != null &&
+                    ed.operatingCashflow > 0 &&
+                    (input.operatingCashflow == null || input.operatingCashflow <= 0)
+                  ) {
+                    input.operatingCashflow = ed.operatingCashflow;
+                  }
                 }
               }
             } catch {

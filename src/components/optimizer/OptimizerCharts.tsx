@@ -15,6 +15,26 @@ function useEscapeClose(expanded: boolean, close: () => void) {
   }, [expanded, close]);
 }
 
+/** Pantalla completa real del navegador (mejora progresiva: si el navegador
+ *  no la permite, el overlay fijo igual cubre todo el viewport). */
+function enterFullscreen() {
+  try {
+    const el = document.documentElement as any;
+    if (el?.requestFullscreen && !document.fullscreenElement) {
+      const p = el.requestFullscreen();
+      if (p?.catch) p.catch(() => {});
+    }
+  } catch { /* sin pantalla completa: queda el overlay */ }
+}
+function exitFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      const p = document.exitFullscreen();
+      if ((p as any)?.catch) (p as any).catch(() => {});
+    }
+  } catch { /* nada que salir */ }
+}
+
 export const fmtUsd = (n: number) => 'US$ ' + Math.round(n).toLocaleString('es-AR');
 export const fmtPct = (n: number) => n.toFixed(1).replace('.', ',') + '%';
 export const fmtY = (n: number | null) => (n == null ? '—' : n.toFixed(1).replace('.', ','));
@@ -40,8 +60,18 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
   const [horizon, setHorizon] = useState(10);
   const [mode, setMode] = useState<'actual' | 'opt' | 'both'>('both');
   const [expanded, setExpanded] = useState(false);
-  useEscapeClose(expanded, () => setExpanded(false));
-  const W = 1000;
+  const [solo, setSolo] = useState(false);
+  useEscapeClose(expanded || solo, () => {
+    if (solo) {
+      setSolo(false);
+      exitFullscreen();
+    } else {
+      setExpanded(false);
+    }
+  });
+  // En modo «solo gráfico» el lienzo se acota: las etiquetas y datos se
+  // renderizan proporcionalmente más grandes en la pantalla completa.
+  const W = solo ? 840 : 1000;
   const H = 300;
   const P = { l: 58, r: 14, t: 12, b: 26 };
   const iw = W - P.l - P.r;
@@ -160,10 +190,38 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
     </>
   );
 
+  if (solo) {
+    return (
+      <section className="opt-chart opt-chart-solo-mode">
+        {content}
+        <button
+          type="button"
+          className="opt-solo-x"
+          onClick={() => {
+            setSolo(false);
+            exitFullscreen();
+          }}
+          aria-label="Salir de solo gráfico"
+        >
+          <CloseIcon size={17} />
+        </button>
+      </section>
+    );
+  }
   if (expanded) {
     return (
       <div className="opt-chart-overlay" onClick={() => setExpanded(false)}>
         <section className="opt-chart opt-chart-full" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="opt-chart-solo-btn"
+            onClick={() => {
+              setSolo(true);
+              enterFullscreen();
+            }}
+          >
+            <Maximize2 size={13} /> Solo gráfico
+          </button>
           <button type="button" className="opt-chart-close" onClick={() => setExpanded(false)} aria-label="Cerrar gráfico expandido">
             <CloseIcon size={16} />
           </button>
@@ -186,8 +244,18 @@ export const BubbleChart: React.FC<{
 }> = ({ beforeAssets, afterAssets, before, after, verdict, verdictText }) => {
   const [mode, setMode] = useState<'prev' | 'new' | 'both'>('both');
   const [expanded, setExpanded] = useState(false);
-  useEscapeClose(expanded, () => setExpanded(false));
-  const W = 1000;
+  const [solo, setSolo] = useState(false);
+  useEscapeClose(expanded || solo, () => {
+    if (solo) {
+      setSolo(false);
+      exitFullscreen();
+    } else {
+      setExpanded(false);
+    }
+  });
+  // En modo «solo gráfico» el lienzo se acota: burbujas y etiquetas se
+  // renderizan proporcionalmente más grandes en la pantalla completa.
+  const W = solo ? 780 : 1000;
   const H = 330;
   const P = { l: 52, r: 16, t: 14, b: 34 };
   const iw = W - P.l - P.r;
@@ -309,10 +377,38 @@ export const BubbleChart: React.FC<{
     </>
   );
 
+  if (solo) {
+    return (
+      <section className="opt-chart opt-chart-solo-mode">
+        {content}
+        <button
+          type="button"
+          className="opt-solo-x"
+          onClick={() => {
+            setSolo(false);
+            exitFullscreen();
+          }}
+          aria-label="Salir de solo gráfico"
+        >
+          <CloseIcon size={17} />
+        </button>
+      </section>
+    );
+  }
   if (expanded) {
     return (
       <div className="opt-chart-overlay" onClick={() => setExpanded(false)}>
         <section className="opt-chart opt-chart-full" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="opt-chart-solo-btn"
+            onClick={() => {
+              setSolo(true);
+              enterFullscreen();
+            }}
+          >
+            <Maximize2 size={13} /> Solo gráfico
+          </button>
           <button type="button" className="opt-chart-close" onClick={() => setExpanded(false)} aria-label="Cerrar gráfico expandido">
             <CloseIcon size={16} />
           </button>
