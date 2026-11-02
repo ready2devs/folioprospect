@@ -13,6 +13,7 @@ import {
   seedOpportunityForm,
   type OpportunityFormState,
 } from './opportunitySeed';
+import { finvizSentiment, type FinvizSentiment } from '@shared/engine/finvizSentiment';
 import { ChevronDown, Pencil, Star } from 'lucide-react';
 
 /**
@@ -51,6 +52,43 @@ const fldLabel: React.CSSProperties = {
 };
 const fldVal: React.CSSProperties = { fontSize: 19, fontWeight: 700, marginTop: 2 };
 const fldSub: React.CSSProperties = { fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 };
+
+/**
+ * Celda del panel de indicadores. Si el campo trae sentimiento (`s`), el
+ * valor se tiñe verde/rojo con los criterios de Finviz (ver
+ * shared/engine/finvizSentiment.ts); si no, queda en el color normal,
+ * igual que Finviz deja en blanco lo que no juzga.
+ */
+type MetricItem = { label: string; val: string; tip: string; s?: FinvizSentiment };
+const MetricCell: React.FC<{ m: MetricItem }> = ({ m }) => (
+  <div
+    title={m.tip}
+    style={{
+      padding: '7px 8px',
+      borderRadius: 6,
+      background: 'var(--bg-primary)',
+      border: '1px solid var(--border-subtle)',
+      textAlign: 'center',
+    }}
+  >
+    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+    <div
+      className="mono"
+      style={{
+        fontWeight: 700,
+        fontSize: 12,
+        color:
+          m.s === 'positive'
+            ? 'var(--pos-bright)'
+            : m.s === 'negative'
+              ? 'var(--neg-bright)'
+              : undefined,
+      }}
+    >
+      {m.val}
+    </div>
+  </div>
+);
 
 export const OpportunitySheet: React.FC<{
   detail: AssetDetailResponse;
@@ -995,30 +1033,17 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'P/E (TTM)', val: fmtRatio(fz?.pe ?? extras?.trailingPE ?? multiples?.pe), tip: 'Precio sobre ganancias pasadas de 12 meses' },
-                { label: 'Forward P/E', val: fmtRatio(fz?.forwardPe ?? extras?.forwardPE ?? multiples?.forwardPe), tip: 'Precio sobre ganancias estimadas a 1 año' },
-                { label: 'PEG', val: fmtNum(fz?.peg ?? extras?.pegRatio), tip: 'P/E dividido crecimiento esperado (menor a 1 suele indicar buen precio)' },
-                { label: 'P/S', val: fmtRatio(fz?.priceToSales ?? extras?.priceToSales), tip: 'Precio sobre ventas (Price to Sales)' },
-                { label: 'P/B', val: fmtRatio(fz?.priceToBook ?? extras?.priceToBook), tip: 'Precio sobre valor libros contable (Price to Book)' },
-                { label: 'P/C', val: fmtRatio(fz?.priceToCash), tip: 'Precio sobre el efectivo por acción (Price to Cash)' },
-                { label: 'P/FCF', val: fmtRatio(fz?.priceToFcf ?? extras?.priceToFreeCashFlow), tip: 'Precio sobre flujo de caja libre (Price to Free Cash Flow)' },
-                { label: 'EV/EBITDA', val: fmtRatio(fz?.evToEbitda ?? extras?.evToEbitda ?? multiples?.evToEbitda), tip: 'Enterprise Value sobre EBITDA' },
-                { label: 'EV/Sales', val: fmtRatio(fz?.evToSales), tip: 'Enterprise Value sobre ventas: cuánto vale toda la empresa por cada dólar que vende' },
+                { label: 'P/E (TTM)', val: fmtRatio(fz?.pe ?? extras?.trailingPE ?? multiples?.pe), s: finvizSentiment('pe', fz?.pe ?? extras?.trailingPE ?? multiples?.pe), tip: 'Precio sobre ganancias pasadas de 12 meses' },
+                { label: 'Forward P/E', val: fmtRatio(fz?.forwardPe ?? extras?.forwardPE ?? multiples?.forwardPe), s: finvizSentiment('forwardPe', fz?.forwardPe ?? extras?.forwardPE ?? multiples?.forwardPe), tip: 'Precio sobre ganancias estimadas a 1 año' },
+                { label: 'PEG', val: fmtNum(fz?.peg ?? extras?.pegRatio), s: finvizSentiment('peg', fz?.peg ?? extras?.pegRatio), tip: 'P/E dividido crecimiento esperado (menor a 1 suele indicar buen precio)' },
+                { label: 'P/S', val: fmtRatio(fz?.priceToSales ?? extras?.priceToSales), s: finvizSentiment('priceToSales', fz?.priceToSales ?? extras?.priceToSales), tip: 'Precio sobre ventas (Price to Sales)' },
+                { label: 'P/B', val: fmtRatio(fz?.priceToBook ?? extras?.priceToBook), s: finvizSentiment('priceToBook', fz?.priceToBook ?? extras?.priceToBook), tip: 'Precio sobre valor libros contable (Price to Book)' },
+                { label: 'P/C', val: fmtRatio(fz?.priceToCash), s: finvizSentiment('priceToCash', fz?.priceToCash), tip: 'Precio sobre el efectivo por acción (Price to Cash)' },
+                { label: 'P/FCF', val: fmtRatio(fz?.priceToFcf ?? extras?.priceToFreeCashFlow), s: finvizSentiment('priceToFcf', fz?.priceToFcf ?? extras?.priceToFreeCashFlow), tip: 'Precio sobre flujo de caja libre (Price to Free Cash Flow)' },
+                { label: 'EV/EBITDA', val: fmtRatio(fz?.evToEbitda ?? extras?.evToEbitda ?? multiples?.evToEbitda), s: finvizSentiment('evToEbitda', fz?.evToEbitda ?? extras?.evToEbitda ?? multiples?.evToEbitda), tip: 'Enterprise Value sobre EBITDA' },
+                { label: 'EV/Sales', val: fmtRatio(fz?.evToSales), s: finvizSentiment('evToSales', fz?.evToSales), tip: 'Enterprise Value sobre ventas: cuánto vale toda la empresa por cada dólar que vende' },
               ].map((m) => (
-                <div
-                  key={m.label}
-                  title={m.tip}
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
-                </div>
+                <MetricCell key={m.label} m={m} />
               ))}
             </div>
           </div>
@@ -1030,32 +1055,19 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'EPS próx. 5 años (CAGR)', val: fmtPct(fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), tip: 'Crecimiento anual compuesto esperado del beneficio por acción (EPS) según los analistas para los próximos 5 años (fuente: Finviz). Es el dato clave para valorar una empresa de crecimiento: con él se juzga si el P/E de hoy está caro o barato.' },
-                { label: 'EPS este año', val: fmtPct(fz?.epsThisYearPct), tip: 'Crecimiento del beneficio por acción esperado para este año' },
-                { label: 'EPS próx. año', val: fmtPct(fz?.epsNextYearPct ?? extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
-                { label: 'EPS Y/Y TTM', val: fmtPct(fz?.epsYoyTtmPct ?? extras?.earningsGrowthPct), tip: 'Crecimiento interanual del beneficio por acción de los últimos 12 meses (TTM)' },
-                { label: 'EPS Q/Q', val: fmtPct(fz?.epsQqPct), tip: 'Crecimiento del beneficio por acción del último trimestre contra el mismo trimestre del año anterior' },
-                { label: 'EPS pasado 5 años', val: fmtPct(fz?.epsPast5YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 5 años (histórico)' },
-                { label: 'EPS pasado 3 años', val: fmtPct(fz?.epsPast3YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 3 años (histórico)' },
-                { label: 'Crec. ingresos Y/Y TTM', val: fmtPct(fz?.salesYoyTtmPct ?? extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), tip: 'Crecimiento interanual de ingresos de los últimos 12 meses (Revenue Growth TTM)' },
-                { label: 'Ventas Q/Q', val: fmtPct(fz?.salesQqPct), tip: 'Crecimiento de ventas del último trimestre contra el mismo trimestre del año anterior' },
-                { label: 'Ventas pasadas 5 años', val: fmtPct(fz?.salesPast5YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 5 años (histórico)' },
-                { label: 'Ventas pasadas 3 años', val: fmtPct(fz?.salesPast3YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 3 años (histórico)' },
+                { label: 'EPS próx. 5 años (CAGR)', val: fmtPct(fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), s: finvizSentiment('growthPct', fz?.epsNext5YPct ?? extras?.epsNext5YGrowthPct), tip: 'Crecimiento anual compuesto esperado del beneficio por acción (EPS) según los analistas para los próximos 5 años (fuente: Finviz). Es el dato clave para valorar una empresa de crecimiento: con él se juzga si el P/E de hoy está caro o barato.' },
+                { label: 'EPS este año', val: fmtPct(fz?.epsThisYearPct), s: finvizSentiment('growthPct', fz?.epsThisYearPct), tip: 'Crecimiento del beneficio por acción esperado para este año' },
+                { label: 'EPS próx. año', val: fmtPct(fz?.epsNextYearPct ?? extras?.epsNextYearGrowthPct), s: finvizSentiment('growthPct', fz?.epsNextYearPct ?? extras?.epsNextYearGrowthPct), tip: 'Crecimiento de beneficio por acción estimado para el próximo año' },
+                { label: 'EPS Y/Y TTM', val: fmtPct(fz?.epsYoyTtmPct ?? extras?.earningsGrowthPct), s: finvizSentiment('growthPct', fz?.epsYoyTtmPct ?? extras?.earningsGrowthPct), tip: 'Crecimiento interanual del beneficio por acción de los últimos 12 meses (TTM)' },
+                { label: 'EPS Q/Q', val: fmtPct(fz?.epsQqPct), s: finvizSentiment('growthPct', fz?.epsQqPct), tip: 'Crecimiento del beneficio por acción del último trimestre contra el mismo trimestre del año anterior' },
+                { label: 'EPS pasado 5 años', val: fmtPct(fz?.epsPast5YPct), s: finvizSentiment('growthPct', fz?.epsPast5YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 5 años (histórico)' },
+                { label: 'EPS pasado 3 años', val: fmtPct(fz?.epsPast3YPct), s: finvizSentiment('growthPct', fz?.epsPast3YPct), tip: 'Crecimiento anual promedio del beneficio por acción en los últimos 3 años (histórico)' },
+                { label: 'Crec. ingresos Y/Y TTM', val: fmtPct(fz?.salesYoyTtmPct ?? extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), s: finvizSentiment('growthPct', fz?.salesYoyTtmPct ?? extras?.revenueGrowthPct ?? multiples?.revenueGrowthPct), tip: 'Crecimiento interanual de ingresos de los últimos 12 meses (Revenue Growth TTM)' },
+                { label: 'Ventas Q/Q', val: fmtPct(fz?.salesQqPct), s: finvizSentiment('growthPct', fz?.salesQqPct), tip: 'Crecimiento de ventas del último trimestre contra el mismo trimestre del año anterior' },
+                { label: 'Ventas pasadas 5 años', val: fmtPct(fz?.salesPast5YPct), s: finvizSentiment('growthPct', fz?.salesPast5YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 5 años (histórico)' },
+                { label: 'Ventas pasadas 3 años', val: fmtPct(fz?.salesPast3YPct), s: finvizSentiment('growthPct', fz?.salesPast3YPct), tip: 'Crecimiento anual promedio de las ventas en los últimos 3 años (histórico)' },
               ].map((m) => (
-                <div
-                  key={m.label}
-                  title={m.tip}
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
-                </div>
+                <MetricCell key={m.label} m={m} />
               ))}
             </div>
           </div>
@@ -1067,31 +1079,18 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: roicLabel, val: fmtPct(roicReal ?? extras?.roicProxyPct ?? multiples?.roicProxyPct), tip: roicReal != null ? 'Retorno sobre el capital invertido real (Finviz): cuánto gana la empresa por cada dólar invertido en el negocio' : 'Retorno sobre el capital invertido estimado (proxy): cuánto gana la empresa por cada dólar invertido en el negocio' },
-                { label: 'ROE', val: fmtPct(fz?.roePct ?? extras?.roePct ?? multiples?.roePct), tip: 'Rentabilidad sobre el patrimonio neto (Return on Equity)' },
-                { label: 'ROA', val: fmtPct(fz?.roaPct ?? extras?.roaPct), tip: 'Rentabilidad sobre los activos totales (Return on Assets)' },
-                { label: 'Margen bruto', val: fmtPct(fz?.grossMarginPct ?? extras?.grossMarginPct ?? multiples?.grossMarginPct), tip: 'Ganancia bruta sobre ingresos' },
-                { label: 'Margen operativo', val: fmtPct(fz?.operatingMarginPct ?? extras?.operatingMarginPct ?? multiples?.operatingMarginPct), tip: 'Margen antes de intereses e impuestos (EBIT / Ventas)' },
-                { label: 'Margen neto', val: fmtPct(fz?.profitMarginPct ?? extras?.profitMarginPct), tip: 'Porcentaje de ventas que queda como ganancia limpia después de todos los gastos e impuestos' },
+                { label: roicLabel, val: fmtPct(roicReal ?? extras?.roicProxyPct ?? multiples?.roicProxyPct), s: finvizSentiment('roic', roicReal ?? extras?.roicProxyPct ?? multiples?.roicProxyPct), tip: roicReal != null ? 'Retorno sobre el capital invertido real (Finviz): cuánto gana la empresa por cada dólar invertido en el negocio' : 'Retorno sobre el capital invertido estimado (proxy): cuánto gana la empresa por cada dólar invertido en el negocio' },
+                { label: 'ROE', val: fmtPct(fz?.roePct ?? extras?.roePct ?? multiples?.roePct), s: finvizSentiment('roe', fz?.roePct ?? extras?.roePct ?? multiples?.roePct), tip: 'Rentabilidad sobre el patrimonio neto (Return on Equity)' },
+                { label: 'ROA', val: fmtPct(fz?.roaPct ?? extras?.roaPct), s: finvizSentiment('roa', fz?.roaPct ?? extras?.roaPct), tip: 'Rentabilidad sobre los activos totales (Return on Assets)' },
+                { label: 'Margen bruto', val: fmtPct(fz?.grossMarginPct ?? extras?.grossMarginPct ?? multiples?.grossMarginPct), s: finvizSentiment('grossMargin', fz?.grossMarginPct ?? extras?.grossMarginPct ?? multiples?.grossMarginPct), tip: 'Ganancia bruta sobre ingresos' },
+                { label: 'Margen operativo', val: fmtPct(fz?.operatingMarginPct ?? extras?.operatingMarginPct ?? multiples?.operatingMarginPct), s: finvizSentiment('operMargin', fz?.operatingMarginPct ?? extras?.operatingMarginPct ?? multiples?.operatingMarginPct), tip: 'Margen antes de intereses e impuestos (EBIT / Ventas)' },
+                { label: 'Margen neto', val: fmtPct(fz?.profitMarginPct ?? extras?.profitMarginPct), s: finvizSentiment('profitMargin', fz?.profitMarginPct ?? extras?.profitMarginPct), tip: 'Porcentaje de ventas que queda como ganancia limpia después de todos los gastos e impuestos' },
                 { label: 'FCF Yield', val: fmtPct(extras?.fcfYieldPct ?? multiples?.fcfYieldPct), tip: 'Rendimiento de flujo de caja libre sobre capitalización' },
                 { label: 'Payout', val: fmtPct(fz?.payoutPct), tip: 'Porcentaje de las ganancias que se reparte como dividendos' },
                 { label: 'Dividend Yield (TTM)', val: fmtPct(fz?.dividendTtmPct ?? extras?.dividendYieldPct), tip: 'Dividendo de los últimos 12 meses por cada US$100 invertidos' },
                 { label: 'Crec. dividendo 3/5 años', val: divGrowthVal, tip: 'Crecimiento anual promedio del dividendo: últimos 3 años / últimos 5 años' },
               ].map((m) => (
-                <div
-                  key={m.label}
-                  title={m.tip}
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
-                </div>
+                <MetricCell key={m.label} m={m} />
               ))}
             </div>
           </div>
@@ -1103,10 +1102,10 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'Deuda / Patrimonio', val: fmtNum(fz?.debtToEquity ?? extras?.debtToEquity ?? multiples?.debtToEquity), tip: 'Ratio de deuda total sobre patrimonio neto (Debt to Equity)' },
-                { label: 'Deuda LP / Patrimonio', val: fmtNum(fz?.ltDebtToEquity), tip: 'Deuda de largo plazo sobre patrimonio neto: el apalancamiento que no vence en el corto plazo' },
-                { label: 'Current Ratio', val: fmtNum(fz?.currentRatio ?? extras?.currentRatio), tip: 'Capacidad de cubrir deudas a corto plazo con activos corrientes (mayor a 1 indica solvencia)' },
-                { label: 'Quick Ratio', val: fmtNum(fz?.quickRatio ?? extras?.quickRatio), tip: 'Prueba ácida: solvencia de corto plazo sin depender de inventarios' },
+                { label: 'Deuda / Patrimonio', val: fmtNum(fz?.debtToEquity ?? extras?.debtToEquity ?? multiples?.debtToEquity), s: finvizSentiment('debtToEquity', fz?.debtToEquity ?? extras?.debtToEquity ?? multiples?.debtToEquity), tip: 'Ratio de deuda total sobre patrimonio neto (Debt to Equity)' },
+                { label: 'Deuda LP / Patrimonio', val: fmtNum(fz?.ltDebtToEquity), s: finvizSentiment('debtToEquity', fz?.ltDebtToEquity), tip: 'Deuda de largo plazo sobre patrimonio neto: el apalancamiento que no vence en el corto plazo' },
+                { label: 'Current Ratio', val: fmtNum(fz?.currentRatio ?? extras?.currentRatio), s: finvizSentiment('currentRatio', fz?.currentRatio ?? extras?.currentRatio), tip: 'Capacidad de cubrir deudas a corto plazo con activos corrientes (mayor a 1 indica solvencia)' },
+                { label: 'Quick Ratio', val: fmtNum(fz?.quickRatio ?? extras?.quickRatio), s: finvizSentiment('quickRatio', fz?.quickRatio ?? extras?.quickRatio), tip: 'Prueba ácida: solvencia de corto plazo sin depender de inventarios' },
                 { label: 'Cash por acción', val: fmtUsd(fz?.cashPerShare), tip: 'Efectivo de la empresa por cada acción en circulación' },
                 { label: 'Valor libro por acción', val: fmtUsd(fz?.bookPerShare), tip: 'Valor contable (patrimonio neto) por cada acción' },
                 { label: 'Market Cap', val: fmtBig(fz?.marketCap ?? extras?.marketCap), tip: 'Valor total de mercado de la empresa (precio × acciones)' },
@@ -1114,20 +1113,7 @@ export const OpportunitySheet: React.FC<{
                 { label: 'Ventas TTM', val: fmtBig(fz?.sales), tip: 'Ventas de los últimos 12 meses' },
                 { label: 'Ingreso neto TTM', val: fmtBig(fz?.income), tip: 'Ganancia neta de los últimos 12 meses' },
               ].map((m) => (
-                <div
-                  key={m.label}
-                  title={m.tip}
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
-                </div>
+                <MetricCell key={m.label} m={m} />
               ))}
             </div>
           </div>
@@ -1139,30 +1125,17 @@ export const OpportunitySheet: React.FC<{
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
               {[
-                { label: 'Insider Own', val: fmtPct(fz?.insiderOwnPct), tip: 'Porcentaje de acciones en manos de directivos y fundadores (insiders)' },
-                { label: 'Insider Trans', val: fmtPct(fz?.insiderTransPct), tip: 'Variación reciente de la tenencia de insiders: positivo = compraron, negativo = vendieron' },
+                { label: 'Insider Own', val: fmtPct(fz?.insiderOwnPct), s: finvizSentiment('insiderOwn', fz?.insiderOwnPct), tip: 'Porcentaje de acciones en manos de directivos y fundadores (insiders)' },
+                { label: 'Insider Trans', val: fmtPct(fz?.insiderTransPct), s: finvizSentiment('insiderTrans', fz?.insiderTransPct), tip: 'Variación reciente de la tenencia de insiders: positivo = compraron, negativo = vendieron' },
                 { label: 'Inst. Own', val: fmtPct(fz?.instOwnPct), tip: 'Porcentaje de acciones en manos de inversores institucionales (fondos)' },
                 { label: 'Inst. Trans', val: fmtPct(fz?.instTransPct), tip: 'Variación reciente de la tenencia institucional' },
-                { label: 'Short Float', val: fmtPct(fz?.shortFloatPct ?? extras?.shortFloatPct), tip: 'Porcentaje de acciones en circulación apostadas a la baja (short interest)' },
+                { label: 'Short Float', val: fmtPct(fz?.shortFloatPct ?? extras?.shortFloatPct), s: finvizSentiment('shortFloat', fz?.shortFloatPct ?? extras?.shortFloatPct), tip: 'Porcentaje de acciones en circulación apostadas a la baja (short interest)' },
                 { label: 'Short Ratio', val: fmtNum(fz?.shortRatio), tip: 'Días que tardarían los vendidos en corto en recomprar todo (days to cover)' },
                 { label: 'Beta', val: fmtNum(fz?.beta ?? extras?.beta), tip: 'Sensibilidad frente a la volatilidad del mercado general (S&P 500 = 1.0)' },
-                { label: 'RSI (14)', val: fmtNum(fz?.rsi14), tip: 'Índice de fuerza relativa: sobre 70 suele indicar sobrecompra, bajo 30 sobreventa' },
+                { label: 'RSI (14)', val: fmtNum(fz?.rsi14), s: finvizSentiment('rsi', fz?.rsi14), tip: 'Índice de fuerza relativa: sobre 70 suele indicar sobrecompra, bajo 30 sobreventa' },
                 { label: 'Volatilidad (mes)', val: fmtPct(fz?.volatilityMonthPct), tip: 'Cuánto se mueve típicamente el precio en un mes' },
               ].map((m) => (
-                <div
-                  key={m.label}
-                  title={m.tip}
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
-                  <div className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{m.val}</div>
-                </div>
+                <MetricCell key={m.label} m={m} />
               ))}
             </div>
           </div>
