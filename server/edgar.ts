@@ -6,8 +6,23 @@
  * presentado ante la SEC (20-F / 10-K / 40-F): flujo operativo y capex en USD.
  * Solo rellena huecos: nunca pisa un FCF positivo de Yahoo. Nunca lanza.
  */
-const UA = 'FolioProspect/1.0 (folioprospect.vercel.app; research)';
+const UA = 'FolioProspect/1.0 admin@folioprospect.app';
 const DAY = 24 * 3600 * 1000;
+
+/**
+ * CIK verificados contra el archivo oficial de la SEC (company_tickers.json).
+ * Semilla local para no depender de www.sec.gov en runtime: desde IPs de
+ * datacenter ese host puede bloquear el archivo de tickers, mientras que
+ * data.sec.gov (los datos) responde. El archivo completo queda de respaldo
+ * para cualquier otro ticker.
+ */
+const KNOWN_CIK: Record<string, string> = {
+  SIMO: '1329394', NU: '1691493', TSM: '1046179', MELI: '1099590',
+  VIST: '1762506', HSAI: '1861737', NBIS: '1513845', CLS: '1030894',
+  GOOG: '1652044', MU: '723125', NVDA: '1045810', MSFT: '789019',
+  META: '1326801', AMZN: '1018724', AAPL: '320193', AVGO: '1730168',
+  TMDX: '1756262', CRDO: '1807794', ONTO: '704532',
+};
 
 export interface EdgarCashflow {
   /** Flujo de caja operativo del último año fiscal (USD). */
@@ -78,6 +93,8 @@ export function parseEdgarCashflow(factsJson: any): EdgarCashflow | null {
 
 let tickerMapCache: { at: number; map: Map<string, string> } | null = null;
 async function cikForTicker(ticker: string): Promise<string | null> {
+  const known = KNOWN_CIK[ticker];
+  if (known) return known.padStart(10, '0');
   try {
     if (!tickerMapCache || Date.now() - tickerMapCache.at > DAY) {
       const res = await fetch('https://www.sec.gov/files/company_tickers.json', {
@@ -111,10 +128,20 @@ export async function fetchEdgarAnnualCashflow(tickerRaw: string): Promise<Edgar
   try {
     const cik = await cikForTicker(ticker);
     if (cik) {
-      const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+      const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
+      let res = await fetch(url, {
         headers: { 'user-agent': UA },
         signal: AbortSignal.timeout(9000),
       });
+      if (!res.ok) {
+        // Un reintento corto: la SEC limita por IP y un 403/429 transitorio
+        // desde IPs compartidas no debe matar el respaldo por 24 h.
+        await new Promise((r) => setTimeout(r, 600));
+        res = await fetch(url, {
+          headers: { 'user-agent': UA },
+          signal: AbortSignal.timeout(9000),
+        });
+      }
       if (res.ok) value = parseEdgarCashflow(await res.json());
     }
   } catch {
