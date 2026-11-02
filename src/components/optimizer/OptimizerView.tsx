@@ -29,7 +29,7 @@ const DupChip: React.FC<{ a: AssetScore }> = ({ a }) => (
 );
 
 export const OptimizerView: React.FC = () => {
-  const { optimizerData, optimizerLoading, loadOptimizer, evaluation } = useAppStore();
+  const { optimizerData, optimizerLoading, loadOptimizer, evaluation, selectAsset } = useAppStore();
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
   const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
   // «Obtener más fondos»: entradas libres del usuario (efectivo o venta de un
@@ -231,11 +231,17 @@ export const OptimizerView: React.FC = () => {
           <div className="opt-col-head">
             <span className="opt-n">1</span>
             <h3>Tu cartera hoy</h3>
-            <p>Ordenada por oportunidad · Score de inversión <InfoTip k="score" /></p>
+            <p>Ordenada por tiempo a duplicar · Score de inversión <InfoTip k="score" /></p>
           </div>
           <div className="opt-cards">
             {colAssets.map((a) => (
-              <article key={a.symbol} className="opt-card" style={{ borderLeftColor: bandColor(a.yearsToDouble) }}>
+              <article
+                key={a.symbol}
+                className="opt-card clickable"
+                style={{ borderLeftColor: bandColor(a.yearsToDouble) }}
+                onClick={() => void selectAsset(a.symbol)}
+                title={`Ver el análisis de ${a.ticker}`}
+              >
                 <div className="opt-r1">
                   <span className="opt-tk">{a.ticker}</span>
                   <span className="opt-wt">{fmtPct(a.weightPct)} de la cartera</span>
@@ -428,7 +434,13 @@ export const OptimizerView: React.FC = () => {
             {finalAssets.map((a) => {
               const note = finalNote(a);
               return (
-                <article key={a.symbol} className="opt-card buy" style={{ borderLeftColor: bandColor(a.yearsToDouble) }}>
+                <article
+                  key={a.symbol}
+                  className="opt-card buy clickable"
+                  style={{ borderLeftColor: bandColor(a.yearsToDouble) }}
+                  onClick={() => void selectAsset(a.symbol)}
+                  title={`Ver el análisis de ${a.ticker}`}
+                >
                   <div className="opt-r1">
                     <span className="opt-tk">{a.ticker}</span>
                     <span className="opt-wt">{fmtPct(a.weightPct)} final</span>
@@ -480,7 +492,8 @@ export const OptimizerView: React.FC = () => {
         ))}
         <div className="opt-method-item">
           Fuentes: snapshot gratuito de Finviz (fundamentales, EPS próximos 5 años, ROIC), Yahoo Finance
-          (consenso de analistas, balances), motor de Fair Value propio de FolioProspect y las referencias de
+          (consenso de analistas, balances), SEC EDGAR (flujos de caja anuales auditados cuando Yahoo no los
+          trae), motor de Fair Value propio de FolioProspect y las referencias de
           expectativas de capital relevadas por el usuario (Grinold-Kroner; J.P. Morgan LTCMA; Vanguard VCMM;
           descomposición de riesgo de Euler). Estimaciones: no es asesoramiento financiero.
         </div>

@@ -5,6 +5,7 @@ import { findCatalogEntry } from '../shared/engine/symbolCatalog.js';
 import type { FinvizFundamentals } from '../shared/engine/finvizParse.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
 import { fetchFinvizFundamentals } from './finviz.js';
+import { fetchEdgarAnnualCashflow } from './edgar.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1400,6 +1401,28 @@ export async function fetchFundamentals(
             debtToEquity: fd.debtToEquity?.raw ?? null,
             beta: ks.beta?.raw ?? sd.beta?.raw ?? 1.2,
           };
+          // Respaldo SEC EDGAR: si Yahoo no trae FCF útil (bancos sin FCF,
+          // emisores semestrales con TTM negativo), completar con el último
+          // flujo anual auditado (20-F/10-K). Nunca pisa un FCF positivo.
+          if (input.freeCashflow == null || input.freeCashflow <= 0) {
+            try {
+              const ed = await fetchEdgarAnnualCashflow(ySym);
+              if (ed) {
+                if (ed.freeCashflow != null && ed.freeCashflow > 0) {
+                  input.freeCashflow = ed.freeCashflow;
+                }
+                if (
+                  ed.operatingCashflow != null &&
+                  ed.operatingCashflow > 0 &&
+                  (input.operatingCashflow == null || input.operatingCashflow <= 0)
+                ) {
+                  input.operatingCashflow = ed.operatingCashflow;
+                }
+              }
+            } catch {
+              /* sin respaldo: queda el dato de Yahoo tal cual */
+            }
+          }
           fundCache.set(symbol, { value: input, expiresAt: now + 10 * 60 * 1000 });
           return input;
         }

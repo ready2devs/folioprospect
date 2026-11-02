@@ -1,6 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Maximize2, X as CloseIcon } from 'lucide-react';
 import { fmtPairPct, type AssetScore, type PortfolioMetrics } from '@shared/engine';
 import { InfoTip } from './InfoTip';
+
+/** Cerrar la vista expandida con Escape (la X y el fondo también cierran). */
+function useEscapeClose(expanded: boolean, close: () => void) {
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [expanded, close]);
+}
 
 export const fmtUsd = (n: number) => 'US$ ' + Math.round(n).toLocaleString('es-AR');
 export const fmtPct = (n: number) => n.toFixed(1).replace('.', ',') + '%';
@@ -26,6 +39,8 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
 }) => {
   const [horizon, setHorizon] = useState(10);
   const [mode, setMode] = useState<'actual' | 'opt' | 'both'>('both');
+  const [expanded, setExpanded] = useState(false);
+  useEscapeClose(expanded, () => setExpanded(false));
   const W = 1000;
   const H = 300;
   const P = { l: 58, r: 14, t: 12, b: 26 };
@@ -63,8 +78,8 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
   const endV = (re: number) => V0 * Math.pow(1 + re / 100, horizon);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxV * f));
 
-  return (
-    <section className="opt-chart">
+  const content = (
+    <>
       <div className="opt-chart-head">
         <div>
           <h3>
@@ -85,8 +100,18 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
             <button type="button" className={mode === 'opt' ? 'on' : ''} onClick={() => setMode('opt')}>Optimizada</button>
             <button type="button" className={mode === 'both' ? 'on' : ''} onClick={() => setMode('both')}>Comparar</button>
           </div>
+          {!expanded && (
+            <button type="button" className="opt-expand-btn" onClick={() => setExpanded(true)}>
+              <Maximize2 size={12} /> Expandir
+            </button>
+          )}
         </div>
       </div>
+      <div
+        className={expanded ? undefined : 'opt-svg-wrap'}
+        onClick={expanded ? undefined : () => setExpanded(true)}
+        title={expanded ? undefined : 'Expandir gráfico'}
+      >
       <svg viewBox={`0 0 ${W} ${H}`} className="opt-svg" role="img" aria-label="Evolución proyectada del portafolio">
         {ticks.map((v, i) => (
           <g key={i}>
@@ -124,6 +149,7 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
           </>
         )}
       </svg>
+      </div>
       <div className="opt-avgline">
         <span>— <b>Cartera actual</b> · {fmtUsd(endV(before.expectedReturnGeoPct))} a {horizon} años</span>
         <span>— <b className="opt-green">Cartera optimizada</b> · {fmtUsd(endV(after.expectedReturnGeoPct))}</span>
@@ -131,8 +157,22 @@ export const EvolutionChart: React.FC<{ before: PortfolioMetrics; after: Portfol
           Diferencia: <b className="opt-green">+{fmtUsd(endV(after.expectedReturnGeoPct) - endV(before.expectedReturnGeoPct))}</b>
         </span>
       </div>
-    </section>
+    </>
   );
+
+  if (expanded) {
+    return (
+      <div className="opt-chart-overlay" onClick={() => setExpanded(false)}>
+        <section className="opt-chart opt-chart-full" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="opt-chart-close" onClick={() => setExpanded(false)} aria-label="Cerrar gráfico expandido">
+            <CloseIcon size={16} />
+          </button>
+          {content}
+        </section>
+      </div>
+    );
+  }
+  return <section className="opt-chart">{content}</section>;
 };
 
 /* ================= Burbujas riesgo/beneficio ================= */
@@ -145,6 +185,8 @@ export const BubbleChart: React.FC<{
   verdictText: string;
 }> = ({ beforeAssets, afterAssets, before, after, verdict, verdictText }) => {
   const [mode, setMode] = useState<'prev' | 'new' | 'both'>('both');
+  const [expanded, setExpanded] = useState(false);
+  useEscapeClose(expanded, () => setExpanded(false));
   const W = 1000;
   const H = 330;
   const P = { l: 52, r: 16, t: 14, b: 34 };
@@ -204,8 +246,8 @@ export const BubbleChart: React.FC<{
     </g>
   );
 
-  return (
-    <section className="opt-chart">
+  const content = (
+    <>
       <div className="opt-chart-head">
         <div>
           <h3>
@@ -213,12 +255,24 @@ export const BubbleChart: React.FC<{
           </h3>
           <div className="opt-hint">Cada burbuja es un activo · tamaño = peso · color = años para duplicar</div>
         </div>
-        <div className="opt-seg">
-          <button type="button" className={mode === 'prev' ? 'on' : ''} onClick={() => setMode('prev')}>Anterior</button>
-          <button type="button" className={mode === 'new' ? 'on' : ''} onClick={() => setMode('new')}>Nuevo</button>
-          <button type="button" className={mode === 'both' ? 'on' : ''} onClick={() => setMode('both')}>Comparar</button>
+        <div className="opt-controls">
+          <div className="opt-seg">
+            <button type="button" className={mode === 'prev' ? 'on' : ''} onClick={() => setMode('prev')}>Anterior</button>
+            <button type="button" className={mode === 'new' ? 'on' : ''} onClick={() => setMode('new')}>Nuevo</button>
+            <button type="button" className={mode === 'both' ? 'on' : ''} onClick={() => setMode('both')}>Comparar</button>
+          </div>
+          {!expanded && (
+            <button type="button" className="opt-expand-btn" onClick={() => setExpanded(true)}>
+              <Maximize2 size={12} /> Expandir
+            </button>
+          )}
         </div>
       </div>
+      <div
+        className={expanded ? undefined : 'opt-svg-wrap'}
+        onClick={expanded ? undefined : () => setExpanded(true)}
+        title={expanded ? undefined : 'Expandir gráfico'}
+      >
       <svg viewBox={`0 0 ${W} ${H}`} className="opt-svg" role="img" aria-label="Burbujas de riesgo y beneficio por posición">
         <rect x={X(5)} y={Y(yMax)} width={Math.max(0, X(Math.min(28, xMax)) - X(5))} height={Math.max(0, Y(yMax * 0.52) - Y(yMax))} fill="#10B981" opacity="0.05" />
         {[10, 20, 30, 40, 50, 60, 70, 80].filter((v) => v < xMax).map((v) => (
@@ -242,6 +296,7 @@ export const BubbleChart: React.FC<{
         {(mode === 'prev' || mode === 'both') && avgMark(before, '#94A3B8', false, 'Promedio anterior', 15)}
         {(mode === 'new' || mode === 'both') && avgMark(after, '#10B981', true, 'Promedio nuevo', -13)}
       </svg>
+      </div>
       <div className="opt-avgline">
         <span>◆ <b>Promedio anterior:</b> riesgo {fmtPairPct(before.volatilityPct, after.volatilityPct)[0]} · beneficio {fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct)[0]}</span>
         <span className="opt-green">● <b>Promedio nuevo:</b> riesgo {fmtPairPct(before.volatilityPct, after.volatilityPct)[1]} · beneficio {fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct)[1]}</span>
@@ -251,6 +306,20 @@ export const BubbleChart: React.FC<{
         <span className="opt-verdict-ic">{verdict === 'valida' ? '✓' : verdict === 'evaluar' ? '!' : '—'}</span>
         <span>{verdictText}</span>
       </div>
-    </section>
+    </>
   );
+
+  if (expanded) {
+    return (
+      <div className="opt-chart-overlay" onClick={() => setExpanded(false)}>
+        <section className="opt-chart opt-chart-full" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="opt-chart-close" onClick={() => setExpanded(false)} aria-label="Cerrar gráfico expandido">
+            <CloseIcon size={16} />
+          </button>
+          {content}
+        </section>
+      </div>
+    );
+  }
+  return <section className="opt-chart">{content}</section>;
 };
