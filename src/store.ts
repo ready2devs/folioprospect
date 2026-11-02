@@ -18,6 +18,15 @@ export type { ArgFxQuote, ArgFxResponse, NwSettings };
 export type RightPanelState = 'market' | 'portfolio' | 'asset' | 'optimizer';
 export type PortfolioTab = 'overview' | 'holdings' | 'transactions' | 'analysis' | 'prospectiva';
 export type MobileTab = 'holdings' | 'right';
+/** Vista desde la que se abrió la ficha del activo: el «Volver» regresa ahí. */
+export type AssetOrigin = Exclude<RightPanelState, 'asset'> | 'holdings';
+/** Entrada libre de «Obtener más fondos» del Optimizador. */
+export interface ManualFund {
+  id: string;
+  type: 'cash' | 'sell';
+  symbol?: string;
+  amountUsd: number;
+}
 export type AddModalTab = 'trade' | 'cash' | 'illiquid' | 'dividend' | 'csv';
 export type CashModalTarget = 'ledger' | 'brokerCash' | 'reserveUsd';
 
@@ -103,6 +112,13 @@ export interface AppState {
   marketData: MarketOverviewResponse | null;
   assetDetail: AssetDetailResponse | null;
   assetError: string | null;
+  assetOrigin: AssetOrigin;
+  /** Ajustes del análisis del Optimizador: persisten al ir a una ficha y volver. */
+  optDisabled: Set<string>;
+  optManualFunds: ManualFund[];
+  optAcceptedSug: string[];
+  optSkippedSug: string[];
+  optMobileStep: 1 | 2 | 3;
 
   setTheme: (t: 'dark' | 'light') => void;
   toggleTheme: () => void;
@@ -113,6 +129,11 @@ export interface AppState {
   loadOptimizer: (force?: boolean) => Promise<void>;
   setPortfolioTab: (t: PortfolioTab) => void;
   setMobileTab: (t: MobileTab) => void;
+  setOptDisabled: (u: Set<string> | ((p: Set<string>) => Set<string>)) => void;
+  setOptManualFunds: (u: ManualFund[] | ((p: ManualFund[]) => ManualFund[])) => void;
+  setOptAcceptedSug: (u: string[] | ((p: string[]) => string[])) => void;
+  setOptSkippedSug: (u: string[] | ((p: string[]) => string[])) => void;
+  setOptMobileStep: (s: 1 | 2 | 3) => void;
   selectAsset: (symbol: string, range?: string) => Promise<void>;
   setBenchmark: (b: string) => Promise<void>;
   setNetOrGrossMode: (m: 'net' | 'gross') => void;
@@ -152,6 +173,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   marketData: null,
   assetDetail: null,
   assetError: null,
+  assetOrigin: 'market',
+  optDisabled: new Set(),
+  optManualFunds: [],
+  optAcceptedSug: [],
+  optSkippedSug: [],
+  optMobileStep: 1,
 
   setTheme: (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -201,14 +228,48 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ mobileTab });
     scrollTopOnMobile();
   },
+  setOptDisabled: (u) =>
+    set({
+      optDisabled:
+        typeof u === 'function' ? (u as (p: Set<string>) => Set<string>)(get().optDisabled) : u,
+    }),
+  setOptManualFunds: (u) =>
+    set({
+      optManualFunds:
+        typeof u === 'function'
+          ? (u as (p: ManualFund[]) => ManualFund[])(get().optManualFunds)
+          : u,
+    }),
+  setOptAcceptedSug: (u) =>
+    set({
+      optAcceptedSug:
+        typeof u === 'function' ? (u as (p: string[]) => string[])(get().optAcceptedSug) : u,
+    }),
+  setOptSkippedSug: (u) =>
+    set({
+      optSkippedSug:
+        typeof u === 'function' ? (u as (p: string[]) => string[])(get().optSkippedSug) : u,
+    }),
+  setOptMobileStep: (optMobileStep) => set({ optMobileStep }),
   selectAsset: async (symbol, range) => {
     const normSym = normalizeTradingViewSymbol(symbol);
     const r = range || get().selectedAssetRange || '1Y';
+    // Origen de la navegación: el «Volver» de la ficha regresa a la vista
+    // desde la que se llegó (Optimizer, Portafolio, Mercado o la lista de
+    // posiciones). Si ya estamos en una ficha, se conserva el origen.
+    const cur = get();
+    const assetOrigin: AssetOrigin =
+      cur.mobileTab === 'holdings'
+        ? 'holdings'
+        : cur.rightState === 'asset'
+          ? cur.assetOrigin
+          : cur.rightState;
     set({
       selectedSymbol: normSym,
       selectedAssetRange: r,
       rightState: 'asset',
       mobileTab: 'right',
+      assetOrigin,
       loading: true,
       assetError: null,
     });

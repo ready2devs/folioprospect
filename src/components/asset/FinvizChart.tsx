@@ -291,6 +291,12 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
   const [axisMarks, setAxisMarks] = useState<
     { key: string; x: number; bottom: number; letter: string; text: string; color: string }[]
   >([]);
+  // Etiquetas «Resistencia»/«Soporte» como texto transparente sobre el
+  // gráfico (overlay HTML): reemplazan a las cajas opacas que dibujaba el
+  // `title` de serie de lightweight-charts tapando las velas.
+  const [trendLabels, setTrendLabels] = useState<
+    { key: string; x: number; y: number; text: string; color: string; above: boolean }[]
+  >([]);
 
   // Preparar velas limpias
   const candles = useMemo(() => {
@@ -552,29 +558,32 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
     }
 
     // ── 7. Línea de resistencia técnica superior (estilo Finviz: magenta/fucsia #EC4899) ──
+    // Sin `title` de serie: lightweight-charts lo dibuja como una caja
+    // opaca sobre las velas. La etiqueta va como texto transparente en el
+    // overlay HTML (trendLabels), anclada al extremo de la línea.
+    let topSeries: ISeriesApi<'Line'> | undefined;
     if (topTrendData.length >= 2) {
-      const topSeries = chart.addLineSeries({
+      topSeries = chart.addLineSeries({
         color: '#EC4899',
         lineWidth: 2,
         crosshairMarkerVisible: false,
         lastValueVisible: false,
         priceLineVisible: false,
         lineStyle: LineStyle.Solid,
-        title: 'Resistencia',
       });
       topSeries.setData(topTrendData);
     }
 
     // ── 8. Línea de soporte técnico inferior (estilo Finviz: amarillo/oro #EAB308) ──
+    let botSeries: ISeriesApi<'Line'> | undefined;
     if (botTrendData.length >= 2) {
-      const botSeries = chart.addLineSeries({
+      botSeries = chart.addLineSeries({
         color: '#EAB308',
         lineWidth: 2,
         crosshairMarkerVisible: false,
         lastValueVisible: false,
         priceLineVisible: false,
         lineStyle: LineStyle.Solid,
-        title: 'Soporte',
       });
       botSeries.setData(botTrendData);
     }
@@ -623,6 +632,26 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
           return { ...r, bottom: axisH + 2 + row * 13 };
         })
       );
+      // Etiquetas de resistencia/soporte: texto transparente al extremo
+      // derecho de cada línea de tendencia, sin caja que tape las velas.
+      const tl: { key: string; x: number; y: number; text: string; color: string; above: boolean }[] = [];
+      const pushTrend = (
+        series: ISeriesApi<'Line'> | undefined,
+        data: typeof topTrendData,
+        text: string,
+        color: string,
+        above: boolean
+      ) => {
+        if (!series || data.length < 2) return;
+        const last = data[data.length - 1];
+        const x = ts.timeToCoordinate(last.time as Time);
+        const y = series.priceToCoordinate(last.value);
+        if (x == null || y == null || x < 40 || x > paneW) return;
+        tl.push({ key: text, x, y, text, color, above });
+      };
+      pushTrend(topSeries, topTrendData, 'Resistencia', '#EC4899', true);
+      pushTrend(botSeries, botTrendData, 'Soporte', '#EAB308', false);
+      setTrendLabels(tl);
     };
     const onRangeChange = () => computeAxisMarks();
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
@@ -811,6 +840,27 @@ export const FinvizChart: React.FC<FinvizChartProps> = ({
               }}
             >
               <span style={{ fontWeight: 800 }}>{am.letter}</span> {am.text}
+            </span>
+          ))}
+          {trendLabels.map((tl) => (
+            <span
+              key={tl.key}
+              className="mono"
+              style={{
+                position: 'absolute',
+                left: tl.x,
+                top: tl.y,
+                transform: tl.above ? 'translate(-100%, -170%)' : 'translate(-100%, 70%)',
+                fontSize: 10.5,
+                fontWeight: 800,
+                letterSpacing: '0.02em',
+                color: tl.color,
+                whiteSpace: 'nowrap',
+                opacity: 0.95,
+                textShadow: '0 1px 4px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9)',
+              }}
+            >
+              {tl.text}
             </span>
           ))}
         </div>

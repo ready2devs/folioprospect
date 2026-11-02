@@ -19,11 +19,31 @@ export const App: React.FC = () => {
     rightState,
     mobileTab,
     setMobileTab,
+    setRightState,
+    assetOrigin,
     selectedSymbol,
     refreshAll,
     pricingMode,
   } = useAppStore();
   const isMobile = useIsMobile(1023);
+
+  // En la ficha de un activo, la barra «Volver» regresa a la vista de
+  // origen (p. ej. el Optimizer); en el resto, a la lista de posiciones.
+  const assetBackLabel =
+    assetOrigin === 'optimizer'
+      ? '← Volver al Optimizer'
+      : assetOrigin === 'portfolio'
+        ? '← Volver al Portafolio'
+        : assetOrigin === 'market'
+          ? '← Volver a Mercado'
+          : '← Volver a Cartera (Posiciones)';
+  const onMobileBack = () => {
+    if (rightState === 'asset' && assetOrigin !== 'holdings') {
+      setRightState(assetOrigin);
+    } else {
+      setMobileTab('holdings');
+    }
+  };
 
   useEffect(() => {
     refreshAll();
@@ -51,10 +71,10 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn mobile-back-btn"
-                  onClick={() => setMobileTab('holdings')}
+                  onClick={onMobileBack}
                 >
                   <ArrowLeft size={14} />
-                  <span>← Volver a Cartera (Posiciones)</span>
+                  <span>{rightState === 'asset' ? assetBackLabel : '← Volver a Cartera (Posiciones)'}</span>
                 </button>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {rightState === 'market'

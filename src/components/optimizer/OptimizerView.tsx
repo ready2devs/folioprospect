@@ -30,14 +30,20 @@ const DupChip: React.FC<{ a: AssetScore }> = ({ a }) => (
 
 export const OptimizerView: React.FC = () => {
   const { optimizerData, optimizerLoading, loadOptimizer, evaluation, selectAsset } = useAppStore();
-  const [disabled, setDisabled] = useState<Set<string>>(new Set());
-  const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
-  // «Obtener más fondos»: entradas libres del usuario (efectivo o venta de un
-  // activo vigente por el monto que elija) y sugerencias automáticas aceptadas.
-  type ManualFund = { id: string; type: 'cash' | 'sell'; symbol?: string; amountUsd: number };
-  const [manualFunds, setManualFunds] = useState<ManualFund[]>([]);
-  const [acceptedSug, setAcceptedSug] = useState<string[]>([]);
-  const [skippedSug, setSkippedSug] = useState<string[]>([]);
+  // Ajustes del análisis persistidos en el store (no en estado local): si el
+  // usuario entra a la ficha de un activo y vuelve, sus extracciones
+  // apagadas, fondos manuales de «Obtener más fondos», sugerencias y el
+  // paso móvil quedan exactamente como los dejó.
+  const disabled = useAppStore((s) => s.optDisabled);
+  const setDisabled = useAppStore((s) => s.setOptDisabled);
+  const mobileStep = useAppStore((s) => s.optMobileStep);
+  const setMobileStep = useAppStore((s) => s.setOptMobileStep);
+  const manualFunds = useAppStore((s) => s.optManualFunds);
+  const setManualFunds = useAppStore((s) => s.setOptManualFunds);
+  const acceptedSug = useAppStore((s) => s.optAcceptedSug);
+  const setAcceptedSug = useAppStore((s) => s.setOptAcceptedSug);
+  const skippedSug = useAppStore((s) => s.optSkippedSug);
+  const setSkippedSug = useAppStore((s) => s.setOptSkippedSug);
   const [mfOpen, setMfOpen] = useState(false);
   const [mfType, setMfType] = useState<'cash' | 'sell'>('sell');
   const [mfSymbol, setMfSymbol] = useState('');

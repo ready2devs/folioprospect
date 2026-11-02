@@ -67,7 +67,24 @@ export const AssetView: React.FC = () => {
     fxRates,
     openAddModal,
     setRightState,
+    assetOrigin,
+    setMobileTab,
   } = useAppStore();
+
+  // El «Volver» regresa a la vista desde la que se llegó a esta ficha
+  // (Optimizer, Portafolio, Mercado o la lista de posiciones en móvil).
+  const backLabel =
+    assetOrigin === 'optimizer'
+      ? 'Volver al Optimizer'
+      : assetOrigin === 'portfolio'
+        ? 'Volver al Portafolio'
+        : assetOrigin === 'holdings'
+          ? 'Volver a Cartera (Posiciones)'
+          : 'Volver a Mercado';
+  const goBack = () => {
+    if (assetOrigin === 'holdings') setMobileTab('holdings');
+    else setRightState(assetOrigin);
+  };
 
   const isMobile = useLocalIsMobile(1023);
 
@@ -160,8 +177,8 @@ export const AssetView: React.FC = () => {
           >
             Reintentar
           </button>{' '}
-          <button className="btn btn-ghost" onClick={() => setRightState('portfolio')}>
-            Volver al portafolio
+          <button className="btn btn-ghost" onClick={goBack}>
+            {backLabel}
           </button>
         </div>
       );
@@ -199,8 +216,8 @@ export const AssetView: React.FC = () => {
         >
           Reintentar
         </button>{' '}
-        <button className="btn btn-ghost" onClick={() => setRightState('portfolio')}>
-          Volver al portafolio
+        <button className="btn btn-ghost" onClick={goBack}>
+          {backLabel}
         </button>
       </div>
     );
@@ -408,8 +425,8 @@ export const AssetView: React.FC = () => {
               <button
                 className="btn btn-ghost"
                 style={{ padding: '3px 8px', fontSize: 11 }}
-                onClick={() => setRightState('market')}
-                title="Volver a la vista de mercado Google Finance"
+                onClick={goBack}
+                title={backLabel}
               >
                 <ArrowLeft size={13} /> Volver
               </button>
