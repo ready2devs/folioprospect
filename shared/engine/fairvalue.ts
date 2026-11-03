@@ -43,6 +43,10 @@ export interface FundamentalInput {
   /** FCF anual reportado, más reciente primero (máx 5 años): base
    *  normalizada del DCF. */
   fcfHistory?: number[] | null;
+  /** Variación interanual de acciones diluidas en circulación, % (EDGAR):
+   *  positivo = dilución neta. Lo consume el Optimizador (ancla GK ΔS y
+   *  señal de deterioro por dilución); el FV no lo usa. */
+  sharesGrowthYoYPct?: number | null;
   /** EPS diluido anual reportado, más reciente primero (máx 5 años):
    *  detección de valle cíclico. */
   epsHistory?: number[] | null;
@@ -88,6 +92,11 @@ export interface FvComponentInput {
   /** Valle cíclico medible: válido pero con divergencia esperada
    *  (informativo; la winsorización no excluye a nadie). */
   troughAdjusted?: boolean;
+  /** Calidad medible del dato detrás del componente (0,3–1): largo de la
+   *  serie del DCF, grupos de fuentes independientes del EPS, cantidad de
+   *  fuentes del target. Pondera el promedio winsorizado con ratio acotado
+   *  (ningún peso sale de [0,5×, 2×] el peso igualitario). Sin dato = 1. */
+  quality?: number;
 }
 
 export interface FvExcludedComponent {
@@ -118,6 +127,9 @@ export interface FvAggregationResult {
   /** Componentes finales que forman el Fair Value (valores winsorizados
    *  cuando fueron recortados). */
   components: FvComponentInput[];
+  /** Peso efectivo de cada componente en el promedio (alineado con
+   *  `components`): igualitario salvo que la calidad medible difiera. */
+  weights: number[];
   excluded: FvExcludedComponent[];
   winsorized: FvWinsorizedComponent[];
   flags: string[];
@@ -142,6 +154,8 @@ const MINOR_CONFIDENCE_FLAGS = new Set([
   'notMeaningful',
   'derivedFromFilings',
   'singleSource',
+  'ttmBaseEmerging',
+  'cyclicalNormalized',
 ]);
 
 /** Banda de credibilidad entre componentes (ratios históricos del motor). */
@@ -185,6 +199,7 @@ export function aggregateFairValue(
     return {
       fairValue: null,
       components: [],
+      weights: [],
       excluded,
       winsorized,
       flags: [...new Set(flags)],
@@ -199,6 +214,7 @@ export function aggregateFairValue(
     return {
       fairValue: pool[0].value,
       components: pool,
+      weights: [1],
       excluded,
       winsorized,
       flags: [...new Set(flags)],
@@ -224,7 +240,19 @@ export function aggregateFairValue(
   });
   if (winsorized.length > 0) flags.push('winsorized');
 
-  const fairValue = meanOf(finalComponents.map((c) => c.value));
+  // Promedio ponderado por CALIDAD MEDIBLE del dato (no por opinión):
+  // peso ∝ calidad, acotado a [0,5×, 2×] el peso igualitario y
+  // renormalizado. Sin información de calidad, todos pesan igual (el
+  // comportamiento histórico del motor).
+  const n = finalComponents.length;
+  const equal = 1 / n;
+  const qSum = finalComponents.reduce((s, c) => s + clamp(c.quality ?? 1, 0.3, 1), 0);
+  let weights = finalComponents.map(
+    (c) => clamp((clamp(c.quality ?? 1, 0.3, 1) / qSum) || equal, equal * 0.5, equal * 2)
+  );
+  const wSum = weights.reduce((s, w) => s + w, 0);
+  weights = weights.map((w) => w / wSum);
+  const fairValue = finalComponents.reduce((s, c, i) => s + c.value * weights[i], 0);
 
   const vals = finalComponents.map((c) => c.value);
   const mean = meanOf(vals);
@@ -244,6 +272,7 @@ export function aggregateFairValue(
   return {
     fairValue,
     components: finalComponents,
+    weights,
     excluded,
     winsorized,
     flags: [...new Set(flags)],
@@ -608,6 +637,21 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
           : input.fcfHistorySource === 'yahoo'
             ? 'yahooFcfHistoryMedian'
             : 'fcfHistoryMedian';
+    } else if (
+      fcfBase != null &&
+      fcfBase > 0 &&
+      (input.revenueGrowth ?? input.earningsGrowth ?? 0) > 0.15
+    ) {
+      // Regla de «emergente»: la mediana histórica ≤ 0 describe el pasado
+      // de una empresa que ya genera caja hoy (TTM > 0) y crece fuerte
+      // (ingresos > +15%): anular el DCF la dejaría valuada por un solo
+      // componente. Se computa sobre la base TTM con flag y confianza
+      // reducida (calidad 0,45 en la ponderación). R0: más información,
+      // no menos. Si el TTM también es ≤ 0 o no hay crecimiento que lo
+      // explique, sí es imposibilidad y el componente queda null.
+      dcfBase = fcfBase;
+      dcfBaseSource = 'ttmEmerging';
+      fvFlags.push('ttmBaseEmerging');
     } else {
       dcfBase = null;
       dcfPreExcluded = { component: 'dcf', reason: 'medianFcfNonPositive', value: null };
@@ -636,6 +680,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       dcfValue: null,
       analystTarget: null,
       fvComponents: [],
+      fvComponentWeights: [],
       multiplesValue: null,
       fvConfidence: null,
       fvRange: null,
@@ -745,10 +790,33 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   // borde de la banda, nunca se borra; con 1 componente el FV es ese
   // componente. El fallback precio × 1,05 no existe: el FV jamás se
   // fabrica desde el precio.
+  // Calidad medible por componente (ponderación del promedio, ratio
+  //  acotado en aggregateFairValue): serie larga y auditada > foto TTM;
+  //  EPS confirmado por ≥2 proveedores independientes > fuente única >
+  //  derivado; target con 2 fuentes > 1.
+  const dcfQuality =
+    dcfBaseSource === 'ttmEmerging'
+      ? 0.45
+      : dcfBaseSource === 'edgarAnnualCashflow'
+        ? 0.55
+        : dcfBaseSource === 'ttm'
+          ? 0.6
+          : fcfSeries.length >= 5
+            ? 1
+            : 0.85;
+  const multGroups = new Set(
+    mult.provenance.sources.map((s) =>
+      s.startsWith('finviz') ? 'finviz' : s.startsWith('yahoo') ? 'yahoo' : s.startsWith('edgar') ? 'filings' : 'fundamentals'
+    )
+  );
+  const multDirectGroups = (['yahoo', 'finviz'] as const).filter((g) => multGroups.has(g)).length;
+  const multiplesQuality = multDirectGroups >= 2 ? 1 : multDirectGroups === 1 ? 0.75 : 0.55;
+  const targetQuality = targetSources.length >= 2 ? 1 : 0.8;
+
   const pool: FvComponentInput[] = [];
-  if (dcfValue != null) pool.push({ key: 'dcf', value: dcfValue, troughAdjusted });
-  if (mult.value != null) pool.push({ key: 'multiples', value: mult.value });
-  if (analystTarget != null) pool.push({ key: 'target', value: analystTarget });
+  if (dcfValue != null) pool.push({ key: 'dcf', value: dcfValue, troughAdjusted, quality: dcfQuality });
+  if (mult.value != null) pool.push({ key: 'multiples', value: mult.value, quality: multiplesQuality });
+  if (analystTarget != null) pool.push({ key: 'target', value: analystTarget, quality: targetQuality });
   const agg = aggregateFairValue(pool, {
     currentPrice,
     flags: fvFlags,
@@ -767,6 +835,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
         ...(fvFlags.includes('normalizedBase') ? ['normalizedBase'] : []),
         ...(troughAdjusted ? ['troughAdjusted'] : []),
         ...(dcfBaseSource === 'edgarAnnualCashflow' ? ['derivedFromFilings'] : []),
+        ...(dcfBaseSource === 'ttmEmerging' ? ['ttmBaseEmerging'] : []),
       ],
     },
     {
@@ -818,6 +887,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     dcfValue,
     analystTarget,
     fvComponents: agg.components.map((c) => c.value),
+    fvComponentWeights: agg.weights,
     multiplesValue: mult.value,
     fvConfidence: agg.confidence,
     fvRange: agg.range,

@@ -170,3 +170,47 @@ describe('parseEdgarSeries', () => {
     expect(s!.fcfHistory).toEqual([8e9, 40e9]);
   });
 });
+
+describe('parseEdgarSeries — acciones en circulación (ΔS)', () => {
+  it('extrae la serie anual de acciones diluidas, más reciente primero', () => {
+    const facts = {
+      facts: {
+        'us-gaap': {
+          WeightedAverageNumberOfSharesOutstandingDiluted: {
+            units: {
+              shares: [
+                { end: '2024-12-31', start: '2024-01-01', val: 100e6, form: '10-K', fp: 'FY', filed: '2025-02-01' },
+                { end: '2025-12-31', start: '2025-01-01', val: 112e6, form: '10-K', fp: 'FY', filed: '2026-02-01' },
+                { end: '2025-06-30', start: '2025-01-01', val: 110e6, form: '10-Q', fp: 'Q2', filed: '2025-08-01' },
+              ],
+            },
+          },
+          NetCashProvidedByUsedInOperatingActivities: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 10e9, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 2e9, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+        },
+      },
+    };
+    const s = parseEdgarSeries(facts);
+    expect(s).not.toBeNull();
+    // Solo años fiscales: el punto Q2 (110 M) no entra; ΔS = 112/100 − 1 = +12%.
+    expect(s!.sharesHistory).toEqual([112e6, 100e6]);
+  });
+
+  it('sin concepto de acciones (emisor extranjero típico), la serie es vacía y el resto sigue', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          EarningsPerShareDiluted: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 2.5, form: '20-F', fp: 'FY', filed: '2026-03-01' }] },
+          },
+        },
+      },
+    });
+    expect(s?.sharesHistory).toEqual([]);
+    expect(s?.epsHistory).toEqual([2.5]);
+  });
+});

@@ -245,6 +245,10 @@ export interface FairValueResult {
   /** Flags disparados por las reglas de valuación (reparación,
    *  normalización, winsorización, valle cíclico). */
   fvFlags?: string[];
+  /** Peso efectivo de cada componente en el Fair Value (alineado con
+   *  fvComponents): ponderación por calidad medible del dato con ratio
+   *  acotado [0,5×, 2×] el peso igualitario. */
+  fvComponentWeights?: number[];
   /** Motivo cuando fairValue es null: `noValidComponents` (ningún
    *  componente sobrevivió a la cadena de reparación; tras reparar
    *  debería ser inalcanzable). Nunca se fabrica un FV desde el precio. */

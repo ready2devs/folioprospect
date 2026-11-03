@@ -15,11 +15,16 @@
  * Pesos renormalizados si falta un componente; jamás se rellena un dato.
  *
  * De RE salen: años para duplicar = ln2/ln(1+RE) y el Score de inversión 0–100
- * (50% velocidad, 25% oportunidad Precio/FV de la ficha, 15% calidad, 10%
- * riesgo). A nivel cartera el RE es GEOMÉTRICO: se resta el arrastre de
- * volatilidad σ²/2 (Invesco CMA). El riesgo usa matriz de correlaciones por
- * bloques (aproximación v1 documentada) y descomposición de Euler: MCTR y
- * PCTR por activo, que ordenan desempates de extracción y validan swaps.
+ * (30% velocidad, 25% oportunidad Precio/FV, 20% calidad, 15% confianza de
+ * la valuación, 10% riesgo — docs/OPTIMIZER-PROFESSIONAL.md). La
+ * convergencia no usa el FV crudo sino el FV ENCogido hacia el precio según
+ * la confianza de la valuación (Alta ×1, Media ×0,7, Baja ×0,4 de la
+ * brecha): una valuación frágil no puede liderar el ranking ni recibir
+ * fondos como si fuera sólida. A nivel cartera el RE es GEOMÉTRICO: se
+ * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
+ * matriz de correlaciones por bloques (aproximación documentada) y
+ * descomposición de Euler: MCTR y PCTR por activo, que ordenan desempates
+ * de extracción y validan swaps.
  *
  * Sin dependencias de red: lo alimentan el servidor (Yahoo + Finviz) y lo
  * consumen el cliente y los tests. Cripto y caja quedan fuera del score, con
@@ -65,6 +70,30 @@ export interface OptimizerAssetInput {
   moatScore?: number | null;
   locked?: boolean;
   defensive?: boolean;
+  /** Confianza de la valuación propia (fairvalue.ts): gobierna el
+   *  shrinkage del FV que alimenta convergencia y oportunidad. */
+  fvConfidence?: 'Alta' | 'Media' | 'Baja' | null;
+  /** Cantidad de componentes válidos detrás del FV (1–3). Un FV de un
+   *  solo componente no compite de igual a igual como destino. */
+  fvComponentCount?: number | null;
+  /** EPS forward efectivamente usado por el motor de FV (tras la cadena
+   *  de reparación); ≤ 0 es señal dura de deterioro de tesis. */
+  forwardEpsUsed?: number | null;
+  /** Mediana de FCF 3–5 años ≤ 0 (serie EDGAR/Yahoo del motor de FV). */
+  fcfMedianNonPositive?: boolean | null;
+  /** Crecimiento de ingresos TTM % (proxy de desaceleración cuando se
+   *  combina con FCF mediano ≤ 0). */
+  revenueGrowthPct?: number | null;
+  /** Próximo balance: fecha ISO y días hábiles hasta la fecha (calculados
+   *  por la capa de datos). Dentro de la ventana de examen (≤5) no se
+   *  propone ni compra ni venta: la decisión se difiere al balance. */
+  nextEarningsDate?: string | null;
+  earningsBusinessDays?: number | null;
+  /** El EPS que alimentó múltiplos/crecimiento fue normalizado a mitad
+   *  de ciclo (dispersión histórica alta o yield forward > 20%). */
+  cyclicalNormalized?: boolean;
+  /** EPS de mitad de ciclo usado en la normalización (trazabilidad). */
+  midCycleEps?: number | null;
 }
 
 export interface ScoredPeer {
@@ -76,6 +105,10 @@ export interface ScoredPeer {
   score: number;
   expectedReturnPct: number;
   volatilityPct?: number | null;
+  /** Mismo listón que las posiciones propias cuando actúa de destino. */
+  fvConfidence?: 'Alta' | 'Media' | 'Baja' | null;
+  fvComponentCount?: number | null;
+  fvToPrice?: number | null;
 }
 
 export interface OptimizerOptions {
@@ -130,7 +163,40 @@ export interface AssetScore {
   locked: boolean;
   defensive: boolean;
   confidence: 'alta' | 'media' | 'baja';
+  /** FV crudo del motor de valuación (sin shrinkage). */
+  fvRaw: number | null;
+  /** FV efectivamente usado por convergencia y score: encogido hacia el
+   *  precio según la confianza de la valuación. */
+  fvEffective: number | null;
+  fvConfidence: 'Alta' | 'Media' | 'Baja' | null;
+  fvComponentCount: number | null;
+  fvToPrice: number | null;
+  /** Pasa el listón de destino de fondos (score ajustado, ≥2 componentes
+   *  o desconocido, FV/precio ≤ 3, no defensivo, sin examen próximo). */
+  destinationEligible: boolean;
+  /** Códigos de señal de deterioro de tesis (ver thesisSignalsFor). */
+  thesisSignals: ThesisSignalCode[];
+  /** Examen de balance dentro de la ventana: decisión diferida. */
+  earningsGate: { date: string; businessDays: number } | null;
+  cyclicalNormalized: boolean;
+  dilutionPct: number | null;
 }
+
+/** Señales medibles de deterioro de tesis (ninguna depende del ticker). */
+export type ThesisSignalCode =
+  | 'eps-negativo'
+  | 'ganancias-en-caida'
+  | 'dilucion-fuerte'
+  | 'fcf-negativo-sin-crecimiento'
+  | 'fv-un-solo-componente';
+
+export const THESIS_SIGNAL_TEXT: Record<ThesisSignalCode, string> = {
+  'eps-negativo': 'EPS forward ≤ 0: el consenso espera pérdidas',
+  'ganancias-en-caida': 'el consenso espera que las ganancias caigan el próximo año',
+  'dilucion-fuerte': 'dilución neta mayor al 10% anual (acciones en circulación, EDGAR)',
+  'fcf-negativo-sin-crecimiento': 'flujo de caja libre mediano de 3–5 años ≤ 0 sin crecimiento de ingresos que lo justifique',
+  'fv-un-solo-componente': 'su valor justo depende de un único método, con confianza baja',
+};
 
 export interface Extraction {
   symbol: string;
@@ -142,8 +208,29 @@ export interface Extraction {
   grossUsd: number;
   netUsd: number;
   reason: string;
-  reasonCode: 'veredicto-vender' | 'score-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno' | 'manual' | 'sugerencia';
+  reasonCode: 'veredicto-vender' | 'score-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno' | 'manual' | 'sugerencia' | 'tesis-deteriorada';
   replacementTicker?: string;
+  /** Señales que dispararon la salida (solo reasonCode tesis-deteriorada). */
+  thesisSignals?: ThesisSignalCode[];
+}
+
+/** Activo con balance dentro de la ventana de examen: decisión diferida. */
+export interface PendingExam {
+  symbol: string;
+  ticker: string;
+  name: string;
+  date: string;
+  businessDays: number;
+  /** Señales de deterioro presentes (la salida también se difiere). */
+  thesisSignals: ThesisSignalCode[];
+}
+
+/** Activo con UNA señal de deterioro: se vigila, no se toca. */
+export interface WatchAlert {
+  symbol: string;
+  ticker: string;
+  name: string;
+  thesisSignals: ThesisSignalCode[];
 }
 
 /** Candidata a venta que la UI ofrece en «Obtener más fondos» (aún no aceptada). */
@@ -192,6 +279,15 @@ export interface OptimizerResult {
   extractions: Extraction[];
   allocations: Allocation[];
   fundsToReallocate: number;
+  /** Fondos liberados que quedan deliberadamente en efectivo porque
+   *  ningún destino superó el listón (un profesional no redespliega por
+   *  obligación). */
+  cashHeldUsd: number;
+  cashNote: string | null;
+  /** Balances dentro de la ventana de examen: decisiones diferidas. */
+  pendingExams: PendingExam[];
+  /** Una sola señal de deterioro: vigilancia, sin movimiento. */
+  watchAlerts: WatchAlert[];
   /** Próximas ventas sugeridas (no dispararon reglas; la UI las ofrece de a una). */
   suggestionCandidates: SuggestionCandidate[];
   before: PortfolioMetrics;
@@ -246,6 +342,71 @@ export function fvConvergencePct(a: OptimizerAssetInput, years: number): number 
   return clamp((Math.pow(a.fvBase / a.price, 1 / years) - 1) * 100, -25, 35);
 }
 
+/** Factor de shrinkage del FV según la confianza de la valuación: la
+ *  brecha FV−precio se reconoce entera solo si la valuación es sólida. */
+export const FV_CONFIDENCE_SHRINK: Record<'Alta' | 'Media' | 'Baja', number> = {
+  Alta: 1,
+  Media: 0.7,
+  Baja: 0.4,
+};
+
+/** FV encogido hacia el precio: precio + (FV − precio) × k(confianza).
+ *  Sin etiqueta de confianza se asume Media (0,7). El FV crudo sigue
+ *  existiendo y rankeando: lo que cambia es cuánto retorno se le cree. */
+export function shrunkFairValue(
+  price: number,
+  fvBase: number | null | undefined,
+  confidence: 'Alta' | 'Media' | 'Baja' | null | undefined
+): number | null {
+  if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
+  const k = confidence != null ? FV_CONFIDENCE_SHRINK[confidence] : 0.7;
+  return price + (fvBase - price) * k;
+}
+
+/** Ventana de examen: balance a ≤ 5 días hábiles ⇒ decisión diferida. */
+export const EARNINGS_GATE_BUSINESS_DAYS = 5;
+export function earningsGateFor(
+  a: OptimizerAssetInput
+): { date: string; businessDays: number } | null {
+  if (
+    a.nextEarningsDate != null &&
+    a.earningsBusinessDays != null &&
+    a.earningsBusinessDays >= 0 &&
+    a.earningsBusinessDays <= EARNINGS_GATE_BUSINESS_DAYS
+  ) {
+    return { date: a.nextEarningsDate, businessDays: a.earningsBusinessDays };
+  }
+  return null;
+}
+
+/**
+ * Señales medibles de deterioro de tesis. Ninguna mira el ticker: son
+ * campos que el motor ya recolecta (EPS usado por el FV, ΔS de EDGAR,
+ * mediana de FCF, crecimiento de ingresos, estructura del FV). Una sola
+ * señal = vigilancia; dos o más combinadas = candidata a salida.
+ */
+export function thesisSignalsFor(a: OptimizerAssetInput): ThesisSignalCode[] {
+  if (a.isCrypto || a.isCash) return [];
+  const out: ThesisSignalCode[] = [];
+  if (a.forwardEpsUsed != null && a.forwardEpsUsed <= 0) out.push('eps-negativo');
+  if (a.epsNextYearPct != null && a.epsNextYearPct <= -5) out.push('ganancias-en-caida');
+  if (a.dilutionPct != null && a.dilutionPct > 10) out.push('dilucion-fuerte');
+  if (
+    a.fcfMedianNonPositive === true &&
+    a.revenueGrowthPct != null &&
+    a.revenueGrowthPct < 10
+  ) {
+    out.push('fcf-negativo-sin-crecimiento');
+  }
+  if (a.fvComponentCount === 1 && a.fvConfidence === 'Baja') {
+    out.push('fv-un-solo-componente');
+  }
+  return out;
+}
+
+/** Score mínimo (ya ajustado por confianza) para recibir fondos. */
+export const DESTINATION_MIN_SCORE = 65;
+
 export function consensusPct(a: OptimizerAssetInput): number | null {
   if (a.analystTarget == null || !(a.analystTarget > 0) || !(a.price > 0)) return null;
   // Es una vista a 1 año y suele perseguir al precio en mercados alcistas:
@@ -287,11 +448,20 @@ export function scoreAsset(
   let stars: number | null = null;
   let gordon: number | null = null;
 
+  const fvEffective = isCrypto || isCash ? null : shrunkFairValue(a.price, a.fvBase, a.fvConfidence);
+  const gate = isCrypto || isCash ? null : earningsGateFor(a);
+  const thesisSignals = thesisSignalsFor(a);
+
   if (isCrypto || isCash) {
     re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
   } else {
     gk = grinoldKroner(a);
-    fv = fvConvergencePct(a, opts.yearsToCorrection);
+    // La convergencia cree la brecha solo en proporción a la confianza
+    // de la valuación (shrinkage): el FV crudo queda para la ficha.
+    fv = fvConvergencePct(
+      fvEffective != null ? { ...a, fvBase: fvEffective } : a,
+      opts.yearsToCorrection
+    );
     cons = consensusPct(a);
     const parts: Array<[number | null, number]> = [
       [gk, 0.45],
@@ -310,19 +480,26 @@ export function scoreAsset(
         : null);
     if (gAnchor != null) gordon = (a.dividendYieldPct ?? 0) + clamp(gAnchor, 0, 5.5);
 
-    // Score 0–100. Velocidad sobre el rango completo del RE acotado (−5..35):
+    // Score 0–100 sin doble conteo (docs/OPTIMIZER-PROFESSIONAL.md §7):
+    // la velocidad (el RE con otro nombre) pesa 30% como máximo; el resto
+    // es información ortogonal: oportunidad contra el FV encogido,
+    // calidad del negocio, CONFIANZA de la valuación y riesgo.
+    // Velocidad sobre el rango completo del RE acotado (−5..35):
     // un RE de 15% da 50; hacen falta ~25% para 75 y 35% para 100.
     const velocity = re != null ? clamp(((re + 5) / 40) * 100, 0, 100) : null;
     let opportunity = a.opportunityScore ?? null;
-    if (opportunity == null && a.fvBase != null && a.fvBase > 0 && a.price > 0) {
-      opportunity = scoreFor(a.price / a.fvBase, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
+    if (opportunity == null && fvEffective != null && fvEffective > 0 && a.price > 0) {
+      opportunity = scoreFor(a.price / fvEffective, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
     }
     const quality = qualityScore(a);
+    const valuationConfidenceScore =
+      a.fvConfidence === 'Alta' ? 90 : a.fvConfidence === 'Media' ? 65 : a.fvConfidence === 'Baja' ? 35 : 55;
     const riskScore = clamp(100 - Math.max(0, vol - 15) * 1.6 - Math.max(0, (a.debtToEquity ?? 0) - 1) * 8, 0, 100);
     const comps: Array<[number | null, number]> = [
-      [velocity, 0.5],
+      [velocity, 0.3],
       [opportunity, 0.25],
-      [quality, 0.15],
+      [quality, 0.2],
+      [valuationConfidenceScore, 0.15],
       [riskScore, 0.1],
     ];
     const av = comps.filter(([v]) => v != null) as Array<[number, number]>;
@@ -332,6 +509,18 @@ export function scoreAsset(
       stars = clamp(Math.round(score / 20), 1, 5);
     }
   }
+
+  const fvToPrice =
+    a.fvBase != null && a.fvBase > 0 && a.price > 0 ? a.fvBase / a.price : null;
+  const destinationEligible =
+    !isCrypto &&
+    !isCash &&
+    score != null &&
+    score >= DESTINATION_MIN_SCORE &&
+    (a.fvComponentCount == null || a.fvComponentCount >= 2) &&
+    (fvToPrice == null || fvToPrice <= 3) &&
+    !a.defensive &&
+    gate == null;
 
   const components = [gk, fv, cons].filter((x) => x != null).length;
   return {
@@ -362,6 +551,16 @@ export function scoreAsset(
     locked: !!a.locked,
     defensive: !!a.defensive,
     confidence: isCrypto || isCash ? 'baja' : components >= 3 ? 'alta' : components === 2 ? 'media' : 'baja',
+    fvRaw: a.fvBase ?? null,
+    fvEffective,
+    fvConfidence: a.fvConfidence ?? null,
+    fvComponentCount: a.fvComponentCount ?? null,
+    fvToPrice,
+    destinationEligible,
+    thesisSignals,
+    earningsGate: gate,
+    cyclicalNormalized: !!a.cyclicalNormalized,
+    dilutionPct: a.dilutionPct ?? null,
   };
 }
 
@@ -491,8 +690,36 @@ export function optimizePortfolio(
   const stockAssets = scored.filter(
     (a) =>
       !a.isCrypto && !a.isCash && !a.locked && !excluded.has(a.ticker.toUpperCase()) &&
-      !manualBySymbol.has(a.symbol)
+      !manualBySymbol.has(a.symbol) &&
+      // Cinturón de balances: con examen dentro de la ventana no se
+      // propone ni venta ni compra; la decisión se difiere al balance.
+      !a.earningsGate
   );
+  // Exámenes próximos (incluye los activos con señales de deterioro: su
+  // eventual salida también se difiere a después del balance).
+  const pendingExams: PendingExam[] = scored
+    .filter((a) => !a.isCrypto && !a.isCash && a.earningsGate)
+    .map((a) => ({
+      symbol: a.symbol,
+      ticker: a.ticker,
+      name: a.name,
+      date: a.earningsGate!.date,
+      businessDays: a.earningsGate!.businessDays,
+      thesisSignals: a.thesisSignals,
+    }))
+    .sort((x, y) => x.businessDays - y.businessDays);
+  // Una sola señal de deterioro: vigilancia declarada, sin movimiento.
+  const watchAlerts: WatchAlert[] = scored
+    .filter(
+      (a) =>
+        !a.isCrypto && !a.isCash && !a.earningsGate && a.thesisSignals.length === 1
+    )
+    .map((a) => ({
+      symbol: a.symbol,
+      ticker: a.ticker,
+      name: a.name,
+      thesisSignals: a.thesisSignals,
+    }));
   const medianRE = median(
     stockAssets.map((a) => a.expectedReturnPct).filter((x): x is number => x != null)
   );
@@ -560,11 +787,50 @@ export function optimizePortfolio(
     });
   }
 
+  // ---------- Salidas por tesis deteriorada ----------
+  // Dos o más señales medibles combinadas ⇒ candidata a salida. No
+  // consumen el tope de extracción automática (no son un rebalanceo: son
+  // una decisión de tesis) y respetan candados, roles y el cinturón de
+  // balances (stockAssets ya excluye bloqueados, manuales y con examen
+  // próximo). Las defensivas solo salen parciales salvo deterioro grave
+  // (≥3 señales con EPS negativo entre ellas).
+  for (const a of stockAssets) {
+    const signals = a.thesisSignals;
+    if (signals.length < 2) continue;
+    const hard = signals.includes('eps-negativo');
+    let kind: 'total' | 'parcial';
+    if (a.defensive) {
+      kind = signals.length >= 3 && hard ? 'total' : 'parcial';
+    } else {
+      kind = signals.length >= 3 || hard ? 'total' : 'parcial';
+    }
+    const qtySold = kind === 'total' ? a.qty : a.qty * 0.5;
+    const gross = qtySold * a.price;
+    if (qtySold <= 0 || gross <= 0) continue;
+    if (kind === 'parcial' && gross < opts.minTradeUsd) continue;
+    soldQty.set(a.symbol, (soldQty.get(a.symbol) ?? 0) + qtySold);
+    extractions.push({
+      symbol: a.symbol,
+      ticker: a.ticker,
+      name: a.name,
+      kind,
+      qtySold: Math.round(qtySold * 1000) / 1000,
+      price: a.price,
+      grossUsd: gross,
+      netUsd: gross * (1 - opts.sellCommissionPct / 100),
+      reason:
+        'Tesis deteriorada: ' + signals.map((s) => THESIS_SIGNAL_TEXT[s]).join('; '),
+      reasonCode: 'tesis-deteriorada',
+      thesisSignals: signals,
+    });
+  }
+
   // Orden de prioridad: peor eficiencia retorno/riesgo primero (Euler) como desempate.
   const byRiskEfficiency = [...stockAssets].sort(
     (x, y) => (x.excessPerRisk ?? Infinity) - (y.excessPerRisk ?? Infinity)
   );
   for (const a of byRiskEfficiency) {
+    if ((soldQty.get(a.symbol) ?? 0) > 0) continue; // ya salió por tesis
     const input = inputs.find((i) => i.symbol === a.symbol)!;
     const sellVerdict =
       input.fvBase != null && input.fvBase > 0 && a.price > input.fvBase * 1.1;
@@ -612,45 +878,45 @@ export function optimizePortfolio(
         'Retorno esperado muy por debajo del resto de la cartera', 'bajo-retorno');
     }
   }
-
   // ---------- Sugerencias automáticas adicionales ----------
   // Candidatas a vender que NO dispararon las reglas duras, ordenadas por
   // menor eficiencia retorno/riesgo (Euler), defensivas al final: son la
   // "segunda o tercera opción" que la UI ofrece en «Obtener más fondos».
   // Las aceptadas por el usuario (acceptedSuggestions) se convierten en
   // extracción parcial del 50% y salen de la lista de candidatas.
-  const extractedSymbols = new Set(extractions.map((e) => e.symbol));
-  const sugPool = stockAssets
-    .filter((a) => !extractedSymbols.has(a.symbol) && a.value * 0.5 >= opts.minTradeUsd)
-    .sort((x, y) => {
-      const dx = x.defensive ? 1 : 0;
-      const dy = y.defensive ? 1 : 0;
-      if (dx !== dy) return dx - dy;
-      const ex = x.excessPerRisk ?? Infinity;
-      const ey = y.excessPerRisk ?? Infinity;
-      if (ex !== ey) return ex - ey;
-      const sx = x.score ?? 999;
-      const sy = y.score ?? 999;
-      if (sx !== sy) return sx - sy;
-      return (x.expectedReturnPct ?? Infinity) - (y.expectedReturnPct ?? Infinity);
+  const computeSuggestionCandidates = (extractedSyms: Set<string>): SuggestionCandidate[] => {
+    const pool = stockAssets
+      .filter((a) => !extractedSyms.has(a.symbol) && a.value * 0.5 >= opts.minTradeUsd)
+      .sort((x, y) => {
+        const dx = x.defensive ? 1 : 0;
+        const dy = y.defensive ? 1 : 0;
+        if (dx !== dy) return dx - dy;
+        const ex = x.excessPerRisk ?? Infinity;
+        const ey = y.excessPerRisk ?? Infinity;
+        if (ex !== ey) return ex - ey;
+        const sx = x.score ?? 999;
+        const sy = y.score ?? 999;
+        if (sx !== sy) return sx - sy;
+        return (x.expectedReturnPct ?? Infinity) - (y.expectedReturnPct ?? Infinity);
+      });
+    return pool.slice(0, 5).map((a) => {
+      const gross = a.value * 0.5;
+      return {
+        symbol: a.symbol, ticker: a.ticker, name: a.name,
+        qtySold: Math.round(a.qty * 0.5 * 1000) / 1000, price: a.price,
+        grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
+        reason:
+          `Sugerencia automática: la menor eficiencia retorno/riesgo entre las posiciones restantes ` +
+          `(score ${a.score != null ? a.score + '/100' : '—'} · retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual)` +
+          (a.defensive ? ' · ojo: cumple rol defensivo' : ''),
+        score: a.score, expectedReturnPct: a.expectedReturnPct,
+      };
     });
-  let suggestionCandidates: SuggestionCandidate[] = sugPool.slice(0, 5).map((a) => {
-    const gross = a.value * 0.5;
-    return {
-      symbol: a.symbol, ticker: a.ticker, name: a.name,
-      qtySold: Math.round(a.qty * 0.5 * 1000) / 1000, price: a.price,
-      grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
-      reason:
-        `Sugerencia automática: la menor eficiencia retorno/riesgo entre las posiciones restantes ` +
-        `(score ${a.score != null ? a.score + '/100' : '—'} · retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual)` +
-        (a.defensive ? ' · ojo: cumple rol defensivo' : ''),
-      score: a.score, expectedReturnPct: a.expectedReturnPct,
-    };
-  });
+  };
   const acceptedSug = new Set((options.acceptedSuggestions ?? []).map((t) => t.toUpperCase()));
   if (acceptedSug.size) {
-    const appliedSyms = new Set<string>();
-    for (const c of suggestionCandidates) {
+    const preCandidates = computeSuggestionCandidates(new Set(extractions.map((e) => e.symbol)));
+    for (const c of preCandidates) {
       if (!acceptedSug.has(c.ticker.toUpperCase())) continue;
       soldQty.set(c.symbol, (soldQty.get(c.symbol) ?? 0) + c.qtySold);
       extractions.push({
@@ -658,166 +924,251 @@ export function optimizePortfolio(
         qtySold: c.qtySold, price: c.price, grossUsd: c.grossUsd, netUsd: c.netUsd,
         reason: c.reason, reasonCode: 'sugerencia',
       });
-      appliedSyms.add(c.symbol);
-    }
-    if (appliedSyms.size) {
-      suggestionCandidates = suggestionCandidates.filter((c) => !appliedSyms.has(c.symbol));
     }
   }
 
-  const fundsToReallocate = extractions.reduce((s, e) => s + e.netUsd, 0);
-
-  // ---------- Reaplicación ----------
-  const allocations: Allocation[] = [];
-  if (fundsToReallocate >= opts.minTradeUsd) {
-    interface Cand { key: string; score: number; capUsd: number; make: (amount: number) => Allocation }
-    const cands: Cand[] = [];
-    // 1) Pares sectoriales de los reemplazos
-    const seenPeer = new Set<string>();
-    for (const e of extractions) {
-      if (!e.replacementTicker || seenPeer.has(e.replacementTicker)) continue;
-      seenPeer.add(e.replacementTicker);
-      const src = scored.find((a) => a.symbol === e.symbol)!;
-      const peer = (peersByIndustry[src.industry] ?? []).find((p) => p.ticker === e.replacementTicker)!;
-      cands.push({
-        key: 'peer:' + peer.symbol,
-        score: peer.score,
-        capUsd: (totalValue * opts.newPositionCapPct) / 100,
-        make: (amount) => ({
-          symbol: peer.symbol, ticker: peer.ticker, name: peer.name, isNew: true,
-          industry: peer.industry, amountUsd: amount,
-          qtyBought: peer.price > 0 ? amount / peer.price : 0, price: peer.price,
-          score: peer.score, expectedReturnPct: peer.expectedReturnPct,
-          note: `NUEVO · reemplaza a ${e.ticker} en ${peer.industry}`,
-        }),
-      });
+  // ---------- Liquidación: reaplicación con listón y caja deliberada ----------
+  // Los fondos se asignan SOLO a destinos que superan el listón
+  // (destinationEligible: score ajustado ≥ 65, FV de ≥2 componentes,
+  // FV/precio ≤ 3, no defensivos, sin examen próximo). Lo que no
+  // encuentra destino queda como efectivo explícito: forzar el
+  // redespliegue total era comportamiento de rebalanceador, no de
+  // profesional.
+  interface SettleOutcome {
+    allocations: Allocation[];
+    finalAssets: AssetScore[];
+    after: PortfolioMetrics;
+    cashHeldUsd: number;
+  }
+  const settle = (extractionList: Extraction[]): SettleOutcome => {
+    const funds = extractionList.reduce((s, e) => s + e.netUsd, 0);
+    const soldMap = new Map<string, number>();
+    for (const e of extractionList) {
+      if (e.kind === 'efectivo') continue;
+      soldMap.set(e.symbol, (soldMap.get(e.symbol) ?? 0) + e.qtySold);
     }
-    // 2) Posiciones propias con score alto (reforzar), sin pasar el tope de peso
-    for (const a of sorted) {
-      if (a.isCrypto || a.isCash || a.score == null || a.score < 70) continue;
-      if ((soldQty.get(a.symbol) ?? 0) >= a.qty) continue; // salió entera
-      const roomUsd = (totalValue * opts.maxWeightPct) / 100 - a.value;
-      if (roomUsd < opts.minTradeUsd) continue;
-      cands.push({
-        key: 'held:' + a.symbol,
-        score: a.score,
-        capUsd: roomUsd,
-        make: (amount) => ({
-          symbol: a.symbol, ticker: a.ticker, name: a.name, isNew: false,
-          industry: a.industry, amountUsd: amount,
-          qtyBought: a.price > 0 ? amount / a.price : 0, price: a.price,
-          score: a.score, expectedReturnPct: a.expectedReturnPct,
-          note: 'Posición reforzada',
-        }),
-      });
-    }
-    const top = cands.sort((x, y) => y.score - x.score).slice(0, 3);
-    if (top.length) {
-      const wSum = top.reduce((s, c) => s + c.score * c.score, 0);
-      let assigned = 0;
-      const made: Array<{ c: Cand; al: Allocation }> = [];
-      top.forEach((c, i) => {
-        let amount =
-          i === top.length - 1
-            ? fundsToReallocate - assigned
-            : Math.round((fundsToReallocate * (c.score * c.score)) / wSum);
-        amount = Math.min(amount, c.capUsd);
-        if (amount >= opts.minTradeUsd || (i === top.length - 1 && amount > 0)) {
-          assigned += amount;
-          const al = c.make(amount);
-          made.push({ c, al });
-          allocations.push(al);
-        }
-      });
-      // Redistribuir lo que los topes dejaron libre entre las mismas candidatas;
-      // lo que no entra queda como efectivo sin asignar en la cartera final.
-      let leftover = fundsToReallocate - allocations.reduce((s, x) => s + x.amountUsd, 0);
-      for (const { c, al } of made) {
-        if (leftover < opts.minTradeUsd) break;
-        const add = Math.min(leftover, c.capUsd - al.amountUsd);
-        if (add > 0) {
-          al.amountUsd += add;
-          al.qtyBought = al.price > 0 ? al.amountUsd / al.price : 0;
-          leftover -= add;
+    const allocations: Allocation[] = [];
+    if (funds >= opts.minTradeUsd) {
+      interface Cand { key: string; score: number; capUsd: number; make: (amount: number) => Allocation }
+      const cands: Cand[] = [];
+      // 1) Pares sectoriales de los reemplazos, con el mismo listón
+      const seenPeer = new Set<string>();
+      for (const e of extractionList) {
+        if (!e.replacementTicker || seenPeer.has(e.replacementTicker)) continue;
+        seenPeer.add(e.replacementTicker);
+        const src = scored.find((a) => a.symbol === e.symbol)!;
+        const peer = (peersByIndustry[src.industry] ?? []).find((p) => p.ticker === e.replacementTicker)!;
+        if (!peer) continue;
+        if (peer.score < DESTINATION_MIN_SCORE) continue;
+        if (peer.fvComponentCount != null && peer.fvComponentCount < 2) continue;
+        if (peer.fvToPrice != null && peer.fvToPrice > 3) continue;
+        cands.push({
+          key: 'peer:' + peer.symbol,
+          score: peer.score,
+          capUsd: (totalValue * opts.newPositionCapPct) / 100,
+          make: (amount) => ({
+            symbol: peer.symbol, ticker: peer.ticker, name: peer.name, isNew: true,
+            industry: peer.industry, amountUsd: amount,
+            qtyBought: peer.price > 0 ? amount / peer.price : 0, price: peer.price,
+            score: peer.score, expectedReturnPct: peer.expectedReturnPct,
+            note: `NUEVO · reemplaza a ${e.ticker} en ${peer.industry}`,
+          }),
+        });
+      }
+      // 2) Posiciones propias que superan el listón, sin pasar el tope de peso
+      for (const a of sorted) {
+        if (!a.destinationEligible) continue;
+        if ((soldMap.get(a.symbol) ?? 0) >= a.qty) continue; // salió entera
+        const roomUsd = (totalValue * opts.maxWeightPct) / 100 - a.value;
+        if (roomUsd < opts.minTradeUsd) continue;
+        cands.push({
+          key: 'held:' + a.symbol,
+          score: a.score!,
+          capUsd: roomUsd,
+          make: (amount) => ({
+            symbol: a.symbol, ticker: a.ticker, name: a.name, isNew: false,
+            industry: a.industry, amountUsd: amount,
+            qtyBought: a.price > 0 ? amount / a.price : 0, price: a.price,
+            score: a.score, expectedReturnPct: a.expectedReturnPct,
+            note: 'Posición reforzada',
+          }),
+        });
+      }
+      const top = cands.sort((x, y) => y.score - x.score).slice(0, 3);
+      if (top.length) {
+        const wSum = top.reduce((s, c) => s + c.score * c.score, 0);
+        let assigned = 0;
+        const made: Array<{ c: Cand; al: Allocation }> = [];
+        top.forEach((c, i) => {
+          let amount =
+            i === top.length - 1
+              ? funds - assigned
+              : Math.round((funds * (c.score * c.score)) / wSum);
+          amount = Math.min(amount, c.capUsd);
+          if (amount >= opts.minTradeUsd || (i === top.length - 1 && amount > 0)) {
+            assigned += amount;
+            const al = c.make(amount);
+            made.push({ c, al });
+            allocations.push(al);
+          }
+        });
+        // Redistribuir lo que los topes dejaron libre entre las mismas
+        // candidatas; lo que no entra queda como efectivo deliberado.
+        let leftover = funds - allocations.reduce((s, x) => s + x.amountUsd, 0);
+        for (const { c, al } of made) {
+          if (leftover < opts.minTradeUsd) break;
+          const add = Math.min(leftover, c.capUsd - al.amountUsd);
+          if (add > 0) {
+            al.amountUsd += add;
+            al.qtyBought = al.price > 0 ? al.amountUsd / al.price : 0;
+            leftover -= add;
+          }
         }
       }
     }
-  }
+    const allocatedUsd = allocations.reduce((s, x) => s + x.amountUsd, 0);
+    const cashHeldUsd = Math.max(0, funds - allocatedUsd);
 
-  // ---------- Cartera final ----------
-  const finalMap = new Map<string, AssetScore>();
-  for (const a of scored) {
-    const sold = soldQty.get(a.symbol) ?? 0;
-    const bought = allocations.filter((x) => x.symbol === a.symbol && !x.isNew)
-      .reduce((s, x) => s + x.qtyBought, 0);
-    const qty = a.qty - sold + bought;
-    if (qty <= 0.0005) continue;
-    const value = qty * a.price;
-    finalMap.set(a.symbol, { ...a, qty, value, weightPct: totalValue > 0 ? (value / totalValue) * 100 : 0 });
-  }
-  for (const al of allocations) {
-    if (!al.isNew) continue;
-    finalMap.set(al.symbol, {
-      symbol: al.symbol, ticker: al.ticker, name: al.name, sector: al.industry, industry: al.industry,
-      price: al.price, qty: al.qtyBought, value: al.amountUsd,
-      weightPct: totalValue > 0 ? (al.amountUsd / totalValue) * 100 : 0,
-      isCrypto: false, isCash: false, gkPct: null, fvConvergencePct: null, consensusPct: null,
-      expectedReturnPct: al.expectedReturnPct, gordonFloorPct: null, belowGordonFloor: false,
-      score: al.score, stars: al.score != null ? clamp(Math.round(al.score / 20), 1, 5) : null,
-      yearsToDouble: yearsToDoubleFor(al.expectedReturnPct),
-      volatilityPct: 30, mctrPct: null, riskContributionPct: null, excessPerRisk: null,
-      locked: false, defensive: false, confidence: 'media',
+    // Cartera final
+    const finalMap = new Map<string, AssetScore>();
+    for (const a of scored) {
+      const sold = soldMap.get(a.symbol) ?? 0;
+      const bought = allocations.filter((x) => x.symbol === a.symbol && !x.isNew)
+        .reduce((s, x) => s + x.qtyBought, 0);
+      const qty = a.qty - sold + bought;
+      if (qty <= 0.0005) continue;
+      const value = qty * a.price;
+      finalMap.set(a.symbol, { ...a, qty, value, weightPct: totalValue > 0 ? (value / totalValue) * 100 : 0 });
+    }
+    for (const al of allocations) {
+      if (!al.isNew) continue;
+      finalMap.set(al.symbol, {
+        symbol: al.symbol, ticker: al.ticker, name: al.name, sector: al.industry, industry: al.industry,
+        price: al.price, qty: al.qtyBought, value: al.amountUsd,
+        weightPct: totalValue > 0 ? (al.amountUsd / totalValue) * 100 : 0,
+        isCrypto: false, isCash: false, gkPct: null, fvConvergencePct: null, consensusPct: null,
+        expectedReturnPct: al.expectedReturnPct, gordonFloorPct: null, belowGordonFloor: false,
+        score: al.score, stars: al.score != null ? clamp(Math.round(al.score / 20), 1, 5) : null,
+        yearsToDouble: yearsToDoubleFor(al.expectedReturnPct),
+        volatilityPct: 30, mctrPct: null, riskContributionPct: null, excessPerRisk: null,
+        locked: false, defensive: false, confidence: 'media',
+        fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
+        fvToPrice: null, destinationEligible: false, thesisSignals: [],
+        earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+      });
+    }
+    const finalAssets = [...finalMap.values()].sort(
+      (x, y) => (y.expectedReturnPct ?? -Infinity) - (x.expectedReturnPct ?? -Infinity)
+    );
+    const finalTotal = finalAssets.reduce((s, a) => s + a.value, 0);
+    // El efectivo nuevo (extraCashUsd) suma al total final: no es una venta.
+    const totalAfter = totalValue + extraCashUsd;
+    const cashLeft = Math.max(0, totalAfter - finalTotal);
+    if (cashLeft > 1) {
+      finalAssets.push({
+        symbol: 'CASH:USD', ticker: 'USD', name: 'Efectivo sin asignar', sector: 'Efectivo',
+        industry: 'Efectivo', price: 1, qty: cashLeft, value: cashLeft,
+        weightPct: totalValue > 0 ? (cashLeft / totalValue) * 100 : 0,
+        isCrypto: false, isCash: true, gkPct: null, fvConvergencePct: null, consensusPct: null,
+        expectedReturnPct: 0, gordonFloorPct: null, belowGordonFloor: false, score: null, stars: null,
+        yearsToDouble: null, volatilityPct: 0, mctrPct: null, riskContributionPct: null,
+        excessPerRisk: null, locked: false, defensive: false, confidence: 'alta',
+        fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
+        fvToPrice: null, destinationEligible: false, thesisSignals: [],
+        earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+      });
+    }
+    finalAssets.forEach((a) => {
+      a.weightPct = totalAfter > 0 ? (a.value / totalAfter) * 100 : 0;
     });
+    const volAfter = applyRiskDecomposition(finalAssets, opts.riskFreePct);
+    const after = portfolioMetrics(finalAssets, volAfter);
+    return { allocations, finalAssets, after, cashHeldUsd };
+  };
+
+  let settled = settle(extractions);
+
+  // ---------- Umbral de materialidad ----------
+  // Una rotación por reglas que mejora el retorno menos de 0,25 pp (y no
+  // baja el riesgo de forma apreciable) es ruido, no una recomendación:
+  // se retira y la salida es «sin mejora» estructural. Las salidas por
+  // tesis, las manuales, las sugerencias aceptadas y los recortes por
+  // CONCENTRACIÓN son decisiones de otro tipo (tesis, del usuario o
+  // política de riesgo) y nunca se retiran por esta vía: el veredicto
+  // sigue diciendo con honestidad qué pasa con el retorno.
+  const RULE_REASON_CODES = new Set<Extraction['reasonCode']>([
+    'veredicto-vender', 'score-bajo', 'reemplazo-sectorial', 'bajo-retorno',
+  ]);
+  const improvementOf = (afterM: PortfolioMetrics) => {
+    const dRE = afterM.expectedReturnGeoPct - before.expectedReturnGeoPct;
+    const yearsFrac =
+      before.yearsToDouble != null && afterM.yearsToDouble != null && before.yearsToDouble > 0
+        ? (before.yearsToDouble - afterM.yearsToDouble) / before.yearsToDouble
+        : 0;
+    const dVol = afterM.volatilityPct - before.volatilityPct;
+    const material = dRE >= 0.25 || (yearsFrac >= 0.01 && dRE > 0) || (dVol <= -1 && dRE >= -0.1);
+    return { dRE, yearsFrac, dVol, material };
+  };
+  let improvement = improvementOf(settled.after);
+  if (extractions.some((e) => RULE_REASON_CODES.has(e.reasonCode)) && !improvement.material) {
+    for (let i = extractions.length - 1; i >= 0; i--) {
+      if (RULE_REASON_CODES.has(extractions[i].reasonCode)) extractions.splice(i, 1);
+    }
+    settled = settle(extractions);
+    improvement = improvementOf(settled.after);
   }
-  const finalAssets = [...finalMap.values()].sort(
-    (x, y) => (y.expectedReturnPct ?? -Infinity) - (x.expectedReturnPct ?? -Infinity)
+  const { allocations, finalAssets, after, cashHeldUsd } = settled;
+  const fundsToReallocate = extractions.reduce((s, e) => s + e.netUsd, 0);
+  const suggestionCandidates = computeSuggestionCandidates(
+    new Set(extractions.map((e) => e.symbol))
   );
-  // Recalcular pesos/riesgo con el total final (las ventas netas quedan como caja)
-  const finalTotal = finalAssets.reduce((s, a) => s + a.value, 0);
-  // El efectivo nuevo (extraCashUsd) suma al total final: no es una venta.
-  const totalAfter = totalValue + extraCashUsd;
-  const cashLeft = Math.max(0, totalAfter - finalTotal);
-  if (cashLeft > 1) {
-    finalAssets.push({
-      symbol: 'CASH:USD', ticker: 'USD', name: 'Efectivo sin asignar', sector: 'Efectivo',
-      industry: 'Efectivo', price: 1, qty: cashLeft, value: cashLeft,
-      weightPct: totalValue > 0 ? (cashLeft / totalValue) * 100 : 0,
-      isCrypto: false, isCash: true, gkPct: null, fvConvergencePct: null, consensusPct: null,
-      expectedReturnPct: 0, gordonFloorPct: null, belowGordonFloor: false, score: null, stars: null,
-      yearsToDouble: null, volatilityPct: 0, mctrPct: null, riskContributionPct: null,
-      excessPerRisk: null, locked: false, defensive: false, confidence: 'alta',
-    });
-  }
-  finalAssets.forEach((a) => {
-    a.weightPct = totalAfter > 0 ? (a.value / totalAfter) * 100 : 0;
-  });
-  const volAfter = applyRiskDecomposition(finalAssets, opts.riskFreePct);
-  const after = portfolioMetrics(finalAssets, volAfter);
+  const cashNote =
+    cashHeldUsd >= opts.minTradeUsd
+      ? 'Sin destino que supere el listón (score ajustado por confianza, valor justo de al menos dos métodos y sin examen de balance próximo): el resto queda en efectivo a la espera de mejores precios o de los exámenes.'
+      : null;
 
   // ---------- Veredicto riesgo/beneficio ----------
-  const benefitUp = after.expectedReturnGeoPct > before.expectedReturnGeoPct + 0.1;
   const riskSimilar = after.volatilityPct <= before.volatilityPct + opts.riskTolerancePp;
   let verdict: OptimizerResult['verdict'];
   let verdictText: string;
   const [reBv, reAv] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
   const [volBv, volAv] = fmtPairPct(before.volatilityPct, after.volatilityPct);
-  if (benefitUp && riskSimilar) {
-    verdict = 'valida';
-    verdictText = `Estrategia válida: riesgo similar (${volBv} → ${volAv}) y beneficio superior (${reBv} → ${reAv}). Vale la pena pensar en ejecutarla.`;
-  } else if (benefitUp) {
-    verdict = 'evaluar';
-    verdictText = `Beneficio superior (${reBv} → ${reAv}), pero con más riesgo (${volBv} → ${volAv}). A evaluar con cuidado.`;
-  } else {
+  const hasThesisMoves = extractions.some((e) => e.reasonCode === 'tesis-deteriorada');
+  const hasConcentrationMoves = extractions.some((e) => e.reasonCode === 'concentracion');
+  if (extractions.length === 0) {
     verdict = 'sin-mejora';
     verdictText = 'Con los datos de hoy, ninguna rotación mejora el beneficio sin subir el riesgo: la cartera queda como está.';
+  } else if (improvement.material && riskSimilar) {
+    verdict = 'valida';
+    verdictText = `Estrategia válida: riesgo similar (${volBv} → ${volAv}) y beneficio superior (${reBv} → ${reAv}). Vale la pena pensar en ejecutarla.`;
+  } else if (improvement.material) {
+    verdict = 'evaluar';
+    verdictText = `Beneficio superior (${reBv} → ${reAv}), pero con más riesgo (${volBv} → ${volAv}). A evaluar con cuidado.`;
+  } else if (hasThesisMoves) {
+    verdict = 'sin-mejora';
+    verdictText = `Las salidas propuestas no buscan mejorar el retorno de corto plazo (${reBv} → ${reAv}): responden a deterioro medible de tesis. Es una decisión de calidad de cartera, no de optimización.`;
+  } else if (hasConcentrationMoves) {
+    verdict = 'sin-mejora';
+    verdictText = `El recorte propuesto es una decisión de riesgo, no de retorno: baja la volatilidad (${volBv} → ${volAv}) a costa de algo de retorno estimado (${reBv} → ${reAv}). Es el precio de no depender tanto de una sola posición.`;
+  } else {
+    verdict = 'sin-mejora';
+    verdictText = 'Los movimientos propuestos son decisiones tuyas (manuales o sugerencias aceptadas); por retorno/riesgo, la cartera no mejora de forma material.';
   }
 
-  const narrative = buildNarrative(scored, before, after, extractions, allocations, verdictText);
+  const narrative = buildNarrative(scored, before, after, extractions, allocations, verdictText, {
+    pendingExams,
+    watchAlerts,
+    cashHeldUsd,
+  });
   return {
     assets: sorted,
     extractions,
     allocations,
     fundsToReallocate,
+    cashHeldUsd,
+    cashNote,
+    pendingExams,
+    watchAlerts,
     suggestionCandidates,
     before,
     after,
@@ -828,25 +1179,47 @@ export function optimizePortfolio(
   };
 }
 
-/** Evaluación escrita de la cartera (generada desde los números, tono asesor). */
+
+/**
+ * Evaluación escrita de la cartera: la nota de un profesional de
+ * portafolios, generada desde códigos de motivo estructurados. Cada
+ * afirmación está atada a un dato del motor: núcleo que se mantiene y
+ * por qué, salidas con su motivo en lenguaje llano, destinos con su
+ * motivo, caja deliberada si la hay y exámenes de balance que pueden
+ * cambiar el plan (con fechas).
+ */
 export function buildNarrative(
   assets: AssetScore[],
   before: PortfolioMetrics,
   after: PortfolioMetrics,
   extractions: Extraction[],
   allocations: Allocation[],
-  verdictText: string
+  verdictText: string,
+  extras?: {
+    pendingExams?: PendingExam[];
+    watchAlerts?: WatchAlert[];
+    cashHeldUsd?: number;
+  }
 ): string[] {
   const out: string[] = [];
+  const pendingExams = extras?.pendingExams ?? [];
+  const watchAlerts = extras?.watchAlerts ?? [];
+  const cashHeldUsd = extras?.cashHeldUsd ?? 0;
   const stocks = assets.filter((a) => !a.isCrypto && !a.isCash);
   const top = [...assets].sort((x, y) => y.weightPct - x.weightPct).slice(0, 3);
   const best = [...stocks].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
   const worst = [...stocks].sort((x, y) => (x.score ?? 100) - (y.score ?? 100))[0];
+  const extractedTickers = new Set(
+    extractions.filter((e) => e.kind !== 'efectivo').map((e) => e.ticker)
+  );
+  const coreTouched = top.some((a) => extractedTickers.has(a.ticker));
 
+  // 1) Situación y núcleo
   out.push(
-    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total. Tu mejor oportunidad según el score es ${best?.ticker} (${best?.score}/100) y la más débil, ${worst?.ticker} (${worst?.score}/100).`
+    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. Tu mejor oportunidad según el score (ya ajustado por la confianza de cada valuación) es ${best?.ticker} (${best?.score}/100) y la más débil, ${worst?.ticker} (${worst?.score}/100).`
   );
 
+  // 2) Concentración sectorial
   if (before.topSectorPct >= 45) {
     out.push(
       `El punto más delicado es la concentración: el sector ${before.topSector} pesa ${fmtPct1(before.topSectorPct)} de la cartera. No es un problema hoy si la tesis se mantiene, pero significa que un mal ciclo de ese sector define casi la mitad de tu resultado. La mejora no pasa por salir del sector, sino por rotar dentro de él hacia las empresas con mejor score.`
@@ -857,6 +1230,7 @@ export function buildNarrative(
     );
   }
 
+  // 3) Riesgo (Euler)
   const topRisk = [...assets]
     .filter((a) => a.riskContributionPct != null)
     .sort((x, y) => (y.riskContributionPct ?? 0) - (x.riskContributionPct ?? 0))
@@ -867,7 +1241,22 @@ export function buildNarrative(
     );
   }
 
-  if (extractions.length) {
+  // 4) Salidas, por tipo de motivo
+  const thesisExits = extractions.filter((e) => e.reasonCode === 'tesis-deteriorada');
+  const ruleExits = extractions.filter((e) =>
+    ['veredicto-vender', 'score-bajo', 'reemplazo-sectorial', 'concentracion', 'bajo-retorno'].includes(e.reasonCode)
+  );
+  const userExits = extractions.filter((e) => ['manual', 'sugerencia'].includes(e.reasonCode));
+  if (thesisExits.length) {
+    const parts = thesisExits.map(
+      (e) =>
+        `${e.ticker} (${e.kind === 'total' ? 'salida total' : 'salida parcial'}, ${fmtUsd(e.grossUsd)}): ${(e.thesisSignals ?? []).map((s) => THESIS_SIGNAL_TEXT[s]).join('; ')}`
+    );
+    out.push(
+      `Salidas por tesis deteriorada — no por precio, sino por fundamentos medibles: ${parts.join(' · ')}. Cuando dos o más señales de deterioro coinciden, la experiencia dice que el problema rara vez se arregla esperando: se sale y se reevalúa con la plata afuera.`
+    );
+  }
+  if (ruleExits.length) {
     const deltaRE = after.expectedReturnGeoPct - before.expectedReturnGeoPct;
     const [reB, reA] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
     const [yB, yA] = fmtPairYears(before.yearsToDouble, after.yearsToDouble);
@@ -876,17 +1265,66 @@ export function buildNarrative(
       yB === yA
         ? `el tiempo para duplicar se mantiene en ${yB} años`
         : `el tiempo para duplicar ${after.yearsToDouble! < before.yearsToDouble! ? 'baja' : 'sube'} de ${yB} a ${yA} años`;
-    const moves = `liberando ${fmtUsd(extractions.reduce((s, e) => s + e.netUsd, 0))} desde ${extractions.filter((e) => e.kind !== 'efectivo').map((e) => e.ticker).join(', ') || 'efectivo nuevo'} y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ') || 'las mejores posiciones'}, el retorno estimado ${deltaRE >= 0 ? 'pasa' : 'queda'} de ${reB} a ${reA} y ${yearsClause}, con un riesgo de ${vA} (antes ${vB})`;
-    if (deltaRE >= 0.15) {
+    const destTxt = allocations.length
+      ? `y reaplicándolo en ${allocations.map((a) => a.ticker).join(', ')}`
+      : 'y dejándolo en efectivo';
+    const moves = `liberando ${fmtUsd(ruleExits.reduce((s, e) => s + e.netUsd, 0))} desde ${ruleExits.map((e) => `${e.ticker} (${e.reason.toLowerCase()})`).join(', ')} ${destTxt}, el retorno estimado ${deltaRE >= 0 ? 'pasa' : 'queda'} de ${reB} a ${reA} y ${yearsClause}, con un riesgo de ${vA} (antes ${vB})`;
+    if (deltaRE >= 0.25) {
       out.push(`Las posibilidades de mejora están en la cola de la cartera: ${moves}.`);
     } else {
       out.push(
-        `La única rotación que disparan las reglas es marginal: ${moves}. Es un ajuste fino (concentración y prolijidad), no un cambio de panorama.`
+        `La rotación que disparan las reglas es marginal (un ajuste fino, no un cambio de panorama): ${moves}.`
       );
     }
-  } else {
+  }
+  if (userExits.length) {
     out.push(
-      'No aparecen rotaciones con fundamento suficiente: ninguna posición combina score bajo, sobreprecio contra su valor justo o un par sectorial claramente mejor. Mantener también es una decisión.'
+      `Además registraste movimientos propios (${userExits.filter((e) => e.kind !== 'efectivo').map((e) => e.ticker).join(', ') || 'efectivo nuevo'}): son decisiones tuyas y el motor solo verifica que no rompan el equilibrio riesgo/beneficio.`
+    );
+  }
+  if (!extractions.length) {
+    out.push(
+      'No aparecen rotaciones con fundamento suficiente: ninguna posición combina deterioro de tesis, score bajo con sobreprecio contra su valor justo o un par sectorial claramente mejor. Mantener también es una decisión.'
+    );
+  }
+
+  // 5) Destinos y caja deliberada
+  if (allocations.length) {
+    const parts = allocations.map(
+      (a) =>
+        `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, score ${a.score ?? '—'})`
+    );
+    out.push(
+      `El dinero liberado va a los destinos que superan el listón — score ajustado por confianza, valor justo sostenido por al menos dos métodos y sin balance en puerta: ${parts.join(' · ')}.`
+    );
+  }
+  if (cashHeldUsd >= 250) {
+    out.push(
+      `Quedan ${fmtUsd(cashHeldUsd)} en efectivo de forma deliberada: ningún destino adicional supera el listón hoy, y forzar el redespliegue comprando «lo menos malo» suele salir más caro que esperar. La caja se reevalúa con los próximos balances.`
+    );
+  }
+
+  // 6) Exámenes próximos y vigilancia
+  const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const fmtDate = (iso: string) => {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${Number(m[3])}-${MONTHS[Number(m[2]) - 1]}` : iso;
+  };
+  if (pendingExams.length) {
+    const parts = pendingExams.map(
+      (p) =>
+        `${p.ticker} (balance el ${fmtDate(p.date)}${p.thesisSignals.length ? '; con señales de deterioro en vigilancia' : ''})`
+    );
+    out.push(
+      `Decisiones diferidas a examen: ${parts.join(' · ')}. Con el balance a menos de una semana, comprar o vender antes es apostar al número en vez de analizarlo: esas posiciones se reevalúan con el resultado publicado.`
+    );
+  }
+  if (watchAlerts.length) {
+    const parts = watchAlerts.map(
+      (w) => `${w.ticker} (${w.thesisSignals.map((s) => THESIS_SIGNAL_TEXT[s]).join('; ')})`
+    );
+    out.push(
+      `En vigilancia, sin movimiento: ${parts.join(' · ')}. Una sola señal no alcanza para vender; si aparece una segunda, la posición pasa a candidata de salida.`
     );
   }
 

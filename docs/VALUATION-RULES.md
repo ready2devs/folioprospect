@@ -231,3 +231,35 @@ mostrarlas sin rediseño, así que no se agregaron a la UI en esta pasada.
   perfil no pasa por estas reglas y es anterior a este rediseño.
 - El target de analistas puede estar desactualizado en la fuente; no hay
   en esta pasada un control de antigüedad del target.
+
+## R8 — Adenda 2026-11-03 (Optimizador profesional): calidad, emergentes y jerarquía de fuente
+
+Cambios posteriores a la primera publicación de este reglamento, todos
+con la misma doctrina (reglas universales disparadas por datos medibles;
+nada por ticker):
+
+- **Ponderación por calidad medible del dato.** El promedio winsorizado
+  de componentes deja de ser igualitario cuando la calidad difiere: el
+  peso de cada componente es ∝ su calidad, acotado a [0,5×, 2×] el peso
+  igualitario y renormalizado. Calidad del DCF: serie EDGAR de 5 años =
+  1 · 3–4 años = 0,85 · TTM = 0,6 · TTM desde filings = 0,55 · base
+  emergente = 0,45. Calidad de múltiplos: EPS confirmado por ≥2
+  proveedores independientes = 1 · una fuente directa = 0,75 · solo
+  derivado = 0,55. Calidad del target: 2 fuentes = 1 · 1 fuente = 0,8.
+  Sin información de calidad, los pesos son los igualitarios históricos.
+  Justificación: promediar muchos (R1) no obliga a fingir que todos los
+  datos valen lo mismo; la ponderación está acotada para que ningún
+  componente mande por calidad como antes mandaba por error.
+- **Regla de emergente (amplía R5).** Si la mediana de FCF de 3–5 años
+  es ≤ 0 pero el FCF TTM es > 0 y el crecimiento de ingresos supera
+  +15%, el DCF se computa sobre la base TTM con flag `ttmBaseEmerging`
+  y confianza reducida, en vez de quedar null. La mediana histórica de
+  una empresa que ya genera caja describe su pasado, no su imposibilidad
+  de ser valuada por flujo. Si el TTM también es ≤ 0, o no hay
+  crecimiento que lo explique, rige la nulidad de R5.
+- **Jerarquía única de fuente para la serie de FCF.** EDGAR manda
+  siempre que tenga ≥3 años (o al menos tantos como Yahoo); Yahoo solo
+  entra si la serie auditada no alcanza. La regla anterior («gana la
+  serie más larga») alternaba de fuente entre capturas cuando Yahoo
+  variaba su cobertura, y el FV de algunos activos (MELI) oscilaba sin
+  que cambiara ningún fundamento.

@@ -382,3 +382,71 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
     expect(r.dcfValue).not.toBeNull();
   });
 });
+
+describe('DCF emergente y ponderación por calidad (Optimizador profesional §9–§10)', () => {
+  const baseInput = {
+    symbol: 'TEST',
+    currentPrice: 100,
+    sharesOutstanding: 10,
+    beta: 1.0,
+    totalCash: 0,
+    totalDebt: 0,
+  };
+
+  it('mediana ≤ 0 pero TTM > 0 e ingresos creciendo > 15%: DCF sobre base TTM con flag, no null', () => {
+    const r = computeFairValue({
+      ...baseInput,
+      freeCashflow: 100,
+      fcfHistory: [100, -50, -200],
+      revenueGrowth: 0.3,
+      targetMeanPrice: 120,
+    });
+    expect(r.dcfValue).not.toBeNull();
+    expect(r.fvFlags).toContain('ttmBaseEmerging');
+    expect(r.fvExcluded?.some((e) => e.reason === 'medianFcfNonPositive')).toBe(false);
+    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    expect(prov?.flags).toContain('ttmBaseEmerging');
+    // Y el activo queda valuado con MÁS de un componente (no singleComponent).
+    expect(r.fvFlags).not.toContain('singleComponent');
+  });
+
+  it('sin crecimiento que lo explique (≤ 15%), la mediana ≤ 0 sí anula el DCF', () => {
+    const r = computeFairValue({
+      ...baseInput,
+      freeCashflow: 100,
+      fcfHistory: [100, -50, -200],
+      revenueGrowth: 0.15,
+      targetMeanPrice: 120,
+    });
+    expect(r.dcfValue).toBeNull();
+  });
+
+  it('aggregateFairValue: la calidad mueve el promedio con ratio acotado y los pesos suman 1', () => {
+    const agg = aggregateFairValue(
+      [
+        { key: 'dcf', value: 100, quality: 1 },
+        { key: 'target', value: 200, quality: 0.3 },
+      ],
+      { currentPrice: 100 }
+    );
+    // Sin calidad sería 150 (promedio simple). Con calidad 1 vs 0,3 el
+    // peso del target se acota a ≥ 0,5× el igualitario (0,25) y el FV
+    // queda entre ambos extremos, más cerca del componente confiable.
+    expect(agg.fairValue!).toBeGreaterThan(100);
+    expect(agg.fairValue!).toBeLessThan(150);
+    expect(agg.weights.reduce((s, w) => s + w, 0)).toBeCloseTo(1, 6);
+    expect(Math.max(...agg.weights) / Math.min(...agg.weights)).toBeLessThanOrEqual(4.01);
+  });
+
+  it('sin datos de calidad, el promedio es el igualitario de siempre', () => {
+    const agg = aggregateFairValue(
+      [
+        { key: 'dcf', value: 100 },
+        { key: 'target', value: 200 },
+      ],
+      { currentPrice: 100 }
+    );
+    expect(agg.fairValue).toBeCloseTo(150);
+    expect(agg.weights).toEqual([0.5, 0.5]);
+  });
+});

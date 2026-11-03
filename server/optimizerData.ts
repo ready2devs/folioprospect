@@ -5,9 +5,11 @@
  * Nunca lanza: cada activo degrada a los componentes que sí se pudieron leer.
  */
 import {
+  aggregateFairValue,
   computeFairValue,
   optimizePortfolio,
   scoreAsset,
+  type FvComponentInput,
   type OptimizerAssetInput,
   type OptimizerResult,
   type ScoredPeer,
@@ -15,6 +17,7 @@ import {
 import { cleanTicker } from '../shared/engine/format.js';
 import { fetchAssetChart, fetchAssetExtras, fetchFundamentals } from './yahoo.js';
 import { fetchFinvizFundamentals } from './finviz.js';
+import { addDays, fetchNasdaqEarningsDay, todayInNewYork } from './earnings.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -42,6 +45,53 @@ function isCryptoSymbol(symbol: string, ticker: string): boolean {
   );
 }
 
+const medianOf = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/** Días hábiles (lun–vie) en el intervalo (from, to] entre fechas ISO. */
+function businessDaysBetween(fromIso: string, toIso: string): number {
+  let count = 0;
+  let d = fromIso;
+  while (d < toIso) {
+    d = addDays(d, 1);
+    const dow = new Date(d + 'T12:00:00Z').getUTCDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
+}
+
+/**
+ * Próximo balance por ticker escaneando el calendario Nasdaq de los
+ * próximos 14 días (una sola pasada para toda la cartera; el endpoint
+ * cachea por día). Alimenta el cinturón de balances del motor.
+ */
+async function upcomingEarningsMap(
+  tickers: string[]
+): Promise<Map<string, { date: string; businessDays: number }>> {
+  const want = new Set(tickers.map((t) => t.toUpperCase()));
+  const found = new Map<string, { date: string; businessDays: number }>();
+  const today = todayInNewYork();
+  for (let i = 0; i <= 14 && found.size < want.size; i++) {
+    const date = addDays(today, i);
+    let rows: Awaited<ReturnType<typeof fetchNasdaqEarningsDay>> = [];
+    try {
+      rows = await fetchNasdaqEarningsDay(date);
+    } catch {
+      continue;
+    }
+    for (const r of rows) {
+      const t = (r.symbol || '').toUpperCase();
+      if (want.has(t) && !found.has(t)) {
+        found.set(t, { date, businessDays: businessDaysBetween(today, date) });
+      }
+    }
+  }
+  return found;
+}
+
 /** Volatilidad anualizada % desde la serie 1Y (retornos mensuales). */
 async function volatilityFromChart(symbol: string): Promise<number | null> {
   try {
@@ -62,7 +112,10 @@ async function volatilityFromChart(symbol: string): Promise<number | null> {
   }
 }
 
-async function buildAssetInput(h: OptimizerHoldingLike): Promise<OptimizerAssetInput> {
+async function buildAssetInput(
+  h: OptimizerHoldingLike,
+  earnings?: { date: string; businessDays: number } | null
+): Promise<OptimizerAssetInput> {
   const ticker = cleanTicker(h.symbol).toUpperCase();
   const crypto = isCryptoSymbol(h.symbol, ticker);
   const isCash = ticker === 'USDT' || ticker === 'USD';
@@ -98,7 +151,86 @@ async function buildAssetInput(h: OptimizerHoldingLike): Promise<OptimizerAssetI
         : fv.fairValue != null
           ? [fv.fairValue]
           : [];
-    const components = scenarioBase.filter((x) => x > 0);
+    let components = scenarioBase.filter((x) => x > 0);
+
+    // ---- Capa profesional del Optimizador (docs/OPTIMIZER-PROFESSIONAL.md)
+    // Confianza y estructura del FV (shrinkage y listón de destino en el
+    // motor), EPS usado (señal de tesis), mediana de FCF, ΔS real (EDGAR).
+    const forwardEpsUsed =
+      fv.fvProvenance?.find((p) => p.component === 'multiples')?.usedValue ?? null;
+    const fcfHist = (fund.fcfHistory ?? []).filter(
+      (x): x is number => x != null && Number.isFinite(x)
+    );
+    const fcfMedianNonPositive =
+      fcfHist.length >= 3 ? medianOf(fcfHist) <= 0 : null;
+
+    // Normalización a mitad de ciclo (§6): si el yield forward implícito
+    // supera 20% o la serie anual de EPS es muy dispersa (rango > 1,5× su
+    // mediana con ≥4 años), el componente de múltiplos que alimenta el
+    // score se recalcula con el EPS mediano de la serie reportada y se
+    // reagrega con la MISMA función del motor de FV. Un pico de ciclo no
+    // se trata como permanente; un valle tampoco.
+    let fvBaseUsed = fv.fairValue;
+    let fvConfidenceUsed = fv.fvConfidence ?? null;
+    let fvComponentCountUsed: number | null =
+      fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0;
+    let cyclicalNormalized = false;
+    let midCycleEps: number | null = null;
+    const price = h.lastPrice;
+    const fwdYield =
+      forwardEpsUsed != null && forwardEpsUsed > 0 && price > 0
+        ? forwardEpsUsed / price
+        : null;
+    const epsHist = (fund.epsHistory ?? []).filter(
+      (x): x is number => x != null && Number.isFinite(x)
+    );
+    let epsDispersion: number | null = null;
+    if (epsHist.length >= 4) {
+      const med = medianOf(epsHist);
+      if (med !== 0) {
+        epsDispersion = (Math.max(...epsHist) - Math.min(...epsHist)) / Math.abs(med);
+      }
+    }
+    const cyclicalTrigger =
+      (fwdYield != null && fwdYield > 0.2) || (epsDispersion != null && epsDispersion > 1.5);
+    if (cyclicalTrigger && fv.multiplesValue != null && forwardEpsUsed != null && forwardEpsUsed > 0) {
+      const medAll = epsHist.length >= 3 ? medianOf(epsHist) : null;
+      const positives = epsHist.filter((x) => x > 0);
+      midCycleEps =
+        medAll != null && medAll > 0
+          ? medAll
+          : positives.length >= 3
+            ? medianOf(positives)
+            : null;
+      if (midCycleEps != null) {
+        const multiple = fv.multiplesValue / forwardEpsUsed;
+        // Calidad por componente alineada con fvComponents (mismo orden
+        // de construcción dcf → múltiplos → target que computeFairValue).
+        const keyOrder: Array<'dcf' | 'multiples' | 'target'> = [];
+        if (fv.dcfValue != null) keyOrder.push('dcf');
+        if (fv.multiplesValue != null) keyOrder.push('multiples');
+        if (fv.analystTarget != null) keyOrder.push('target');
+        const qualityOf = (k: string): number | undefined => {
+          const i = keyOrder.indexOf(k as 'dcf' | 'multiples' | 'target');
+          return i >= 0 ? fv.fvComponentWeights?.[i] : undefined;
+        };
+        const pool: FvComponentInput[] = [];
+        if (fv.dcfValue != null) pool.push({ key: 'dcf', value: fv.dcfValue, quality: qualityOf('dcf') });
+        pool.push({ key: 'multiples', value: midCycleEps * multiple, quality: qualityOf('multiples') });
+        if (fv.analystTarget != null) pool.push({ key: 'target', value: fv.analystTarget, quality: qualityOf('target') });
+        const agg = aggregateFairValue(pool, {
+          currentPrice: price,
+          flags: [...(fv.fvFlags ?? []), 'cyclicalNormalized'],
+        });
+        if (agg.fairValue != null) {
+          fvBaseUsed = agg.fairValue;
+          fvConfidenceUsed = agg.confidence;
+          fvComponentCountUsed = agg.components.length;
+          components = agg.components.map((c) => c.value);
+          cyclicalNormalized = true;
+        }
+      }
+    }
     // Crecimiento de ganancias totales (ancla GK): mediana entre crecimiento de
     // ventas (Finviz TTM) y crecimiento de ganancias/ingresos de Yahoo.
     const totalGrowth: number[] = [];
@@ -114,13 +246,25 @@ async function buildAssetInput(h: OptimizerHoldingLike): Promise<OptimizerAssetI
       epsNextYearPct: finviz?.epsNextYearPct ?? null,
       epsNext5YPct: extras.epsNext5YGrowthPct ?? finviz?.epsNext5YPct ?? null,
       salesGrowthPct: finviz?.salesYoyTtmPct ?? null,
-      dilutionPct: null, // sin fuente gratuita confiable de ΔS: componente en 0, declarado
+      // ΔS real desde EDGAR (variación interanual de acciones diluidas):
+      // antes era null «sin fuente confiable»; EDGAR sí la trae para los
+      // emisores que reportan el concepto (brecha declarada en el doc).
+      dilutionPct: fund.sharesGrowthYoYPct ?? null,
       forwardPe: extras.forwardPE ?? finviz?.forwardPe ?? null,
-      fvPesimista: components.length ? Math.min(...components) : fv.fairValue,
-      fvBase: fv.fairValue,
-      fvOptimista: components.length ? Math.max(...components) : fv.fairValue,
+      fvPesimista: components.length ? Math.min(...components) : fvBaseUsed,
+      fvBase: fvBaseUsed,
+      fvOptimista: components.length ? Math.max(...components) : fvBaseUsed,
       uncertainty: fv.uncertainty,
       analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
+      fvConfidence: fvConfidenceUsed,
+      fvComponentCount: fvComponentCountUsed,
+      forwardEpsUsed,
+      fcfMedianNonPositive,
+      revenueGrowthPct: fund.revenueGrowth != null ? fund.revenueGrowth * 100 : null,
+      nextEarningsDate: earnings?.date ?? null,
+      earningsBusinessDays: earnings?.businessDays ?? null,
+      cyclicalNormalized,
+      midCycleEps,
       volatilityPct: (() => {
         const realized = vol ?? (finviz?.volatilityMonthPct != null ? finviz.volatilityMonthPct * Math.sqrt(12) : null);
         const betaImplied = extras.beta != null ? Math.min(extras.beta * 22, 65) : finviz?.beta != null ? Math.min(finviz.beta * 22, 65) : null;
@@ -205,6 +349,8 @@ async function fetchIndustryPeers(
         forwardPe: extras?.forwardPE ?? finviz?.forwardPe ?? null,
         fvBase: fv.fairValue, fvPesimista: fv.fairValue, fvOptimista: fv.fairValue,
         uncertainty: fv.uncertainty,
+        fvConfidence: fv.fvConfidence ?? null,
+        fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0,
         analystTarget: extras?.targetMean ?? fv.analystTarget ?? null,
         beta: extras?.beta ?? finviz?.beta ?? null,
         roicPct: finviz?.roicPct ?? null,
@@ -222,6 +368,9 @@ async function fetchIndustryPeers(
           symbol, ticker: t, name: t, industry: industryName, price,
           score: scored.score, expectedReturnPct: scored.expectedReturnPct,
           volatilityPct: scored.volatilityPct,
+          fvConfidence: fv.fvConfidence ?? null,
+          fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : null,
+          fvToPrice: fv.fairValue != null && price > 0 ? fv.fairValue / price : null,
         });
       }
     }
@@ -244,12 +393,18 @@ export async function buildOptimizerResult(
   if (!force && c && Date.now() - c.at < CACHE_MS) {
     return { result: c.result, inputs: c.inputs, peersByIndustry: c.peersByIndustry, generatedAt: c.at, cached: true };
   }
+  const earningsMap = await upcomingEarningsMap(
+    holdings
+      .filter((h) => !isCryptoSymbol(h.symbol, cleanTicker(h.symbol).toUpperCase()))
+      .map((h) => cleanTicker(h.symbol).toUpperCase())
+  );
   const inputs: OptimizerAssetInput[] = [];
   const queue = [...holdings];
   const workers = Array.from({ length: 4 }, async () => {
     while (queue.length) {
       const h = queue.shift()!;
-      inputs.push(await buildAssetInput(h));
+      const ticker = cleanTicker(h.symbol).toUpperCase();
+      inputs.push(await buildAssetInput(h, earningsMap.get(ticker) ?? null));
     }
   });
   await Promise.all(workers);

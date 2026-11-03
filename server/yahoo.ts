@@ -1467,8 +1467,14 @@ export async function fetchFundamentals(
           try {
             const edSeries = await fetchEdgarSeries(ySym);
             const edFcf = edSeries?.fcfHistory ?? [];
-            // Gana la fuente con más años (la auditada de EDGAR en empate).
-            if (edFcf.length >= yahooFcfHistory.length && edFcf.length > 0) {
+            // Jerarquía ÚNICA y determinista (docs/OPTIMIZER-PROFESSIONAL.md
+            // §9): EDGAR manda siempre que tenga serie utilizable (≥3 años,
+            // lo mínimo para la mediana del DCF); Yahoo solo entra si la
+            // serie auditada no alcanza. La regla anterior («gana la más
+            // larga») alternaba de fuente entre capturas cuando Yahoo
+            // devolvía 4 años un día y 5 al siguiente, y el FV de activos
+            // como MELI oscilaba sin que cambiara ningún fundamento.
+            if (edFcf.length >= 3 || (edFcf.length > 0 && edFcf.length >= yahooFcfHistory.length)) {
               input.fcfHistory = edFcf;
               input.fcfHistorySource = 'edgar';
             } else if (yahooFcfHistory.length > 0) {
@@ -1478,6 +1484,11 @@ export async function fetchFundamentals(
               input.fcfHistory = null;
               input.fcfHistorySource = null;
             }
+            // ΔS real: variación interanual de acciones diluidas (EDGAR).
+            // Positivo = la empresa emite (diluye); negativo = recompra.
+            const sh = edSeries?.sharesHistory ?? [];
+            input.sharesGrowthYoYPct =
+              sh.length >= 2 && sh[1] > 0 ? (sh[0] / sh[1] - 1) * 100 : null;
             input.epsHistory =
               edSeries?.epsHistory && edSeries.epsHistory.length > 0
                 ? edSeries.epsHistory

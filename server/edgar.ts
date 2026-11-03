@@ -160,6 +160,60 @@ export interface EdgarSeries {
   fcfHistory: number[];
   /** EPS diluido anual (US-GAAP), más reciente primero, máx 5. */
   epsHistory: number[];
+  /** Acciones promedio ponderadas diluidas anuales, más reciente primero,
+   *  máx 5: la variación interanual ES la dilución/recompra real (ΔS). */
+  sharesHistory: number[];
+}
+
+const SHARES_CONCEPTS: Array<{ concept: string; taxonomies: string[] }> = [
+  { concept: 'WeightedAverageNumberOfSharesOutstandingDiluted', taxonomies: ['us-gaap'] },
+  { concept: 'WeightedAverageNumberOfSharesOutstandingBasic', taxonomies: ['us-gaap'] },
+  { concept: 'EntityCommonStockSharesOutstanding', taxonomies: ['dei'] },
+];
+
+/** Serie anual en unidades «shares» de un concepto (misma selección FY que
+ *  annualSeriesUsd: mandan los puntos de año fiscal; entre conceptos gana
+ *  la serie más fresca). Devuelve [] si el emisor no reporta el concepto
+ *  (frecuente en emisores extranjeros 20-F: brecha de cobertura declarada). */
+function annualSeriesShares(facts: any): AnnualPoint[] {
+  let best: AnnualPoint[] | null = null;
+  let bestScore: [number, string, number] | null = null;
+  for (const { concept, taxonomies } of SHARES_CONCEPTS) {
+    const fy = new Map<string, AnnualPoint>();
+    const dur = new Map<string, AnnualPoint>();
+    for (const tax of taxonomies) {
+      const units = facts?.[tax]?.[concept]?.units?.shares;
+      if (!Array.isArray(units)) continue;
+      for (const v of units as FactValue[]) {
+        if (typeof v.val !== 'number' || !(v.val > 0) || !v.end) continue;
+        let days: number | null = null;
+        if (v.start && v.end) {
+          days = (Date.parse(v.end) - Date.parse(v.start)) / 86400000;
+        }
+        const aboutYear = days != null && days >= 300 && days <= 380;
+        const instant = tax === 'dei'; // shares outstanding es foto instantánea
+        const map = v.fp === 'FY' && (days == null || aboutYear || instant) ? fy : aboutYear ? dur : null;
+        if (!map) continue;
+        const filed = v.filed || '';
+        const prev = map.get(v.end);
+        if (!prev || filed > prev.filed) map.set(v.end, { end: v.end, val: v.val, filed });
+      }
+    }
+    const chosen = fy.size > 0 ? fy : dur;
+    if (chosen.size === 0) continue;
+    const pts = [...chosen.values()].sort((a, b) => (a.end < b.end ? 1 : -1));
+    const score: [number, string, number] = [fy.size > 0 ? 1 : 0, pts[0].end, pts.length];
+    if (
+      !bestScore ||
+      score[0] > bestScore[0] ||
+      (score[0] === bestScore[0] &&
+        (score[1] > bestScore[1] || (score[1] === bestScore[1] && score[2] > bestScore[2])))
+    ) {
+      best = pts;
+      bestScore = score;
+    }
+  }
+  return best ?? [];
 }
 
 /** Parser puro (testeable): series anuales desde un companyfacts de EDGAR. */
@@ -182,8 +236,9 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
     ['us-gaap']
   );
   const epsHistory = epsPts.slice(0, 5).map((p) => p.val);
-  if (fcfHistory.length === 0 && epsHistory.length === 0) return null;
-  return { fcfHistory, epsHistory };
+  const sharesHistory = annualSeriesShares(facts).slice(0, 5).map((p) => p.val);
+  if (fcfHistory.length === 0 && epsHistory.length === 0 && sharesHistory.length === 0) return null;
+  return { fcfHistory, epsHistory, sharesHistory };
 }
 
 /** Último valor anual (período ≥300 días) en USD de un concepto, entre taxonomías. */

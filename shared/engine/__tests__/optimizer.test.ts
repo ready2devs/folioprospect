@@ -5,10 +5,18 @@ import {
   consensusPct,
   yearsToDoubleFor,
   optimizePortfolio,
+  scoreAsset,
+  shrunkFairValue,
+  thesisSignalsFor,
   fmtPairPct,
   fmtPairYears,
   type OptimizerAssetInput,
 } from '../optimizer.js';
+
+const SCORE_OPTS = {
+  sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
+  maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
+} as const;
 
 const base = (p: Partial<OptimizerAssetInput>): OptimizerAssetInput => ({
   symbol: 'NASDAQ:XXX',
@@ -268,5 +276,207 @@ describe('obtener más fondos: manual, efectivo y sugerencias', () => {
     expect(sug?.kind).toBe('parcial');
     expect(sug?.grossUsd).toBeCloseTo(2000, 5); // 50% de la posición
     expect(r1.suggestionCandidates.map((c) => c.ticker)).not.toContain('MID');
+  });
+});
+
+describe('shrinkage por confianza (Optimizador profesional §1)', () => {
+  it('encoge la brecha FV−precio según la confianza; sin etiqueta asume Media', () => {
+    expect(shrunkFairValue(100, 200, 'Alta')).toBe(200);
+    expect(shrunkFairValue(100, 200, 'Media')).toBeCloseTo(170);
+    expect(shrunkFairValue(100, 200, 'Baja')).toBeCloseTo(140);
+    expect(shrunkFairValue(100, 200, null)).toBeCloseTo(170);
+    expect(shrunkFairValue(100, null, 'Alta')).toBeNull();
+  });
+
+  it('una valuación Baja produce menos convergencia, menos RE y menos score que la misma valuación Alta', () => {
+    const mk = (fvConfidence: 'Alta' | 'Baja') =>
+      base({
+        price: 100, qty: 10, value: 1000, fvBase: 200, fvConfidence,
+        fvComponentCount: 3, earningsGrowthTotalPct: 10, analystTarget: 150,
+        volatilityPct: 30, roicPct: 15,
+      });
+    const alta = scoreAsset(mk('Alta'), 1000, SCORE_OPTS);
+    const baja = scoreAsset(mk('Baja'), 1000, SCORE_OPTS);
+    expect(alta.fvEffective).toBe(200);
+    expect(baja.fvEffective).toBeCloseTo(140);
+    expect(baja.fvConvergencePct!).toBeLessThan(alta.fvConvergencePct!);
+    expect(baja.expectedReturnPct!).toBeLessThan(alta.expectedReturnPct!);
+    expect(baja.score!).toBeLessThan(alta.score!);
+  });
+
+  it('FV/precio > 3: sigue valuado y rankeado, pero NO es destino de fondos', () => {
+    const a = scoreAsset(
+      base({
+        price: 100, qty: 10, value: 1000, fvBase: 520, fvConfidence: 'Baja',
+        fvComponentCount: 3, earningsGrowthTotalPct: 12, analystTarget: 200,
+        volatilityPct: 30, roicPct: 15,
+      }),
+      1000, SCORE_OPTS
+    );
+    expect(a.fvRaw).toBe(520);
+    expect(a.destinationEligible).toBe(false);
+  });
+
+  it('un FV de un solo componente tampoco es destino, aunque el score alcance', () => {
+    const a = scoreAsset(
+      base({
+        price: 100, qty: 10, value: 1000, fvBase: 160, fvConfidence: 'Media',
+        fvComponentCount: 1, earningsGrowthTotalPct: 12, analystTarget: 150,
+        volatilityPct: 25, roicPct: 20,
+      }),
+      1000, SCORE_OPTS
+    );
+    expect(a.destinationEligible).toBe(false);
+  });
+});
+
+describe('tesis deteriorada (§3)', () => {
+  it('thesisSignalsFor combina solo campos medibles', () => {
+    expect(thesisSignalsFor(base({ forwardEpsUsed: -1 }))).toContain('eps-negativo');
+    expect(thesisSignalsFor(base({ dilutionPct: 18 }))).toContain('dilucion-fuerte');
+    expect(thesisSignalsFor(base({ dilutionPct: 9 }))).not.toContain('dilucion-fuerte');
+    expect(
+      thesisSignalsFor(base({ fcfMedianNonPositive: true, revenueGrowthPct: 4 }))
+    ).toContain('fcf-negativo-sin-crecimiento');
+    // Con crecimiento fuerte de ingresos, FCF mediano ≤ 0 no es señal:
+    // es el perfil de una emergente, no de una tesis rota.
+    expect(
+      thesisSignalsFor(base({ fcfMedianNonPositive: true, revenueGrowthPct: 60 }))
+    ).not.toContain('fcf-negativo-sin-crecimiento');
+    expect(
+      thesisSignalsFor(base({ fvComponentCount: 1, fvConfidence: 'Baja' }))
+    ).toContain('fv-un-solo-componente');
+  });
+
+  const withSick = (extra: Partial<OptimizerAssetInput>): OptimizerAssetInput[] => [
+    base({
+      symbol: 'NASDAQ:CORE', ticker: 'CORE', name: 'Core Co', price: 100, qty: 100, value: 10000,
+      earningsGrowthTotalPct: 12, fvBase: 130, fvConfidence: 'Alta', fvComponentCount: 3,
+      analystTarget: 125, volatilityPct: 25, roicPct: 20,
+    }),
+    base({
+      symbol: 'NASDAQ:SICK', ticker: 'SICK', name: 'Sick Co', price: 50, qty: 120, value: 6000,
+      earningsGrowthTotalPct: 2, fvBase: 60, fvConfidence: 'Media', fvComponentCount: 3,
+      analystTarget: 55, volatilityPct: 40, roicPct: 5,
+      ...extra,
+    }),
+  ];
+
+  it('dos señales con EPS negativo: salida total por tesis, fuera del tope de extracción', () => {
+    const r = optimizePortfolio(withSick({ forwardEpsUsed: -2, dilutionPct: 16 }), {
+      maxWeightPct: 90,
+    });
+    const sick = r.extractions.find((e) => e.ticker === 'SICK');
+    expect(sick?.reasonCode).toBe('tesis-deteriorada');
+    expect(sick?.kind).toBe('total');
+    // 6.000 sobre un total de 16.000 = 37,5% > tope automático del 15%:
+    // la salida por tesis no se acota con el tope de rebalanceo.
+    expect(sick!.grossUsd).toBeCloseTo(6000, 5);
+    expect(sick!.thesisSignals).toEqual(expect.arrayContaining(['eps-negativo', 'dilucion-fuerte']));
+  });
+
+  it('defensiva con dos señales sale parcial; con tres y EPS negativo, total', () => {
+    const parcial = optimizePortfolio(
+      withSick({ forwardEpsUsed: -2, dilutionPct: 16, defensive: true }),
+      { maxWeightPct: 90 }
+    );
+    expect(parcial.extractions.find((e) => e.ticker === 'SICK')?.kind).toBe('parcial');
+    const total = optimizePortfolio(
+      withSick({
+        forwardEpsUsed: -2, dilutionPct: 16, epsNextYearPct: -20, defensive: true,
+      }),
+      { maxWeightPct: 90 }
+    );
+    expect(total.extractions.find((e) => e.ticker === 'SICK')?.kind).toBe('total');
+  });
+
+  it('una sola señal: no se vende, queda en vigilancia', () => {
+    // Activo fuerte en todo menos en UNA señal (EPS forward ≤ 0): las
+    // reglas de siempre no lo tocan y la tesis exige dos señales.
+    const p = [
+      base({
+        symbol: 'NASDAQ:CORE', ticker: 'CORE', name: 'Core Co', price: 100, qty: 100, value: 10000,
+        earningsGrowthTotalPct: 12, fvBase: 130, fvConfidence: 'Alta', fvComponentCount: 3,
+        analystTarget: 125, volatilityPct: 25, roicPct: 20,
+      }),
+      base({
+        symbol: 'NASDAQ:WATCH', ticker: 'WATCH', name: 'Watch Co', price: 50, qty: 40, value: 2000,
+        earningsGrowthTotalPct: 14, fvBase: 90, fvConfidence: 'Media', fvComponentCount: 3,
+        analystTarget: 80, volatilityPct: 28, roicPct: 20,
+        forwardEpsUsed: -1,
+      }),
+    ];
+    const r = optimizePortfolio(p, { maxWeightPct: 90 });
+    expect(r.extractions.find((e) => e.ticker === 'WATCH')).toBeUndefined();
+    expect(r.watchAlerts.map((w) => w.ticker)).toContain('WATCH');
+    expect(r.watchAlerts.find((w) => w.ticker === 'WATCH')?.thesisSignals).toEqual(['eps-negativo']);
+  });
+});
+
+describe('cinturón de balances (§5)', () => {
+  it('con balance a ≤5 días hábiles no se propone venta ni siquiera por tesis, y queda como examen pendiente', () => {
+    const p = [
+      base({
+        symbol: 'NASDAQ:CORE', ticker: 'CORE', name: 'Core Co', price: 100, qty: 100, value: 10000,
+        earningsGrowthTotalPct: 12, fvBase: 130, fvConfidence: 'Alta', fvComponentCount: 3,
+        analystTarget: 125, volatilityPct: 25, roicPct: 20,
+      }),
+      base({
+        symbol: 'NASDAQ:EXAM', ticker: 'EXAM', name: 'Exam Co', price: 50, qty: 40, value: 2000,
+        earningsGrowthTotalPct: 2, fvBase: 60, analystTarget: 55, volatilityPct: 40,
+        forwardEpsUsed: -2, dilutionPct: 16,
+        nextEarningsDate: '2026-11-05', earningsBusinessDays: 2,
+      }),
+    ];
+    const r = optimizePortfolio(p, { maxWeightPct: 90 });
+    expect(r.extractions.find((e) => e.ticker === 'EXAM')).toBeUndefined();
+    const exam = r.pendingExams.find((x) => x.ticker === 'EXAM');
+    expect(exam?.date).toBe('2026-11-05');
+    expect(exam?.thesisSignals).toContain('eps-negativo');
+    // Y tampoco es destino de fondos mientras dura la ventana.
+    const scoredExam = r.assets.find((a) => a.ticker === 'EXAM');
+    expect(scoredExam?.destinationEligible).toBe(false);
+  });
+});
+
+describe('materialidad y caja deliberada (§2 y §4)', () => {
+  it('una rotación por reglas con mejora < 0,25 pp se retira: salida «sin mejora» estructural', () => {
+    const p = [
+      base({
+        symbol: 'NASDAQ:CORE', ticker: 'CORE', name: 'Core Co', price: 100, qty: 190, value: 19000,
+        earningsGrowthTotalPct: 12, fvBase: 135, fvConfidence: 'Alta', fvComponentCount: 3,
+        analystTarget: 128, volatilityPct: 24, roicPct: 22, opportunityScore: 85,
+      }),
+      base({
+        symbol: 'NASDAQ:TINY', ticker: 'TINY', name: 'Tiny Bad Co', price: 100, qty: 4, value: 400,
+        earningsGrowthTotalPct: 0, fvBase: 50, fvConfidence: 'Media', fvComponentCount: 3,
+        analystTarget: 60, volatilityPct: 45, roicPct: 1, opportunityScore: 20,
+      }),
+    ];
+    const r = optimizePortfolio(p, { maxWeightPct: 90 });
+    expect(r.extractions.find((e) => e.ticker === 'TINY')).toBeUndefined();
+    expect(r.verdict).toBe('sin-mejora');
+  });
+
+  it('sin destino que supere el listón, los fondos de una salida por tesis quedan en efectivo', () => {
+    const p = [
+      base({
+        symbol: 'NASDAQ:WEAK', ticker: 'WEAK', name: 'Weak Co', price: 100, qty: 50, value: 5000,
+        earningsGrowthTotalPct: 3, fvBase: 110, fvConfidence: 'Media', fvComponentCount: 3,
+        analystTarget: 105, volatilityPct: 35, roicPct: 4, opportunityScore: 40,
+      }),
+      base({
+        symbol: 'NASDAQ:SICK', ticker: 'SICK', name: 'Sick Co', price: 50, qty: 60, value: 3000,
+        earningsGrowthTotalPct: 1, fvBase: 55, analystTarget: 52, volatilityPct: 40,
+        forwardEpsUsed: -1, dilutionPct: 20,
+      }),
+    ];
+    const r = optimizePortfolio(p, { maxWeightPct: 90 });
+    expect(r.extractions.find((e) => e.ticker === 'SICK')?.reasonCode).toBe('tesis-deteriorada');
+    expect(r.allocations.length).toBe(0);
+    expect(r.cashHeldUsd).toBeGreaterThan(2500);
+    expect(r.cashNote).toBeTruthy();
+    expect(r.finalAssets.find((a) => a.isCash && a.symbol === 'CASH:USD')).toBeTruthy();
+    expect(r.narrative.join(' ')).toContain('efectivo de forma deliberada');
   });
 });

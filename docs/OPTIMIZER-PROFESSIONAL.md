@@ -1,0 +1,170 @@
+# Optimizador profesional — cómo propone ahora la sección Optimizador
+
+**Fecha:** 2026-11-03 · **Respaldo previo:** `respaldo-pre-optimizador-profesional-2026-11-03` (→ 5010f79e)
+**Relación con otros docs:** la valuación sigue gobernada por
+`docs/VALUATION-RULES.md` (R0–R8); este documento gobierna cómo el
+Optimizador *consume* esas valuaciones y cómo decide movimientos.
+Supersede las partes de `docs/SPEC-004-optimizer.md` que describen la
+fórmula del score, las reglas de salida y la reaplicación.
+
+## Principio rector
+
+La propuesta debe parecerse al análisis de un profesional de portafolios
+con años de experiencia: mantiene el núcleo salvo motivo, sale por tesis
+y no por ruido, difiere lo que tiene balance en puerta, compra solo lo
+que supera un listón explícito y deja caja sin culpa cuando nada lo
+supera. **Todo ese juicio está codificado como reglas generales sobre
+campos medibles** — ninguna línea del motor conoce un ticker. Los
+juicios puntuales del análisis humano que no se pudieron codificar sin
+hardcodear están listados al final, con su brecha y su proxy.
+
+## Las reglas
+
+### §1 — Shrinkage por confianza (score y retorno esperado)
+El FV que alimenta la convergencia (35% del retorno esperado) y la
+oportunidad del score se **encoge hacia el precio** según `fvConfidence`
+del motor de valuación: Alta ×1,0 · Media ×0,7 · Baja ×0,4 de la brecha
+FV−precio (`shrunkFairValue`). Sin etiqueta se asume Media.
+*Juicio del que deriva:* la captura del 2026-11-03 02:26 mostraba a VIST
+liderando el ranking (score 86) y recibiendo fondos, con un FV de
+US$346 de confianza Baja y rango 97–724 (FV/precio 5,2×): la confianza
+existía como etiqueta pero no «mordía» en ningún número.
+*Consecuencia adicional:* un activo con FV/precio > 3 queda **inelegible
+como destino** (presunción de error de modelo) aunque sigue valuado,
+rankeado y puede mantenerse o venderse por las reglas de siempre.
+
+### §2 — Umbral de materialidad
+Si las rotaciones **por reglas** (veredicto-vender, score-bajo,
+reemplazo sectorial, bajo-retorno) mejoran el retorno geométrico menos
+de **0,25 pp**, y no reducen la volatilidad ≥ 1 pp con retorno casi
+intacto, se retiran y la salida es «sin mejora» estructural. *Deriva
+de:* la misma captura — la propuesta «optimizaba» de 14,45% a 14,52%
+(+0,07 pp) sin declararse sin mejora. Las salidas por tesis (§3), las
+manuales, las sugerencias aceptadas y los recortes por concentración
+(política de riesgo del usuario, no apuesta de retorno) nunca se
+retiran por esta vía; el veredicto sigue informando el Δ retorno real.
+
+### §3 — Salidas por tesis deteriorada
+Señales medibles (ninguna mira el ticker; `thesisSignalsFor`):
+`eps-negativo` (EPS forward usado por el FV ≤ 0) · `ganancias-en-caida`
+(consenso espera EPS del próximo año ≤ −5%) · `dilucion-fuerte` (ΔS >
++10% anual, serie de acciones diluidas de EDGAR) · `fcf-negativo-sin-crecimiento`
+(mediana de FCF 3–5 años ≤ 0 con ingresos creciendo < 10%) ·
+`fv-un-solo-componente` (FV de 1 componente con confianza Baja).
+**≥2 señales combinadas ⇒ candidata a salida**: total si ≥3 señales o
+si está `eps-negativo`; parcial (50%) si son 2 sin la dura. Defensivas:
+parcial salvo deterioro grave (≥3 con EPS negativo → total). Las
+salidas por tesis **no consumen el tope de extracción automática del
+15%** (no son rebalanceo) y respetan candados, exclusiones del usuario
+y el cinturón de balances (§5). Una sola señal ⇒ **vigilancia**
+(`watchAlerts`), sin movimiento. Cada salida lleva sus códigos de
+motivo legibles en la tarjeta y en la evaluación escrita.
+*Juicios que codifica:* NBIS «reducir por prima y dilución del 15–22%
+anual» → `dilucion-fuerte` + `eps-negativo`; TMDX/HSAI «mantener
+condicionado» → una señal sola no vende; «salir si la tesis se rompe»
+como categoría que el motor viejo no tenía (solo sabía recortar por
+concentración y swaps de a pares).
+
+### §4 — La caja como destino legítimo
+Los fondos liberados se asignan solo a destinos que superan **el
+listón**: score ajustado ≥ 65, FV de ≥2 componentes (o desconocido en
+inputs legados), FV/precio ≤ 3, no defensivo, sin examen próximo, con
+cupo de peso disponible. Lo que no encuentra destino queda como
+`cashHeldUsd` explícito con su motivo, y la cartera final lo muestra
+como «Efectivo sin asignar». *Deriva de:* el motor anterior obligaba a
+redesplegar todo (24 → 24 posiciones) aunque el destino fuera «lo menos
+malo».
+
+### §5 — Cinturón de balances (event gating)
+Si el próximo balance de un activo está a **≤ 5 días hábiles**, no se
+propone ni su compra ni su venta: aparece en `pendingExams` con su
+fecha (y sus señales de deterioro, si las tiene: la salida también se
+difiere). La capa de datos escanea el calendario Nasdaq de los próximos
+14 días en una sola pasada. *Codifica:* el sistema de exámenes del
+usuario (nada se rota en caliente antes de su balance: MELI 4-nov,
+TMDX 5-nov, ONTO 9-nov, HSAI 10-nov quedan diferidos en la semana del
+3-nov; NBIS, 12-nov, queda fuera de la ventana por 2 días hábiles).
+
+### §6 — EPS de mitad de ciclo para cíclicas medibles
+Disparadores objetivos (capa de datos, sobre campos del motor de FV):
+yield forward implícito (EPS usado ÷ precio) > 20%, o dispersión de la
+serie anual de EPS reportado (máx−mín)/|mediana| > 1,5 con ≥4 años. Si
+dispara, el componente de múltiplos que ve el Optimizador se recalcula
+con el **EPS mediano de la serie** (o de sus años positivos) y se
+reagrega con la misma `aggregateFairValue` y las mismas calidades,
+con flag `cyclicalNormalized`. *Deriva de:* MU rankeaba con EPS forward
+de pico de ciclo (209, yield implícito 25%) tratado como permanente
+mientras su DCF usaba la mediana histórica (el valle): dos extremos
+promediados no dan el centro. El FV de la ficha no cambia; cambia el FV
+que el Optimizador usa para puntuar (y queda trazado en el input).
+
+### §7 — Score sin doble conteo
+Nueva fórmula: **30% velocidad, 25% oportunidad (contra el FV
+encogido), 20% calidad, 15% confianza de la valuación (Alta 90 / Media
+65 / Baja 35 / sin dato 55), 10% riesgo**. Antes la velocidad pesaba
+50%: el score era el retorno esperado con otro nombre y apenas agregaba
+información. El orden de la columna 1 sigue siendo por tiempo a
+duplicar (preferencia del usuario); el score mostrado es el nuevo.
+
+### §8 — Coherencia de roles
+Los activos con rol defensivo **nunca son destino** de fondos de
+optimización (son lastre, no vehículo de retorno): solo pueden ser
+fuente en los términos vigentes (parcial extrema por reglas, o salida
+por deterioro grave de §3). *Deriva de:* VIST figuraba como «rol
+defensivo» y a la vez recibía los fondos de la venta de GOOG.
+
+### §9 — Fiabilidad por componente y jerarquía de fuente
+Ver `docs/VALUATION-RULES.md` R8: ponderación del FV por calidad
+medible con ratio acotado, y jerarquía única EDGAR-primero para la
+serie histórica de FCF (termina la alternancia Yahoo/EDGAR que volvía
+inestable el FV de MELI entre capturas).
+
+### §10 — DCF emergente
+Ver R8: mediana de FCF ≤ 0 con TTM > 0 e ingresos creciendo > 15% ⇒
+DCF sobre base TTM (`ttmBaseEmerging`, calidad 0,45), no null. *Caso
+que lo motivó:* NBIS quedaba valuada por un solo componente (el target)
+pese a tener flujo TTM positivo de ~US$4,1 mil M.
+
+### §11 — Evaluación escrita profesional
+`buildNarrative` se genera desde los códigos de motivo con estructura
+fija: (1) situación y núcleo — si las tres mayores posiciones no tienen
+motivo de salida, lo dice («el núcleo se mantiene intacto»); (2)
+concentración sectorial; (3) riesgo por Euler; (4) salidas agrupadas
+por tipo (tesis con sus motivos en lenguaje llano / reglas / propias
+del usuario); (5) destinos con su motivo y caja deliberada con monto y
+motivo; (6) exámenes próximos con fechas y vigilancias abiertas; (7)
+veredicto y disclaimer. Ninguna afirmación se escribe sin un dato del
+motor detrás.
+
+## Juicios documentados NO codificables (brechas honestas)
+
+| Juicio | Por qué no se codificó | Proxy más cercano en el motor |
+|---|---|---|
+| Vender ONTO completo → SIMO (paso 1 ya aprobado por el usuario) | Es una decisión discrecional ya tomada por el usuario, entre industrias distintas; el motor no tiene regla general de «swap cross-industry por convicción» que no sea un override con nombre propio. Además ONTO cae dentro del cinturón (§5) hasta su balance del 9-nov. | SIMO compite como destino por el listón (§4) cuando haya fondos liberados por reglas/tesis; ONTO queda diferido a examen (§5), que es lo que un profesional haría sin la orden expresa del usuario. |
+| ETH completo → BTC (consolidación cripto) | El motor trata la cripto fuera del score y sin ventas automáticas por diseño (SPEC-004); «consolidar duplicados del mismo factor» exigiría una noción de equivalencia entre activos cripto que ningún campo actual expresa. | Ninguno: queda como decisión manual del usuario (la UI de «Obtener más fondos» la permite). |
+| MELI sale si el balance del 4-nov no recupera margen | El examen es posterior al balance y depende del margen reportado ese día: es exactamente el cinturón de §5 (diferir), no una regla previa posible sin inventar el resultado. | `pendingExams` con fecha; post-balance, si el margen/EPS deteriora los campos, §3 puede disparar en la próxima corrida. |
+| Techo del bloque memoria MU+SIMO (~14%) y SIMO hasta ~3–3,5% | Son parámetros de ESTA cartera y de un par de tickers concreto; un «bloque» no es un campo general del motor (las industrias Finviz de MU y SIMO ni siquiera coinciden). | Tope por posición (12%) + concentración sectorial en la narrativa. Un techo por grupo correlacionado sería el desarrollo general correcto (la matriz de correlaciones por bloques ya existe para riesgo). |
+| Prima de valuación de NBIS «cara contra CoreWeave» y su backlog/RPO de US$37.500 M | No hay fuente conectada de múltiplos de pares no tenidos ni de backlog/RPO; el motor solo ve los campos de Yahoo/Finviz/EDGAR del propio activo. | `eps-negativo` + `dilucion-fuerte` (§3) capturan la parte medible del deterioro; su FV de un componente dejó de ser tal con §10. |
+| Ventas de insiders (NBIS −US$421 M en 2 años, etc.) | Ninguna fuente integrada trae transacciones de insiders. | Ninguno. |
+| «SIMO ya aprobó su examen» (balance del 28-oct superó) como mérito acumulativo | El motor no guarda historial de exámenes aprobados por activo; sería estado nuevo, no una regla sobre campos actuales. | El score ajustado y el listón de destino (§4) lo tratan como a cualquier activo con números sólidos. |
+| Calidad de franquicia/monopolio (TMDX: única plataforma multi-órgano FDA) | Juicio cualitativo sin campo medible en las fuentes actuales (el moat score es heurística de márgenes/ROE). | `moatScore` dentro de la calidad del score (§7). |
+
+## Calibración (umbrales y su justificación)
+
+- Shrinkage 1,0/0,7/0,4: la confianza Baja del motor de FV ya implica
+  dispersión ≥ 80% entre métodos o FV/precio fuera de [1/3, 3]; creerle
+  menos de la mitad de la brecha es el descuento estándar de un
+  profesional ante una valuación que él mismo marcó como frágil.
+- Materialidad 0,25 pp: por debajo, el Δ queda dentro del ruido de
+  refresco de inputs entre corridas (observado: oscilaciones de pocos
+  puntos de score y décimas de RE entre lecturas del mismo día).
+- Dilución > 10%: es el doble de lo que una empresa madura emite por
+  compensación en acciones (~2–5%); por encima, el accionista financia
+  el crecimiento con su propio porcentaje.
+- Listón de destino (score ≥ 65, ≥2 componentes, FV/precio ≤ 3): con el
+  score recalibrado (§7), 65 separa el tercio superior típico de una
+  cartera concentrada; FV/precio > 3 es la misma cota que el motor de
+  FV usa para bajar la confianza a Baja por sospecha de error.
+- Ventana de examen de 5 días hábiles: una semana de trading; es el
+  horizonte en el que «esperar el número» no cuesta casi nada y
+  comprarlo/venderlo antes es pura apuesta al resultado.
