@@ -1539,6 +1539,15 @@ export async function fetchFundamentals(
             const sh = edSeries?.sharesHistory ?? [];
             input.sharesGrowthYoYPct =
               sh.length >= 2 && sh[1] > 0 ? (sh[0] / sh[1] - 1) * 100 : null;
+            // ΔS desde CONTEOS REPORTADOS de acciones en circulación
+            // (foto de balance/portada, EDGAR): desde la reparación
+            // 2026-11-03 es la fuente PRIMARIA del insumo de dilución
+            // del Optimizador — la serie de promedio ponderado mezcla
+            // regímenes cuando el conteo cambia dentro del año (el
+            // caso NBIS: promedio −13,7% «recompra» contra conteos de
+            // cierre +7,3% emisión). La resolución vive en
+            // server/dilution.ts; acá solo viaja el dato reportado.
+            input.sharesOutstandingYoY = edSeries?.sharesOutstandingYoY ?? null;
             input.epsHistory =
               edSeries?.epsHistory && edSeries.epsHistory.length > 0
                 ? edSeries.epsHistory

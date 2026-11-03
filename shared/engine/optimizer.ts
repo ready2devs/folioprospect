@@ -147,6 +147,20 @@ export interface OptimizerAssetInput {
   fcfTtmEdgarFyOnlyGap?: boolean;
   /** ΔS % anual: positivo = emite acciones (diluye), negativo = recompra. */
   dilutionPct?: number | null;
+  /** Procedencia del ΔS resuelto (server/dilution.ts, reparación
+   *  2026-11-03): 'reportado' = conteo de acciones en circulación de
+   *  los estados (primario); 'proveedor' = respaldo de la serie de
+   *  promedio ponderado; null = sin término (sin dato o conflicto de
+   *  signo irresoluble, con el motivo en dilutionGap). */
+  dilutionSource?: string | null;
+  /** La serie de promedio ponderado (cruce y respaldo). */
+  dilutionSeriesPct?: number | null;
+  /** La variación desde conteos reportados, si existe. */
+  dilutionReportedPct?: number | null;
+  /** La serie contradecía en signo al conteo reportado. */
+  dilutionDiscrepancy?: boolean;
+  /** Por qué no mandó la fuente primaria, cuando aplica. */
+  dilutionGap?: string | null;
   forwardPe?: number | null;
   industryForwardPe?: number | null;
   fvPesimista?: number | null;
@@ -426,6 +440,12 @@ export interface AssetScore {
   earningsGate: { date: string; businessDays: number } | null;
   cyclicalNormalized: boolean;
   dilutionPct: number | null;
+  /** Procedencia del ΔS (réplica de los campos del insumo). */
+  dilutionSource: string | null;
+  dilutionSeriesPct: number | null;
+  dilutionReportedPct: number | null;
+  dilutionDiscrepancy: boolean;
+  dilutionGap: string | null;
   /** Campo histórico (desapilado §13): desde R11 la convergencia
    *  siempre usa el FV tal cual, así que este flag queda en false; se
    *  conserva por compatibilidad de la API. */
@@ -1562,6 +1582,11 @@ export function scoreAsset(
     earningsGate: gate,
     cyclicalNormalized: !!a.cyclicalNormalized,
     dilutionPct: a.dilutionPct ?? null,
+    dilutionSource: a.dilutionSource ?? null,
+    dilutionSeriesPct: a.dilutionSeriesPct ?? null,
+    dilutionReportedPct: a.dilutionReportedPct ?? null,
+    dilutionDiscrepancy: !!a.dilutionDiscrepancy,
+    dilutionGap: a.dilutionGap ?? null,
     conservativeConvergence,
     modelSuspect: !!a.fvModelSuspect,
     epsSignDisagreement: !!a.epsSignDisagreement,
@@ -2214,6 +2239,8 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+        dilutionSource: null, dilutionSeriesPct: null, dilutionReportedPct: null,
+        dilutionDiscrepancy: false, dilutionGap: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
         certaintyBand: null, certaintyComponents: null, certaintyScore: al.certaintyScore ?? null,
@@ -2247,6 +2274,8 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+        dilutionSource: null, dilutionSeriesPct: null, dilutionReportedPct: null,
+        dilutionDiscrepancy: false, dilutionGap: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
         certaintyBand: null, certaintyComponents: null, certaintyScore: null,

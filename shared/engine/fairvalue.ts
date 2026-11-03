@@ -106,8 +106,22 @@ export interface FundamentalInput {
   fcfHistory?: number[] | null;
   /** Variación interanual de acciones diluidas en circulación, % (EDGAR):
    *  positivo = dilución neta. Lo consume el Optimizador (ancla GK ΔS y
-   *  señal de deterioro por dilución); el FV no lo usa. */
+   *  señal de deterioro por dilución); el FV no lo usa. Desde la
+   *  reparación 2026-11-03 es la serie de RESPALDO del ΔS: la primaria
+   *  es el conteo reportado (sharesOutstandingYoY) y la resolución vive
+   *  en server/dilution.ts. */
   sharesGrowthYoYPct?: number | null;
+  /** ΔS desde CONTEOS REPORTADOS de acciones en circulación (EDGAR,
+   *  foto instantánea de balance o portada): variación interanual %,
+   *  si el par de cierres es una ventana anual comparable y los
+   *  cierres del par. Fuente primaria del insumo de dilución del
+   *  Optimizador (server/dilution.ts). */
+  sharesOutstandingYoY?: {
+    pct: number;
+    comparable: boolean;
+    latestEnd: string;
+    priorEnd: string;
+  } | null;
   /** EPS diluido anual reportado, más reciente primero (máx 5 años):
    *  detección de valle cíclico. */
   epsHistory?: number[] | null;

@@ -22,6 +22,7 @@ import { fetchFinvizFundamentals } from './finviz.js';
 import { fetchSectorContext, finvizIndustrySlug } from './sectorContext.js';
 import { addDays, fetchNasdaqEarningsDay, todayInNewYork } from './earnings.js';
 import { resolveAnchorFromFundamentals } from './cashAnchor.js';
+import { resolveDilutionFromFundamentals } from './dilution.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -232,6 +233,13 @@ async function buildAssetInput(
     // respaldo el crudo del proveedor. La misma resolución alimenta
     // la ficha del activo (server/routes.ts).
     const anchorFcf = resolveAnchorFromFundamentals(fund);
+    // ΔS del Grinold-Kroner (reparación 2026-11-03): resolución ÚNICA
+    // desde los fundamentales — primario el CONTEO REPORTADO de
+    // acciones en circulación (EDGAR), respaldo la serie de promedio
+    // ponderado, null si el signo es irresoluble (server/dilution.ts).
+    // La misma resolución alimenta el término de recompra del ancla
+    // de crecimiento sustentable más abajo: un solo ΔS en el pipeline.
+    const dilutionRes = resolveDilutionFromFundamentals(fund);
     return {
       ...baseInput,
       industry: undefined, // se completa con el slug de Finviz si hace falta para pares
@@ -287,10 +295,18 @@ async function buildAssetInput(
       fcfTtmPeriodEnd: anchorFcf.periodEnd,
       fcfTtmDiscrepancy: anchorFcf.discrepancy,
       fcfTtmEdgarFyOnlyGap: anchorFcf.edgarFyOnlyGap,
-      // ΔS real desde EDGAR (variación interanual de acciones diluidas):
-      // antes era null «sin fuente confiable»; EDGAR sí la trae para los
-      // emisores que reportan el concepto (brecha declarada en el doc).
-      dilutionPct: fund.sharesGrowthYoYPct ?? null,
+      // ΔS RESUELTO (reparación 2026-11-03): manda el conteo reportado
+      // de acciones en circulación; la serie de promedio ponderado
+      // (antes el insumo directo) queda como respaldo y como cruce —
+      // para NBIS decía −13,69% («recompra») cuando los conteos de
+      // cierre reportados dicen +7,3% (emisión). Procedencia completa
+      // en los campos dilution* siguientes, como el ancla desde R12.3.
+      dilutionPct: dilutionRes.dilutionPct,
+      dilutionSource: dilutionRes.source,
+      dilutionSeriesPct: dilutionRes.seriesDilutionPct,
+      dilutionReportedPct: dilutionRes.reportedDilutionPct,
+      dilutionDiscrepancy: dilutionRes.discrepancy,
+      dilutionGap: dilutionRes.gap,
       forwardPe: extras.forwardPE ?? finviz?.forwardPe ?? null,
       fvPesimista: components.length ? Math.min(...components) : fvBaseUsed,
       fvBase: fvBaseUsed,
@@ -355,8 +371,12 @@ async function buildAssetInput(
         const divYieldPct =
           extras.forwardDividendYieldPct ?? extras.dividendYieldPct ?? finviz?.dividendEstPct ?? null;
         const divTotal = divYieldPct != null ? (divYieldPct / 100) * mktCap : 0;
+        // Recompra neta del payout total: consume el ΔS RESUELTO
+        // (misma resolución que el término del GK, reparación
+        // 2026-11-03) — la serie cruda le acreditaba a NBIS una
+        // «recompra» de +13,69% del market cap que nunca existió.
         const buybackTotal =
-          fund.sharesGrowthYoYPct != null ? -(fund.sharesGrowthYoYPct / 100) * mktCap : 0;
+          dilutionRes.dilutionPct != null ? -(dilutionRes.dilutionPct / 100) * mktCap : 0;
         const retention = Math.max(-0.5, Math.min(1, (ni - divTotal - buybackTotal) / ni));
         return roe * 100 * retention;
       })(),

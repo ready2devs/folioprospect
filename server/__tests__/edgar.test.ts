@@ -266,6 +266,135 @@ describe('parseEdgarSeries — acciones en circulación (ΔS)', () => {
   });
 });
 
+describe('parseEdgarSeries — ΔS desde conteos reportados (reparación 2026-11-03)', () => {
+  it('caso NBIS: el conteo de cierre crece (+7,3%) aunque el promedio ponderado caiga (−13,7%)', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          // Promedio ponderado básico: el FY2024 arrastra el conteo
+          // previo a la escisión → la variación de la serie es −13,7%.
+          WeightedAverageNumberOfSharesOutstandingBasic: {
+            units: {
+              shares: [
+                { end: '2024-12-31', start: '2024-01-01', val: 281.0e6, form: '20-F', fp: 'FY', filed: '2026-04-30' },
+                { end: '2025-12-31', start: '2025-01-01', val: 242.5e6, form: '20-F', fp: 'FY', filed: '2026-04-30' },
+              ],
+            },
+          },
+          // Conteos reportados de cierre: la empresa EMITIÓ en FY2025.
+          CommonStockSharesOutstanding: {
+            units: {
+              shares: [
+                { end: '2024-12-31', val: 235.8e6, form: '20-F', fp: 'FY', filed: '2025-04-30' },
+                { end: '2025-12-31', val: 253.0e6, form: '20-F', fp: 'FY', filed: '2026-04-30' },
+              ],
+            },
+          },
+        },
+      },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.sharesHistory[0] / s!.sharesHistory[1] - 1).toBeCloseTo(-0.137, 3);
+    const yoy = s!.sharesOutstandingYoY;
+    expect(yoy).not.toBeNull();
+    expect(yoy!.pct).toBeCloseTo(7.29, 1);
+    expect(yoy!.comparable).toBe(true);
+    expect(yoy!.concept).toBe('CommonStockSharesOutstanding');
+    expect(yoy!.latestEnd).toBe('2025-12-31');
+    expect(yoy!.priorEnd).toBe('2024-12-31');
+  });
+
+  it('cadencia trimestral: el socio del par es el cierre de hace ~1 año, no el trimestre inmediato', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          CommonStockSharesOutstanding: {
+            units: {
+              shares: [
+                { end: '2024-09-30', val: 100e6, form: '10-Q', fp: 'Q3', filed: '2024-11-01' },
+                { end: '2025-06-30', val: 104e6, form: '10-Q', fp: 'Q2', filed: '2025-08-01' },
+                { end: '2025-09-30', val: 105e6, form: '10-Q', fp: 'Q3', filed: '2025-11-01' },
+              ],
+            },
+          },
+          EarningsPerShareDiluted: {
+            units: { 'USD/shares': [{ end: '2025-12-31', start: '2025-01-01', val: 1.5, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+        },
+      },
+    });
+    const yoy = s!.sharesOutstandingYoY;
+    expect(yoy).not.toBeNull();
+    expect(yoy!.priorEnd).toBe('2024-09-30');
+    expect(yoy!.pct).toBeCloseTo(5, 6);
+    expect(yoy!.comparable).toBe(true);
+  });
+
+  it('tageo por clase al mismo cierre (valores distintos en la presentación vigente) → ese cierre se descarta por ambiguo', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          CommonStockSharesOutstanding: {
+            units: {
+              shares: [
+                { end: '2024-12-31', val: 12.0e9, form: '10-K', fp: 'FY', filed: '2025-02-01' },
+                // Dos clases tageadas por separado al mismo cierre y
+                // misma presentación: ningún valor es el total.
+                { end: '2025-12-31', val: 6.0e9, form: '10-K', fp: 'FY', filed: '2026-02-01' },
+                { end: '2025-12-31', val: 5.5e9, form: '10-K', fp: 'FY', filed: '2026-02-01' },
+              ],
+            },
+          },
+          EarningsPerShareDiluted: {
+            units: { 'USD/shares': [{ end: '2025-12-31', start: '2025-01-01', val: 1.5, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+        },
+      },
+    });
+    // Sin un segundo cierre utilizable no hay par: no se inventa un ΔS
+    // desde un conteo parcial por clase.
+    expect(s!.sharesOutstandingYoY).toBeNull();
+  });
+
+  it('sin cierre anterior dentro de la ventana anual → par crudo NO comparable (no arbitra)', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          CommonStockSharesOutstanding: {
+            units: {
+              shares: [
+                { end: '2025-09-30', val: 101e6, form: '10-Q', fp: 'Q3', filed: '2025-11-01' },
+                { end: '2025-12-31', val: 103e6, form: '10-K', fp: 'FY', filed: '2026-02-01' },
+              ],
+            },
+          },
+          EarningsPerShareDiluted: {
+            units: { 'USD/shares': [{ end: '2025-12-31', start: '2025-01-01', val: 1.5, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+        },
+      },
+    });
+    const yoy = s!.sharesOutstandingYoY;
+    expect(yoy).not.toBeNull();
+    expect(yoy!.comparable).toBe(false);
+    expect(yoy!.gapDays).toBe(92);
+  });
+
+  it('emisor sin concepto de conteo → sharesOutstandingYoY null y el resto de la serie sigue', () => {
+    const s = parseEdgarSeries({
+      facts: {
+        'us-gaap': {
+          EarningsPerShareDiluted: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 2.5, form: '20-F', fp: 'FY', filed: '2026-03-01' }] },
+          },
+        },
+      },
+    });
+    expect(s!.sharesOutstandingYoY).toBeNull();
+    expect(s!.epsHistory).toEqual([2.5]);
+  });
+});
+
 describe('parseEdgarSeries — EPS en unidades USD/shares', () => {
   it('lee el EPS diluido de la unidad USD/shares (la USD a secas lo dejaba vacío)', () => {
     const facts = {

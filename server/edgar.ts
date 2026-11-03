@@ -167,6 +167,33 @@ function annualSeriesUsd(
   return best ?? [];
 }
 
+/** Variación interanual de acciones EN CIRCULACIÓN desde conteos
+ *  reportados (foto instantánea de balance o portada): la fuente
+ *  primaria del ΔS desde la reparación 2026-11-03 (server/dilution.ts).
+ *  El promedio ponderado (sharesHistory) promedia el año y mezcla
+ *  regímenes cuando el conteo cambia de forma escalonada dentro del
+ *  período — el caso NBIS: su promedio FY2025/FY2024 dice −13,7%
+ *  («recompra») porque el promedio FY2024 todavía arrastra el conteo
+ *  previo a la escisión de Yandex, mientras los conteos reportados de
+ *  cierre dicen 235,8 M → 253,0 M (+7,3%: emitió, no recompró). */
+export interface ReportedSharesYoY {
+  /** Variación interanual %: positivo = el conteo creció (dilución). */
+  pct: number;
+  latestEnd: string;
+  priorEnd: string;
+  latest: number;
+  prior: number;
+  gapDays: number;
+  /** El par es una ventana interanual limpia: cierres separados por
+   *  300–460 días y conteos dentro de un factor [0,4 ; 2,5]. Fuera de
+   *  eso hay un artefacto (split sin reexpresar, tageo parcial por
+   *  clase, cambio de cierre fiscal) y el par NO puede arbitrar entre
+   *  fuentes: solo un par comparable manda (server/dilution.ts). */
+  comparable: boolean;
+  /** Concepto XBRL que aportó el par. */
+  concept: string;
+}
+
 export interface EdgarSeries {
   /** FCF anual (OCF − capex, mismo cierre fiscal), más reciente primero, máx 5. */
   fcfHistory: number[];
@@ -175,6 +202,9 @@ export interface EdgarSeries {
   /** Acciones promedio ponderadas diluidas anuales, más reciente primero,
    *  máx 5: la variación interanual ES la dilución/recompra real (ΔS). */
   sharesHistory: number[];
+  /** ΔS desde conteos reportados de acciones en circulación (balance /
+   *  portada), o null si el emisor no reporta el concepto utilizable. */
+  sharesOutstandingYoY: ReportedSharesYoY | null;
   /** Flujo operativo anual alineado por cierre fiscal con `capexHistory`
    *  (los mismos años que componen `fcfHistory`). */
   ocfHistory: number[];
@@ -238,6 +268,111 @@ function annualSeriesShares(facts: any): AnnualPoint[] {
   return best ?? [];
 }
 
+const SHARES_OUTSTANDING_CONCEPTS: Array<{ concept: string; taxonomy: string }> = [
+  { concept: 'CommonStockSharesOutstanding', taxonomy: 'us-gaap' },
+  { concept: 'EntityCommonStockSharesOutstanding', taxonomy: 'dei' },
+];
+
+export const SHARES_YOY_MIN_GAP_DAYS = 300;
+export const SHARES_YOY_MAX_GAP_DAYS = 460;
+
+interface SharesPoint {
+  end: string;
+  val: number;
+  filed: string;
+}
+
+/** Puntos instantáneos utilizables de un concepto de acciones en
+ *  circulación, deduplicados por cierre (gana la presentación más
+ *  reciente) y ordenados por cierre descendente. Guarda de ambigüedad:
+ *  si al mismo cierre la presentación vigente trae valores distintos
+ *  entre sí (tageo POR CLASE — A/B/C por separado, frecuente en
+ *  multi-clase), ese cierre es ambiguo y se descarta: un conteo
+ *  parcial no es el conteo de la empresa. */
+function sharesOutstandingPoints(facts: any, taxonomy: string, concept: string): SharesPoint[] {
+  const units = facts?.[taxonomy]?.[concept]?.units?.shares;
+  if (!Array.isArray(units)) return [];
+  const byEnd = new Map<string, FactValue[]>();
+  for (const v of units as FactValue[]) {
+    if (typeof v.val !== 'number' || !(v.val > 0) || !v.end) continue;
+    const arr = byEnd.get(v.end) ?? [];
+    arr.push(v);
+    byEnd.set(v.end, arr);
+  }
+  const pts: SharesPoint[] = [];
+  for (const [end, vals] of byEnd) {
+    const maxFiled = vals.reduce((m, v) => ((v.filed || '') > m ? (v.filed || '') : m), '');
+    const distinct = [
+      ...new Set(
+        vals
+          .filter((v) => (v.filed || '') === maxFiled && typeof v.val === 'number')
+          .map((v) => v.val as number)
+      ),
+    ];
+    if (distinct.length === 0) continue;
+    const lo = Math.min(...distinct);
+    const hi = Math.max(...distinct);
+    if (distinct.length > 1 && hi / lo > 1.02) continue; // ambiguo: tageo por clase
+    pts.push({ end, val: hi, filed: maxFiled });
+  }
+  return pts.sort((a, b) => (a.end < b.end ? 1 : -1));
+}
+
+/** Par interanual desde los puntos de conteo: el cierre más reciente
+ *  contra el primer cierre anterior separado por una ventana de ~1
+ *  año (300–460 días). Si ningún cierre cae en la ventana, el «par»
+ *  crudo es el cierre inmediato anterior y queda marcado NO
+ *  comparable: su dirección existe, pero no es una ventana anual
+ *  limpia y no puede arbitrar (server/dilution.ts decide). */
+export function sharesOutstandingYoYFromPoints(
+  points: SharesPoint[],
+  concept: string
+): ReportedSharesYoY | null {
+  if (points.length < 2) return null;
+  const latest = points[0];
+  let partner: SharesPoint | null = null;
+  for (const p of points.slice(1)) {
+    const gap = (Date.parse(latest.end) - Date.parse(p.end)) / 86400000;
+    if (gap >= SHARES_YOY_MIN_GAP_DAYS && gap <= SHARES_YOY_MAX_GAP_DAYS) {
+      partner = p;
+      break;
+    }
+  }
+  const raw = partner ?? points[1];
+  const gapDays = (Date.parse(latest.end) - Date.parse(raw.end)) / 86400000;
+  const ratio = latest.val / raw.val;
+  return {
+    pct: (ratio - 1) * 100,
+    latestEnd: latest.end,
+    priorEnd: raw.end,
+    latest: latest.val,
+    prior: raw.val,
+    gapDays,
+    comparable: partner != null && ratio >= 0.4 && ratio <= 2.5,
+    concept,
+  };
+}
+
+/** ΔS reportado: entre conceptos candidatos gana el de cierre más
+ *  fresco (a igual cierre, el de más puntos utilizables). */
+function reportedSharesYoY(facts: any): ReportedSharesYoY | null {
+  let best: { yoy: ReportedSharesYoY; points: number } | null = null;
+  for (const { concept, taxonomy } of SHARES_OUTSTANDING_CONCEPTS) {
+    const pts = sharesOutstandingPoints(facts, taxonomy, concept);
+    if (pts.length < 2) continue;
+    const yoy = sharesOutstandingYoYFromPoints(pts, concept);
+    if (!yoy) continue;
+    if (
+      !best ||
+      yoy.latestEnd > best.yoy.latestEnd ||
+      (yoy.latestEnd === best.yoy.latestEnd && pts.length > best.points)
+    ) {
+      best = { yoy, points: pts.length };
+    }
+  }
+  return best?.yoy ?? null;
+}
+
 /** Parser puro (testeable): series anuales desde un companyfacts de EDGAR. */
 export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
   const facts = factsJson?.facts;
@@ -296,11 +431,19 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
       : annualSeriesUsd(facts, EPS_CONCEPTS, ['us-gaap', 'ifrs-full'], 'USD');
   const epsHistory = epsPts.slice(0, 5).map((p) => p.val);
   const sharesHistory = annualSeriesShares(facts).slice(0, 5).map((p) => p.val);
-  if (fcfHistory.length === 0 && epsHistory.length === 0 && sharesHistory.length === 0) return null;
+  const sharesOutstandingYoY = reportedSharesYoY(facts);
+  if (
+    fcfHistory.length === 0 &&
+    epsHistory.length === 0 &&
+    sharesHistory.length === 0 &&
+    sharesOutstandingYoY == null
+  )
+    return null;
   return {
     fcfHistory,
     epsHistory,
     sharesHistory,
+    sharesOutstandingYoY,
     ocfHistory,
     capexHistory,
     netIncomeHistory,
