@@ -205,9 +205,50 @@ export interface FairValueResult {
   fairValue: number | null;
   dcfValue: number | null;
   analystTarget: number | null;
-  /** Componentes efectivamente promediados en fairValue tras la banda de
-   *  credibilidad (contra los otros componentes, no contra el precio). */
+  /** Componentes finales que forman el fairValue: valores winsorizados
+   *  cuando fueron recortados a la banda (docs/VALUATION-RULES.md). */
   fvComponents?: number[];
+  /** Valor del componente de múltiplos con el EPS ya reparado
+   *  (null solo ante imposibilidad matemática). Trazabilidad. */
+  multiplesValue?: number | null;
+  /** Etiqueta de confianza según dispersión final entre componentes y
+   *  flags; null cuando no se emite fairValue. */
+  fvConfidence?: 'Alta' | 'Media' | 'Baja' | null;
+  /** Rango [mín, máx] de los componentes válidos (valores crudos, antes
+   *  de winsorizar). */
+  fvRange?: [number, number] | null;
+  /** Componentes null por imposibilidad matemática, con motivo
+   *  (`notMeaningful`, `medianFcfNonPositive`). Nada se excluye por
+   *  higiene: lo extremo se repara o se winsoriza. */
+  fvExcluded?: Array<{
+    component: 'dcf' | 'multiples' | 'target';
+    reason: string;
+    value?: number | null;
+  }>;
+  /** Componentes recortados a la banda de credibilidad, con su valor
+   *  original y el valor recortado que efectivamente promedió. */
+  fvWinsorized?: Array<{
+    component: 'dcf' | 'multiples' | 'target';
+    originalValue: number;
+    clippedValue: number;
+  }>;
+  /** Procedencia por componente: valor crudo de la fuente primaria,
+   *  valor usado tras la cadena de reparación, fuentes y flags. Para el
+   *  DCF los valores son la base de FCF; para múltiplos, el EPS. */
+  fvProvenance?: Array<{
+    component: 'dcf' | 'multiples' | 'target';
+    originalValue: number | null;
+    usedValue: number | null;
+    sources: string[];
+    flags: string[];
+  }>;
+  /** Flags disparados por las reglas de valuación (reparación,
+   *  normalización, winsorización, valle cíclico). */
+  fvFlags?: string[];
+  /** Motivo cuando fairValue es null: `noValidComponents` (ningún
+   *  componente sobrevivió a la cadena de reparación; tras reparar
+   *  debería ser inalcanzable). Nunca se fabrica un FV desde el precio. */
+  fvNullReason?: string | null;
   priceToFairValue: number | null;
   status: 'Undervalued' | 'Fairly Valued' | 'Overvalued' | 'N/A';
   upsidePct: number | null;

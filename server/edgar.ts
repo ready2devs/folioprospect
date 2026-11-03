@@ -90,6 +90,79 @@ function latestCashWithFx(facts: any): { usd: number; fxRate: number | null; ccy
   return null;
 }
 
+interface AnnualPoint {
+  end: string;
+  val: number;
+  filed: string;
+}
+
+/**
+ * Serie anual (períodos ≥300 días o fp FY) en USD de un concepto, ordenada
+ * por fecha de cierre descendente y deduplicada por cierre (gana la
+ * presentación más reciente). Se detiene en el primer concepto que rinde
+ * datos, con la misma precedencia que latestAnnualUsd.
+ */
+function annualSeriesUsd(
+  facts: any,
+  concepts: string[],
+  taxonomies: string[] = ['us-gaap', 'ifrs-full']
+): AnnualPoint[] {
+  for (const concept of concepts) {
+    const byEnd = new Map<string, AnnualPoint>();
+    for (const tax of taxonomies) {
+      const units = facts?.[tax]?.[concept]?.units?.USD;
+      if (!Array.isArray(units)) continue;
+      for (const v of units as FactValue[]) {
+        if (typeof v.val !== 'number' || !v.end) continue;
+        let fullYear = v.fp === 'FY';
+        if (v.start && v.end) {
+          const days = (Date.parse(v.end) - Date.parse(v.start)) / 86400000;
+          fullYear = days >= 300 && days <= 380;
+        }
+        if (!fullYear) continue;
+        const filed = v.filed || '';
+        const prev = byEnd.get(v.end);
+        if (!prev || filed > prev.filed) byEnd.set(v.end, { end: v.end, val: v.val, filed });
+      }
+    }
+    if (byEnd.size > 0) {
+      return [...byEnd.values()].sort((a, b) => (a.end < b.end ? 1 : -1));
+    }
+  }
+  return [];
+}
+
+export interface EdgarSeries {
+  /** FCF anual (OCF − capex, mismo cierre fiscal), más reciente primero, máx 5. */
+  fcfHistory: number[];
+  /** EPS diluido anual (US-GAAP), más reciente primero, máx 5. */
+  epsHistory: number[];
+}
+
+/** Parser puro (testeable): series anuales desde un companyfacts de EDGAR. */
+export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
+  const facts = factsJson?.facts;
+  if (!facts) return null;
+  const ocf = annualSeriesUsd(facts, OCF_CONCEPTS);
+  const capex = annualSeriesUsd(facts, CAPEX_CONCEPTS);
+  const capexByEnd = new Map(capex.map((p) => [p.end, Math.abs(p.val)]));
+  const fcfHistory: number[] = [];
+  for (const p of ocf) {
+    const cx = capexByEnd.get(p.end);
+    if (cx == null) continue;
+    fcfHistory.push(p.val - cx);
+    if (fcfHistory.length >= 5) break;
+  }
+  const epsPts = annualSeriesUsd(
+    facts,
+    ['EarningsPerShareDiluted', 'EarningsPerShareBasic'],
+    ['us-gaap']
+  );
+  const epsHistory = epsPts.slice(0, 5).map((p) => p.val);
+  if (fcfHistory.length === 0 && epsHistory.length === 0) return null;
+  return { fcfHistory, epsHistory };
+}
+
 /** Último valor anual (período ≥300 días) en USD de un concepto, entre taxonomías. */
 function latestAnnualUsd(facts: any, concepts: string[]): { val: number; end: string } | null {
   const taxonomies = ['us-gaap', 'ifrs-full'];
@@ -164,14 +237,13 @@ async function cikForTicker(ticker: string): Promise<string | null> {
   }
 }
 
-const cfCache = new Map<string, { at: number; value: EdgarCashflow | null }>();
+const factsCache = new Map<string, { at: number; facts: any | null }>();
 
-/** Flujo anual auditado (SEC) para un ticker US-listed. Cache 24 h. */
-export async function fetchEdgarAnnualCashflow(tickerRaw: string): Promise<EdgarCashflow | null> {
-  const ticker = tickerRaw.toUpperCase().replace(/\./g, '-');
-  const c = cfCache.get(ticker);
-  if (c && Date.now() - c.at < DAY) return c.value;
-  let value: EdgarCashflow | null = null;
+/** companyfacts crudo de EDGAR con cache 24 h compartida entre parsers. */
+async function fetchEdgarFacts(ticker: string): Promise<any | null> {
+  const c = factsCache.get(ticker);
+  if (c && Date.now() - c.at < DAY) return c.facts;
+  let facts: any | null = null;
   try {
     const cik = await cikForTicker(ticker);
     if (cik) {
@@ -189,11 +261,25 @@ export async function fetchEdgarAnnualCashflow(tickerRaw: string): Promise<Edgar
           signal: AbortSignal.timeout(9000),
         });
       }
-      if (res.ok) value = parseEdgarCashflow(await res.json());
+      if (res.ok) facts = await res.json();
     }
   } catch {
-    value = null;
+    facts = null;
   }
-  cfCache.set(ticker, { at: Date.now(), value });
-  return value;
+  factsCache.set(ticker, { at: Date.now(), facts });
+  return facts;
+}
+
+/** Flujo anual auditado (SEC) para un ticker US-listed. Cache 24 h. */
+export async function fetchEdgarAnnualCashflow(tickerRaw: string): Promise<EdgarCashflow | null> {
+  const ticker = tickerRaw.toUpperCase().replace(/\./g, '-');
+  const facts = await fetchEdgarFacts(ticker);
+  return facts ? parseEdgarCashflow(facts) : null;
+}
+
+/** Series anuales auditadas (FCF y EPS) para normalización de bases. Cache 24 h. */
+export async function fetchEdgarSeries(tickerRaw: string): Promise<EdgarSeries | null> {
+  const ticker = tickerRaw.toUpperCase().replace(/\./g, '-');
+  const facts = await fetchEdgarFacts(ticker);
+  return facts ? parseEdgarSeries(facts) : null;
 }

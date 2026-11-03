@@ -5,7 +5,7 @@ import { findCatalogEntry } from '../shared/engine/symbolCatalog.js';
 import type { FinvizFundamentals } from '../shared/engine/finvizParse.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
 import { fetchFinvizFundamentals } from './finviz.js';
-import { fetchEdgarAnnualCashflow } from './edgar.js';
+import { fetchEdgarAnnualCashflow, fetchEdgarSeries } from './edgar.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1365,7 +1365,7 @@ export async function fetchFundamentals(
     try {
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
         ySym
-      )}?modules=financialData,defaultKeyStatistics,summaryDetail&crumb=${encodeURIComponent(
+      )}?modules=financialData,defaultKeyStatistics,summaryDetail,earningsTrend,cashflowStatementHistory&crumb=${encodeURIComponent(
         auth.crumb
       )}`;
       const res = await fetch(url, {
@@ -1379,10 +1379,46 @@ export async function fetchFundamentals(
           const fd = r0.financialData || {};
           const ks = r0.defaultKeyStatistics || {};
           const sd = r0.summaryDetail || {};
+          // Primitivas por acción (Bloque A de docs/VALUATION-RULES.md): el
+          // EPS forward directo de Yahoo y el promedio de estimaciones del
+          // próximo año fiscal (earningsTrend +1y) como segunda fuente.
+          const eTrendList: any[] = Array.isArray(r0.earningsTrend?.trend)
+            ? r0.earningsTrend.trend
+            : [];
+          const trendPlus1y = eTrendList.find((t: any) => t?.period === '+1y');
+          const epsTrendAlt: number | null =
+            trendPlus1y?.earningsEstimate?.avg?.raw != null &&
+            Number.isFinite(trendPlus1y.earningsEstimate.avg.raw)
+              ? Number(trendPlus1y.earningsEstimate.avg.raw)
+              : null;
+          // Serie anual de FCF desde los estados de flujo publicados por
+          // Yahoo (OCF + capex, el capex viene negativo): respaldo de la
+          // serie auditada de EDGAR para tickers sin CIK conocido.
+          const cfStmts: any[] = Array.isArray(
+            r0.cashflowStatementHistory?.cashflowStatements
+          )
+            ? r0.cashflowStatementHistory.cashflowStatements
+            : [];
+          const yahooFcfHistory: number[] = cfStmts
+            .map((s: any) => {
+              const ocf = s?.totalCashFromOperatingActivities?.raw;
+              const capex = s?.capitalExpenditures?.raw;
+              const end = s?.endDate?.raw;
+              if (typeof ocf !== 'number' || typeof capex !== 'number') return null;
+              return {
+                end: typeof end === 'number' ? end : 0,
+                fcf: ocf + capex,
+              };
+            })
+            .filter((x: any): x is { end: number; fcf: number } => x != null)
+            .sort((a: any, b: any) => b.end - a.end)
+            .slice(0, 5)
+            .map((x: any) => x.fcf);
           const input: FundamentalInput = {
             symbol,
             currentPrice: fd.currentPrice?.raw ?? currentPrice,
             targetMeanPrice: fd.targetMeanPrice?.raw ?? null,
+            targetMedianPrice: fd.targetMedianPrice?.raw ?? null,
             freeCashflow: fd.freeCashflow?.raw ?? null,
             operatingCashflow: fd.operatingCashflow?.raw ?? null,
             totalCash: fd.totalCash?.raw ?? null,
@@ -1392,6 +1428,8 @@ export async function fetchFundamentals(
             revenueGrowth: fd.revenueGrowth?.raw ?? null,
             trailingPE: sd.trailingPE?.raw ?? null,
             forwardPE: ks.forwardPE?.raw ?? sd.forwardPE?.raw ?? null,
+            forwardEps: ks.forwardEps?.raw ?? null,
+            trailingEps: ks.trailingEps?.raw ?? null,
             enterpriseValue: ks.enterpriseValue?.raw ?? null,
             ebitda: fd.ebitda?.raw ?? null,
             grossMargins: fd.grossMargins?.raw ?? null,
@@ -1401,6 +1439,53 @@ export async function fetchFundamentals(
             debtToEquity: fd.debtToEquity?.raw ?? null,
             beta: ks.beta?.raw ?? sd.beta?.raw ?? 1.2,
           };
+          // Cadena de reparación (docs/VALUATION-RULES.md): segunda fuente
+          // de EPS forward y series anuales reportadas. La capa de datos
+          // solo recolecta primitivas; toda decisión (reparación entre
+          // fuentes, normalización, winsorización) vive en el motor puro
+          // (fairvalue.ts).
+          try {
+            const finviz = await fetchFinvizFundamentals(symbol);
+            input.finvizForwardPe = finviz?.forwardPe ?? null;
+            // Segunda fuente de EPS forward: primero el EPS implícito de
+            // Finviz (mismo horizonte NTM, proveedor independiente); si no
+            // está, el promedio de estimaciones +1y de Yahoo (año fiscal,
+            // mismo proveedor que la primitiva: no suma independencia).
+            if (finviz?.forwardPe != null && finviz.forwardPe > 0 && input.currentPrice > 0) {
+              input.forwardEpsAlt = input.currentPrice / finviz.forwardPe;
+              input.forwardEpsAltSource = 'finviz';
+            } else if (epsTrendAlt != null) {
+              input.forwardEpsAlt = epsTrendAlt;
+              input.forwardEpsAltSource = 'yahooTrend';
+            }
+            // Segunda fuente del target de analistas (Finviz).
+            input.targetAltPrice = finviz?.targetPrice ?? null;
+          } catch {
+            input.forwardEpsAlt = epsTrendAlt;
+            input.forwardEpsAltSource = epsTrendAlt != null ? 'yahooTrend' : null;
+          }
+          try {
+            const edSeries = await fetchEdgarSeries(ySym);
+            const edFcf = edSeries?.fcfHistory ?? [];
+            // Gana la fuente con más años (la auditada de EDGAR en empate).
+            if (edFcf.length >= yahooFcfHistory.length && edFcf.length > 0) {
+              input.fcfHistory = edFcf;
+              input.fcfHistorySource = 'edgar';
+            } else if (yahooFcfHistory.length > 0) {
+              input.fcfHistory = yahooFcfHistory;
+              input.fcfHistorySource = 'yahoo';
+            } else {
+              input.fcfHistory = null;
+              input.fcfHistorySource = null;
+            }
+            input.epsHistory =
+              edSeries?.epsHistory && edSeries.epsHistory.length > 0
+                ? edSeries.epsHistory
+                : null;
+          } catch {
+            input.fcfHistory = yahooFcfHistory.length > 0 ? yahooFcfHistory : null;
+            input.fcfHistorySource = yahooFcfHistory.length > 0 ? 'yahoo' : null;
+          }
           // Respaldo SEC EDGAR, dos disparadores:
           // (a) Yahoo no trae FCF útil (bancos sin FCF, emisores semestrales
           //     con TTM negativo): completar con el flujo anual auditado.
@@ -1436,6 +1521,9 @@ export async function fetchFundamentals(
                 } else {
                   if (ed.freeCashflow != null && ed.freeCashflow > 0) {
                     input.freeCashflow = ed.freeCashflow;
+                    // Escalón de estados contables (regla R0): la base del
+                    // DCF se derivó de filings porque Yahoo no la traía.
+                    input.fcfDerivedFromFilings = true;
                   }
                   if (
                     ed.operatingCashflow != null &&
