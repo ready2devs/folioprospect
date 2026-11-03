@@ -138,15 +138,24 @@ describe('riesgo de desvío MARGINAL-PRIMERO (sub-escala del score de confianza)
     expect(confidenceRiskComponent(40, 1, 4)).toBe(80);
   });
 
-  it('a igual volatilidad y mismas patas, la posición que menos riesgo suma a la cartera tiene más confianza', () => {
+  it('a mismas patas, la posición que menos riesgo suma a la cartera tiene más certeza (y mejor score)', () => {
     // Factor común de mercado (250 retornos).
     const factor = Array.from({ length: 250 }, (_, i) => Math.sin(i / 9) * 0.012);
     const rnd = lcg(7);
     const corrRets = factor.map((f) => f + rnd() * 0.004);
-    // La gemela DESACOPLADA: la MISMA multiset de retornos
-    // permutada con un paso coprimo — idéntica volatilidad,
-    // correlación con el factor destruida.
-    const decorrRets = corrRets.map((_, i) => corrRets[(i * 37) % corrRets.length]);
+    // La COBERTURA: se mueve CONTRA el factor (−0,6×f) con ruido
+    // propio más grande. En los días de baja de la cartera sube o
+    // cae poco: su correlación a la baja con el conjunto es
+    // negativa, así que su aporte marginal es chico AUNQUE su
+    // volatilidad a la baja propia sea parecida (o mayor) que la
+    // de la correlacionada. (El fixture original de R13 — la
+    // misma multiset permutada — probaba esto bajo la medición
+    // simétrica; con la medición a la baja de R14 la permutación
+    // dejó de aislar el canal, porque cambia la dispersión
+    // condicional misma. La cobertura anti-factor lo aísla de
+    // nuevo, y de forma económicamente directa.)
+    const rndH = lcg(31);
+    const decorrRets = factor.map((f) => -0.6 * f + rndH() * 0.01);
     const fvInputs = {
       price: 100, fvBase: 200, fvConfidence: 'Media' as const, fvComponentCount: 2,
       earningsGrowthTotalPct: 10, analystTarget: 150, salesGrowthPct: 20,
@@ -168,13 +177,16 @@ describe('riesgo de desvío MARGINAL-PRIMERO (sub-escala del score de confianza)
     const result = optimizePortfolio(inputs, OPTS);
     const corr = result.assets.find((a) => a.ticker === 'CORR')!;
     const decorr = result.assets.find((a) => a.ticker === 'DECORR')!;
-    // Misma volatilidad propia (misma multiset de retornos)…
-    expect(decorr.volatilityPct).toBeCloseTo(corr.volatilityPct, 4);
-    // …pero la desacoplada suma mucho menos riesgo a ESTA cartera:
+    // Ambas volatilidades a la baja se miden (ninguna cae a respaldo)…
+    expect(decorr.volatilityPct).toBeGreaterThan(0);
+    expect(corr.volatilityPct).toBeGreaterThan(0);
+    // …y la desacoplada suma mucho menos riesgo a ESTA cartera:
     expect(decorr.mctrPct!).toBeLessThan(corr.mctrPct!);
     expect(decorr.riskContributionPct!).toBeLessThan(corr.riskContributionPct!);
-    // Y eso — no la volatilidad — es lo que manda en su confianza:
-    expect(decorr.scoreComponents!.risk!).toBeGreaterThan(corr.scoreComponents!.risk!);
+    // Y eso — no la volatilidad — es lo que manda en su certeza
+    // (y, vía la restricción de riesgo, también en su score):
+    expect(decorr.certaintyComponents!.risk!).toBeGreaterThan(corr.certaintyComponents!.risk!);
+    expect(decorr.certaintyScore!).toBeGreaterThan(corr.certaintyScore!);
     expect(decorr.score!).toBeGreaterThan(corr.score!);
   });
 
@@ -189,7 +201,8 @@ describe('riesgo de desvío MARGINAL-PRIMERO (sub-escala del score de confianza)
       OPTS
     );
     expect(s.score!).toBeLessThanOrEqual(39);
-    expect(s.scoreBand).toBe('a-revisar');
+    expect(s.certaintyScore!).toBeLessThanOrEqual(39);
+    expect(s.certaintyBand).toBe('a-revisar');
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bubbleYTicks } from '../chartScales';
+import { bubbleYTicks, sortOptimizerAssets } from '../chartScales';
 
 /**
  * Eje Y del gráfico de burbujas (corrección R13): las etiquetas
@@ -33,5 +33,57 @@ describe('bubbleYTicks — etiquetas del eje Y de burbujas', () => {
     const neg = bubbleYTicks(-25, -5);
     expect(neg[neg.length - 1]).toBeGreaterThanOrEqual(-5);
     expect(neg).toContain(0);
+  });
+});
+
+describe('sortOptimizerAssets (R14): orden conmutable de la tabla', () => {
+  const mk = (
+    ticker: string,
+    re: number | null,
+    rePess: number | null,
+    score: number | null,
+    scorePess: number | null
+  ) => ({
+    ticker,
+    expectedReturnPct: re,
+    expectedReturnPessimisticPct: rePess,
+    score,
+    scorePessimistic: scorePess,
+  });
+  const assets = [
+    mk('LENTA', 8, 5, 60, 55),
+    mk('RAPIDA', 40, 30, 35, 30),
+    mk('MEDIA', 20, 15, 80, 70),
+    mk('CRIPTO', null, null, null, null),
+  ];
+  const names = (xs: Array<{ ticker: string }>) => xs.map((x) => x.ticker);
+
+  it('default (esperada + velocidad): el orden entrante queda INTACTO', () => {
+    const out = sortOptimizerAssets(assets, 'esperada', 'velocidad');
+    expect(out).toBe(assets);
+    expect(names(out)).toEqual(['LENTA', 'RAPIDA', 'MEDIA', 'CRIPTO']);
+  });
+
+  it('velocidad + prudente: ordena por el retorno prudente (el histórico)', () => {
+    expect(names(sortOptimizerAssets(assets, 'prudente', 'velocidad'))).toEqual([
+      'RAPIDA', 'MEDIA', 'LENTA', 'CRIPTO',
+    ]);
+  });
+
+  it('score + esperada: descendente por el score de la vista, sin score al final', () => {
+    expect(names(sortOptimizerAssets(assets, 'esperada', 'score'))).toEqual([
+      'MEDIA', 'LENTA', 'RAPIDA', 'CRIPTO',
+    ]);
+  });
+
+  it('score + prudente: usa el score PRUDENTE, no el esperado', () => {
+    const xs = [mk('A', 10, 9, 90, 20), mk('B', 12, 11, 30, 85)];
+    expect(names(sortOptimizerAssets(xs, 'prudente', 'score'))).toEqual(['B', 'A']);
+    expect(names(sortOptimizerAssets(xs, 'esperada', 'score'))).toEqual(['A', 'B']);
+  });
+
+  it('empate de score: desempata la velocidad de la vista; empate total: orden estable', () => {
+    const xs = [mk('X1', 10, 8, 50, 50), mk('X2', 30, 8, 50, 50), mk('X3', 30, 8, 50, 50)];
+    expect(names(sortOptimizerAssets(xs, 'esperada', 'score'))).toEqual(['X2', 'X3', 'X1']);
   });
 });

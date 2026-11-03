@@ -5,6 +5,7 @@ import { optimizePortfolio, fmtPairPct, fmtPairYears, type AssetScore, type Extr
 import { InfoTip } from './InfoTip';
 import { METHODOLOGY } from './methodology';
 import { EvolutionChart, BubbleChart, bandColor, BAND_COLORS, fmtPct, fmtUsd, fmtY } from './OptimizerCharts';
+import { sortOptimizerAssets } from './chartScales';
 
 const Stars: React.FC<{ n: number | null }> = ({ n }) =>
   n == null ? null : (
@@ -51,15 +52,17 @@ const DupChipPrudent: React.FC<{ a: AssetScore }> = ({ a }) => (
 );
 
 /** Bloque de score de la columna 1: en vista prudente muestra el
- *  score prudente (velocidad del retorno prudente + el mismo ajuste
- *  acotado); en la esperada, el de siempre. */
+ *  score prudente (la misma composición del titular — velocidad
+ *  cobrada al riesgo y a la incertidumbre, más el tilt — sobre
+ *  el retorno prudente); en la esperada, el titular. UN solo
+ *  nombre en toda la app: «Score de revalorización» (R14). */
 const ScoreBlock: React.FC<{ a: AssetScore; prudent: boolean }> = ({ a, prudent }) => {
   const sc = prudent ? a.scorePessimistic : a.score;
   if (sc != null) {
     const st = Math.min(5, Math.max(1, Math.round(sc / 20)));
     return (
       <div className="opt-score">
-        Score de confianza
+        Score de revalorización
         <b>{sc}<span>/100</span></b>
         <Stars n={st} />
       </div>
@@ -114,6 +117,8 @@ export const OptimizerView: React.FC = () => {
   const setSkippedSug = useAppStore((s) => s.setOptSkippedSug);
   const viewMode = useAppStore((s) => s.optViewMode);
   const setViewMode = useAppStore((s) => s.setOptViewMode);
+  const sortMode = useAppStore((s) => s.optSortMode);
+  const setSortMode = useAppStore((s) => s.setOptSortMode);
   const [mfOpen, setMfOpen] = useState(false);
   const [mfType, setMfType] = useState<'cash' | 'sell'>('sell');
   const [mfSymbol, setMfSymbol] = useState('');
@@ -200,11 +205,7 @@ export const OptimizerView: React.FC = () => {
   // En vista prudente la columna 1 se ordena por el retorno
   // prudente (monótono en él; sin piso válido cae al esperado y la
   // tarjeta lo marca). En vista esperada, el orden del motor.
-  const colAssetsShown = prudent
-    ? [...colAssets].sort(
-        (x, y) => (y.expectedReturnPessimisticPct ?? -Infinity) - (x.expectedReturnPessimisticPct ?? -Infinity)
-      )
-    : colAssets;
+  const colAssetsShown = sortOptimizerAssets(colAssets, viewMode, sortMode);
   // Activos que el usuario puede vender a mano (los de candado no se tocan).
   const pickerAssets = colAssets.filter((a) => !a.locked && a.value > 0);
   const selSymbol =
@@ -308,6 +309,27 @@ export const OptimizerView: React.FC = () => {
             Cada activo leído contra el piso de su rango; la propuesta sigue en vista esperada.
           </span>
         )}
+        <span className="opt-viewbar-l">Orden <InfoTip k="orden" /></span>
+        <div className="opt-seg" role="tablist" aria-label="Orden de la tabla">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sortMode === 'velocidad'}
+            className={sortMode === 'velocidad' ? 'on' : ''}
+            onClick={() => setSortMode('velocidad')}
+          >
+            Velocidad
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sortMode === 'score'}
+            className={sortMode === 'score' ? 'on' : ''}
+            onClick={() => setSortMode('score')}
+          >
+            Score
+          </button>
+        </div>
       </div>
 
       <div className="opt-kpis">
@@ -358,10 +380,12 @@ export const OptimizerView: React.FC = () => {
             <span className="opt-n">1</span>
             <h3>Tu cartera hoy</h3>
             <p>
-              {prudent ? (
-                <>Ordenada por su piso · Score de confianza <InfoTip k="vistaPrudente" /></>
+              {sortMode === 'score' ? (
+                <>Ordenada por score · Score de revalorización <InfoTip k="orden" /></>
+              ) : prudent ? (
+                <>Ordenada por su piso · Score de revalorización <InfoTip k="vistaPrudente" /></>
               ) : (
-                <>Ordenada por tiempo a duplicar · Score de confianza <InfoTip k="score" /></>
+                <>Ordenada por tiempo a duplicar · Score de revalorización <InfoTip k="score" /></>
               )}
             </p>
           </div>
@@ -594,7 +618,7 @@ export const OptimizerView: React.FC = () => {
                   <div className="opt-r2">
                     {a.score != null ? (
                       <div className="opt-score">
-                        Score de confianza
+                        Score de revalorización
                         <b>{a.score}<span>/100</span></b>
                         <Stars n={a.stars} />
                       </div>

@@ -240,6 +240,15 @@ async function buildAssetInput(
       epsNextYearPct: finviz?.epsNextYearPct ?? null,
       epsNext5YPct: extras.epsNext5YGrowthPct ?? finviz?.epsNext5YPct ?? null,
       salesGrowthPct: finviz?.salesYoyTtmPct ?? null,
+      // Momentum (R14): SOLO alimenta el tilt del score — Finviz
+      // (distancias a medias, RSI, rendimiento anual) y Yahoo
+      // (revisiones de EPS +1y). Sin dato → tilt 0.
+      sma50DistPct: finviz?.sma50DistPct ?? null,
+      sma200DistPct: finviz?.sma200DistPct ?? null,
+      rsi14: finviz?.rsi14 ?? null,
+      perfYearPct: finviz?.perfYearPct ?? null,
+      epsRevisionUp30: extras.epsRevisionUp30 ?? null,
+      epsRevisionDown30: extras.epsRevisionDown30 ?? null,
       // Crecimiento de ventas FUTURO de consenso %: la misma
       // definición que el motor de FV usa para su chequeo de
       // ingresos — promedio de la tendencia de ingresos de Yahoo
@@ -437,6 +446,13 @@ async function fetchIndustryPeers(
         operatingMarginPct: finviz?.operatingMarginPct ?? null,
         debtToEquity: finviz?.debtToEquity ?? null,
         moatScore: fv.moatScore ?? null,
+        // Momentum (R14): el par también se puntúa con el mismo score.
+        sma50DistPct: finviz?.sma50DistPct ?? null,
+        sma200DistPct: finviz?.sma200DistPct ?? null,
+        rsi14: finviz?.rsi14 ?? null,
+        perfYearPct: finviz?.perfYearPct ?? null,
+        epsRevisionUp30: extras?.epsRevisionUp30 ?? null,
+        epsRevisionDown30: extras?.epsRevisionDown30 ?? null,
       };
       const scored = scoreAsset(input, price, {
         sellCommissionPct: 0.5, riskFreePct: RISK_FREE_PCT, yearsToCorrection: 3, minTradeUsd: 250,
@@ -445,7 +461,8 @@ async function fetchIndustryPeers(
       if (scored.score != null && scored.expectedReturnPct != null) {
         peers.push({
           symbol, ticker: t, name: t, industry: industryName, price,
-          score: scored.score, expectedReturnPct: scored.expectedReturnPct,
+          score: scored.score, certaintyScore: scored.certaintyScore,
+          expectedReturnPct: scored.expectedReturnPct,
           volatilityPct: scored.volatilityPct,
           priceHistory: peerCloses,
           fvConfidence: fv.fvConfidence ?? null,

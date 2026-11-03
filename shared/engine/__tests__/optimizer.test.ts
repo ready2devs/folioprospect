@@ -318,14 +318,16 @@ describe('sin shrinkage por confianza (R11: la confianza es etiqueta, no reescal
     const baja = scoreAsset(mk('Baja'), 1000, SCORE_OPTS);
     expect(baja.fvConvergencePct!).toBeCloseTo(alta.fvConvergencePct!, 6);
     expect(baja.expectedReturnPct!).toBeCloseTo(alta.expectedReturnPct!, 6);
-    // Redefinición del score (2026-11-03): la valuación NO se
+    // Redefinición del score (2026-11-03; R14): la valuación NO se
     // reescala por la etiqueta (eso sigue prohibido), pero el
-    // score de confianza SÍ la usa como insumo — es, literalmente,
-    // el acuerdo entre las patas que la etiqueta resume. La
-    // velocidad de la predicción, en cambio, no se entera.
+    // SUB-ÍNDICE DE CERTEZA sí la usa como insumo — es, literalmente,
+    // el acuerdo entre las patas que la etiqueta resume — y el
+    // score titular la cobra vía su restricción de incertidumbre.
+    // La velocidad de la predicción, en cambio, no se entera.
+    expect(alta.certaintyScore!).toBeGreaterThan(baja.certaintyScore!);
+    expect(alta.certaintyBand).toBe('alta');
+    expect(baja.certaintyBand).toBe('media');
     expect(alta.score!).toBeGreaterThan(baja.score!);
-    expect(alta.scoreBand).toBe('alta');
-    expect(baja.scoreBand).toBe('media');
     expect(baja.scoreVelocity!).toBeCloseTo(alta.scoreVelocity!, 6);
   });
 

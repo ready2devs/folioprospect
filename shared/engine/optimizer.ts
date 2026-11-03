@@ -219,6 +219,21 @@ export interface OptimizerAssetInput {
    *  mismo refresco (consenso ≈ break-even): trazabilidad; desde R11
    *  no altera ningún número de esta capa. */
   epsSignDisagreement?: boolean;
+  /** ===== Momentum (R14): datos que la app YA ingiere y que SOLO
+   *  alimentan el tilt de momentum del score (0 a +5 pts). Sin
+   *  dato, el tilt vale 0 (R0): nunca se inventa. ===== */
+  /** Distancia % del precio a la SMA50 (Finviz). */
+  sma50DistPct?: number | null;
+  /** Distancia % del precio a la SMA200 (Finviz). */
+  sma200DistPct?: number | null;
+  /** RSI(14) (Finviz): el freno de euforia del tilt. */
+  rsi14?: number | null;
+  /** Rendimiento del último año % (Finviz «Perf Year»). */
+  perfYearPct?: number | null;
+  /** Revisiones de EPS +1y al alza, últimos 30 días (Yahoo). */
+  epsRevisionUp30?: number | null;
+  /** Revisiones de EPS +1y a la baja, últimos 30 días (Yahoo). */
+  epsRevisionDown30?: number | null;
 }
 
 export interface ScoredPeer {
@@ -228,6 +243,9 @@ export interface ScoredPeer {
   industry: string;
   price: number;
   score: number;
+  /** Sub-índice de CERTEZA del par (R14): el listón de destinos
+   *  lo lee a él, no al score titular de atractivo. */
+  certaintyScore?: number | null;
   expectedReturnPct: number;
   volatilityPct?: number | null;
   /** Mismo listón que las posiciones propias cuando actúa de destino. */
@@ -305,10 +323,10 @@ export interface AssetScore {
   expectedReturnPessimisticPct: number | null;
   /** Años a duplicar con el retorno prudente. */
   yearsToDoublePessimistic: number | null;
-  /** Score en la vista prudente: el MISMO score de confianza del
-   *  activo. La certeza es de los datos (dispersión, volatilidad,
-   *  caja), no de la vista: la lectura prudente cambia la
-   *  predicción, no cuánto se le cree a los insumos. */
+  /** Score en la vista prudente (R14): la misma composición del
+   *  titular (velocidad cobrada al riesgo y a la incertidumbre,
+   *  más el tilt) pero con la velocidad del RETORNO PRUDENTE.
+   *  Las restricciones no dependen de la vista. */
   scorePessimistic: number | null;
   /** true si el activo no tiene un escenario pesimista válido
    *  (sin rango de FV): su retorno prudente cae al esperado y la UI
@@ -338,15 +356,42 @@ export interface AssetScore {
   scoreAdjustmentPts: number | null;
   /** Ídem scoreAdjustmentPts: desapilado, siempre null. */
   scoreAdjustmentDriver: string | null;
-  /** Banda del score de confianza en palabras: 'alta' (≥70,
-   *  «Confianza alta»), 'media' (40–69) o 'a-revisar' (<40 o
-   *  modelSuspect activo, «Estimación a revisar»). */
-  scoreBand: ScoreBand | null;
-  /** Sub-puntajes de confianza que compusieron el score (para la
-   *  explicación en la ficha y la evaluación): acuerdo entre las
-   *  patas del FV, acuerdo entre fuentes y riesgo de desvío por
-   *  volatilidad. null en filas sin score propio (pares, caja). */
-  scoreComponents: { legs: number | null; sources: number | null; risk: number | null } | null;
+  /** Banda del SUB-ÍNDICE DE CERTEZA en palabras (R14): 'alta'
+   *  (≥70, «Confianza alta»), 'media' (40–69) o 'a-revisar' (<40
+   *  o modelSuspect activo, «Estimación a revisar»). La lee el
+   *  análisis del activo; la tarjeta muestra solo el score. */
+  certaintyBand: ScoreBand | null;
+  /** Sub-puntajes del sub-índice de certeza: acuerdo entre las
+   *  patas del FV, acuerdo entre fuentes y riesgo de desvío
+   *  (marginal primero). null en filas sin certeza propia
+   *  (cripto, caja). */
+  certaintyComponents: { legs: number | null; sources: number | null; risk: number | null } | null;
+  /** SUB-ÍNDICE DE CERTEZA (R14): el índice de R12.1/R13 tal
+   *  cual (patas 35 + fuentes 30 + riesgo marginal 25, caja −6,
+   *  techo 39 si modelSuspect). Ya NO es el score titular: vive
+   *  como restricción del score y como el número que leen las
+   *  reglas de fiabilidad (listón de destinos y su prosa). */
+  certaintyScore: number | null;
+  /** Desglose del SCORE titular (R14), componente por
+   *  componente: velocidad de partida, restricción de riesgo,
+   *  restricción de incertidumbre, reparo de caja y tilt de
+   *  momentum — las restricciones en puntos ya restados. null
+   *  en filas sin score (cripto, caja). */
+  scoreBreakdown: {
+    velocity: number;
+    riskRestrictionPts: number;
+    uncertaintyRestrictionPts: number;
+    cashPenaltyPts: number;
+    momentumTiltPts: number;
+  } | null;
+  /** Tilt de momentum crudo (0 a +5, 1 decimal) y sus patas,
+   *  para auditar qué lo produjo. null sin ningún dato. */
+  momentum: {
+    tiltPts: number;
+    priceLeg: number | null;
+    revisionLeg: number | null;
+    rsiBrake: number;
+  } | null;
   /** Ancla de caja real (R12): estado según el FCF de los últimos
    *  12 meses reportados. Es una MARCA visible y, si quemó caja, un
    *  reparo dentro del ajuste del score — nada más: no entra en el
@@ -468,6 +513,9 @@ export interface Allocation {
   qtyBought: number;
   price: number;
   score: number | null;
+  /** Sub-índice de certeza del destino (R14): lo cita la prosa
+   *  de la propuesta («confianza X/100»). */
+  certaintyScore?: number | null;
   expectedReturnPct: number | null;
   note: string;
 }
@@ -779,21 +827,23 @@ export function thesisSignalsFor(a: OptimizerAssetInput): ThesisSignalCode[] {
   return out;
 }
 
-/** Confianza mínima (score de confianza) para recibir fondos: el
- *  listón de destinos es un criterio de FIABILIDAD — se le cree a
- *  la predicción del destino — y por eso usa el score en su
- *  semántica vigente (redefinición 2026-11-03: confianza). */
+/** Certeza mínima para recibir fondos: el listón de destinos es
+ *  un criterio de FIABILIDAD — se le cree a la predicción del
+ *  destino — y por eso lee el SUB-ÍNDICE DE CERTEZA (R14), no el
+ *  score titular de atractivo. El valor (65) no cambió. */
 export const DESTINATION_MIN_SCORE = 65;
 
-/** Bandas del score de confianza (redefinición 2026-11-03):
+/** Bandas del sub-índice de certeza (redefinición 2026-11-03):
  *  ≥ 70 «Confianza alta» · 40–69 «Confianza media» · < 40
  *  «Estimación a revisar». Decisiones de diseño simple, calibradas
  *  para que la cartera real no quede toda en una misma banda. */
 export const SCORE_CONFIDENCE_HIGH = 70;
 export const SCORE_CONFIDENCE_LOW = 40;
-/** Techo del score cuando `modelSuspect` está activo: un activo
- *  con las fuentes en contradicción extrema no puede quedar en
- *  banda alta ni media — su banda es «a revisar» por definición. */
+/** Techo cuando `modelSuspect` está activo: un activo con las
+ *  fuentes en contradicción extrema no puede quedar en banda
+ *  alta ni media — su banda es «a revisar» por definición. El
+ *  techo pisa el sub-índice de certeza Y el score titular (R14:
+ *  la sospecha es una restricción de ambos). */
 export const SUSPECT_SCORE_CAP = 39;
 
 export type ScoreBand = 'alta' | 'media' | 'a-revisar';
@@ -942,7 +992,7 @@ function qualityScore(a: OptimizerAssetInput): number | null {
 
 
 /** Spec de riesgo de un input (para el módulo único). */
-function riskSpecForInput(a: OptimizerAssetInput): RiskAssetSpec {
+function riskSpecForInput(a: OptimizerAssetInput, basketWeight?: number | null): RiskAssetSpec {
   return {
     key: a.symbol,
     sector: a.sector,
@@ -952,6 +1002,7 @@ function riskSpecForInput(a: OptimizerAssetInput): RiskAssetSpec {
     closes: a.priceHistory ?? null,
     fallbackVolPct: a.volatilityPct ?? null,
     beta: a.beta ?? null,
+    basketWeight: basketWeight ?? null,
   };
 }
 
@@ -1022,11 +1073,12 @@ interface ConfidenceFields {
   cashPenaltyPts: number;
 }
 
-/** SCORE = CONFIANZA EN LA PREDICCIÓN (redefinición del usuario
- *  2026-11-03 11:23, que DEROGA la directiva de «velocidad como
- *  pata principal» y el Cambio 1 de R12): la tabla ordena por la
- *  predicción (años a duplicar) y el score mide CUÁNTO HAY QUE
- *  CREERLE. Se construye SOLO con dispersión e incertidumbre
+/** SUB-ÍNDICE DE CERTEZA (nació como «score = confianza en la
+ *  predicción» en la redefinición del usuario 2026-11-03 11:23;
+ *  desde R14 es un sub-índice INTERNO: restricción del score
+ *  titular y el número de las reglas de fiabilidad — ver
+ *  headlineScoreFor). Mide CUÁNTO HAY QUE CREERLE a la
+ *  predicción. Se construye SOLO con dispersión e incertidumbre
  *  medibles — nada de velocidad, nada de oportunidad precio/FV,
  *  nada de calidad del negocio:
  *   (1) acuerdo entre las dos patas del FV (la etiqueta de
@@ -1056,7 +1108,7 @@ function confidenceFor(
   score: number | null;
   stars: number | null;
   band: ScoreBand | null;
-  components: AssetScore['scoreComponents'];
+  components: AssetScore['certaintyComponents'];
 } {
   let legsScore: number | null =
     f.fvConfidence === 'Alta' ? 90 : f.fvConfidence === 'Media' ? 65 : f.fvConfidence === 'Baja' ? 35 : null;
@@ -1103,13 +1155,152 @@ function confidenceFor(
   };
 }
 
-/** Listón de destinos: FIABILIDAD (confianza ≥ 65 en la
- *  predicción del destino), dos patas de FV, FV no más de 3× el
+/** ============================================================
+ *  SCORE TITULAR (R14) — «velocidad de revalorización
+ *  restringida al riesgo» (concepto textual del usuario,
+ *  2026-11-03 12:32, que SUPERSEDE el titular de confianza pura
+ *  de R12.1: con confianza pura, la posición más lenta de la
+ *  tabla tenía el score más alto y el usuario lo rechazó).
+ *
+ *  COMPOSICIÓN (cada componente viaja en el payload):
+ *    score = velocidad(RE)
+ *          − restricción de riesgo        (100 − riesgoMarginal) × 0,35
+ *          − restricción de incertidumbre (100 − dispersión) × 0,30
+ *          − 6 si quemó caja (ancla de caja, como siempre)
+ *          + tilt de momentum (0 a +5, solo suma)
+ *    y si el modelo es sospechoso (modelSuspect), techo 39.
+ *   - La velocidad sale de la escala honesta de R12
+ *     (scoreVelocityFor: el 100 es excepcional).
+ *   - La restricción de riesgo REUTILIZA la sub-escala
+ *     marginal-primero de la certeza (R13: PCTR/peso 40% +
+ *     MCTR 35% + volatilidad propia 25%): no hay una segunda
+ *     medición de riesgo.
+ *   - La dispersión es el acuerdo patas/fuentes de la certeza
+ *     renormalizado (35/30 sin la pata de riesgo, que ya se
+ *     cobra por su propia restricción: nada se cobra dos veces).
+ *   - El SUB-ÍNDICE DE CERTEZA (confidenceFor, intacto) sigue
+ *     existiendo: es restricción de este score Y el número que
+ *     leen las reglas de FIABILIDAD (listón de destinos, prosa
+ *     de «predicción firme/frágil»). Las reglas de ATRACTIVO
+ *     leen este score.
+ *  ============================================================ */
+export const SCORE_RISK_RESTRICTION_WEIGHT = 0.35;
+export const SCORE_UNCERTAINTY_RESTRICTION_WEIGHT = 0.3;
+/** Techo del tilt de momentum (solo positivo, R14). */
+export const MOMENTUM_TILT_MAX_PTS = 5;
+/** RSI(14) desde el que el tilt empieza a frenar; a 80 es 0. */
+export const MOMENTUM_RSI_BRAKE_START = 70;
+export const MOMENTUM_RSI_BRAKE_FULL = 80;
+
+/** TILT DE MOMENTUM (R14): 0 a +5 puntos, SOLO desde datos que
+ *  la app ya ingiere. Fórmula exacta del compuesto:
+ *   - Pata de precio (0..1): tendencia = 0,45×clamp01(distSMA50/8)
+ *     + 0,55×clamp01(distSMA200/15) (distancias negativas aportan
+ *     0; pesos renormalizados si falta una media) y rendimiento
+ *     = clamp01(perfAnual/60); pataPrecio = 0,6×tendencia +
+ *     0,4×rendimiento (renormalizado si falta una).
+ *   - Pata de confirmación (0..1): revisiones de EPS +1y de
+ *     Yahoo = clamp01(0,5 + 0,5×(alzas − bajas)/(alzas + bajas)).
+ *   - Compuesto = 0,75×precio + 0,25×confirmación (renormalizado
+ *     si falta una pata; sin ninguna pata → tilt 0, R0).
+ *   - FRENO DE EUFORIA: con RSI(14) ≥ 80 el tilt es 0; entre 70
+ *     y 80 se reduce linealmente (factor (80 − RSI)/10); sin RSI
+ *     no hay freno.
+ *   - tilt = 5 × compuesto × freno, redondeado a 1 decimal.
+ *  El momentum toca SOLO el score: ni el FV ni el RE lo leen
+ *  (test de recomposición en sistema-r14.test.ts). */
+export function momentumTiltFor(a: OptimizerAssetInput): {
+  tiltPts: number;
+  priceLeg: number | null;
+  revisionLeg: number | null;
+  rsiBrake: number;
+} {
+  const trendParts: Array<{ v: number; w: number }> = [];
+  if (a.sma50DistPct != null) trendParts.push({ v: clamp(a.sma50DistPct / 8, 0, 1), w: 0.45 });
+  if (a.sma200DistPct != null) trendParts.push({ v: clamp(a.sma200DistPct / 15, 0, 1), w: 0.55 });
+  const priceParts: Array<{ v: number; w: number }> = [];
+  if (trendParts.length) {
+    const tw = trendParts.reduce((s, p) => s + p.w, 0);
+    priceParts.push({ v: trendParts.reduce((s, p) => s + p.v * p.w, 0) / tw, w: 0.6 });
+  }
+  if (a.perfYearPct != null) priceParts.push({ v: clamp(a.perfYearPct / 60, 0, 1), w: 0.4 });
+  let priceLeg: number | null = null;
+  if (priceParts.length) {
+    const tw = priceParts.reduce((s, p) => s + p.w, 0);
+    priceLeg = priceParts.reduce((s, p) => s + p.v * p.w, 0) / tw;
+  }
+  let revisionLeg: number | null = null;
+  const up = a.epsRevisionUp30 ?? null;
+  const down = a.epsRevisionDown30 ?? null;
+  if (up != null && down != null && up + down > 0) {
+    revisionLeg = clamp(0.5 + (0.5 * (up - down)) / (up + down), 0, 1);
+  }
+  const legs: Array<{ v: number; w: number }> = [];
+  if (priceLeg != null) legs.push({ v: priceLeg, w: 0.75 });
+  if (revisionLeg != null) legs.push({ v: revisionLeg, w: 0.25 });
+  if (!legs.length) return { tiltPts: 0, priceLeg, revisionLeg, rsiBrake: 1 };
+  const tw = legs.reduce((s, p) => s + p.w, 0);
+  const composite = legs.reduce((s, p) => s + p.v * p.w, 0) / tw;
+  let rsiBrake = 1;
+  if (a.rsi14 != null) {
+    rsiBrake =
+      a.rsi14 >= MOMENTUM_RSI_BRAKE_FULL
+        ? 0
+        : a.rsi14 <= MOMENTUM_RSI_BRAKE_START
+          ? 1
+          : (MOMENTUM_RSI_BRAKE_FULL - a.rsi14) / (MOMENTUM_RSI_BRAKE_FULL - MOMENTUM_RSI_BRAKE_START);
+  }
+  const tiltPts = Math.round(clamp(MOMENTUM_TILT_MAX_PTS * composite * rsiBrake, 0, MOMENTUM_TILT_MAX_PTS) * 10) / 10;
+  return { tiltPts, priceLeg, revisionLeg, rsiBrake };
+}
+
+/** Compone el score titular desde la velocidad y las
+ *  restricciones. `certaintyComponents` son los sub-puntajes
+ *  publicados de la certeza (patas/fuentes/riesgo marginal). */
+export function headlineScoreFor(args: {
+  rePct: number | null;
+  certaintyComponents: AssetScore['certaintyComponents'];
+  cashPenaltyPts: number;
+  momentumTiltPts: number;
+  modelSuspect: boolean;
+}): { score: number | null; breakdown: AssetScore['scoreBreakdown'] } {
+  if (args.rePct == null) return { score: null, breakdown: null };
+  const velocity = scoreVelocityFor(args.rePct);
+  const riskSub = args.certaintyComponents?.risk ?? null;
+  const riskRestrictionPts = riskSub != null ? (100 - riskSub) * SCORE_RISK_RESTRICTION_WEIGHT : 0;
+  const dispParts: Array<{ v: number; w: number }> = [];
+  if (args.certaintyComponents?.legs != null) dispParts.push({ v: args.certaintyComponents.legs, w: 35 });
+  if (args.certaintyComponents?.sources != null) dispParts.push({ v: args.certaintyComponents.sources, w: 30 });
+  let uncertaintyRestrictionPts = 0;
+  if (dispParts.length) {
+    const tw = dispParts.reduce((s, p) => s + p.w, 0);
+    const dispersion = dispParts.reduce((s, p) => s + p.v * p.w, 0) / tw;
+    uncertaintyRestrictionPts = (100 - dispersion) * SCORE_UNCERTAINTY_RESTRICTION_WEIGHT;
+  }
+  let raw =
+    velocity - riskRestrictionPts - uncertaintyRestrictionPts + args.cashPenaltyPts + args.momentumTiltPts;
+  if (args.modelSuspect) raw = Math.min(raw, SUSPECT_SCORE_CAP);
+  const score = Math.round(clamp(raw, 0, 100));
+  return {
+    score,
+    breakdown: {
+      velocity: Math.round(velocity * 10) / 10,
+      riskRestrictionPts: Math.round(riskRestrictionPts * 10) / 10,
+      uncertaintyRestrictionPts: Math.round(uncertaintyRestrictionPts * 10) / 10,
+      cashPenaltyPts: args.cashPenaltyPts,
+      momentumTiltPts: args.momentumTiltPts,
+    },
+  };
+}
+
+/** Listón de destinos: FIABILIDAD (CERTEZA ≥ 65 en la predicción
+ *  del destino — el sub-índice de certeza de R14, NO el score
+ *  titular de atractivo), dos patas de FV, FV no más de 3× el
  *  precio, sin rol defensivo y sin balance en puerta. */
 function destinationEligibleFor(args: {
   isCrypto: boolean;
   isCash: boolean;
-  score: number | null;
+  certaintyScore: number | null;
   fvComponentCount: number | null;
   fvToPrice: number | null;
   defensive: boolean;
@@ -1118,8 +1309,8 @@ function destinationEligibleFor(args: {
   return (
     !args.isCrypto &&
     !args.isCash &&
-    args.score != null &&
-    args.score >= DESTINATION_MIN_SCORE &&
+    args.certaintyScore != null &&
+    args.certaintyScore >= DESTINATION_MIN_SCORE &&
     (args.fvComponentCount == null || args.fvComponentCount >= 2) &&
     (args.fvToPrice == null || args.fvToPrice <= 3) &&
     !args.defensive &&
@@ -1161,8 +1352,11 @@ export function scoreAsset(
 
   let gkParts: GrinoldKronerParts | null = null;
   let scoreVelocity: number | null = null;
-  let scoreBand: ScoreBand | null = null;
-  let scoreComponents: AssetScore['scoreComponents'] = null;
+  let certaintyBand: ScoreBand | null = null;
+  let certaintyComponents: AssetScore['certaintyComponents'] = null;
+  let certaintyScore: number | null = null;
+  let scoreBreakdown: AssetScore['scoreBreakdown'] = null;
+  let momentum: AssetScore['momentum'] = null;
   let scoreAdjustmentPts: number | null = null;
   let scoreAdjustmentDriver: string | null = null;
   let rePess: number | null = null;
@@ -1247,10 +1441,12 @@ export function scoreAsset(
         : null);
     if (gAnchor != null) gordon = (a.dividendYieldPct ?? 0) + clamp(gAnchor, 0, 5.5);
 
-    // SCORE = CONFIANZA EN LA PREDICCIÓN (confidenceFor): en
-    // esta pasada el componente de riesgo usa solo la volatilidad
-    // del módulo; optimizePortfolio lo completa con el aporte al
-    // riesgo (PCTR) cuando la descomposición ya está computada.
+    // CERTEZA (confidenceFor) y SCORE TITULAR (headlineScoreFor,
+    // R14): en esta pasada el componente de riesgo de la certeza
+    // usa solo la volatilidad del módulo; optimizePortfolio lo
+    // completa con el aporte al riesgo (PCTR/MCTR) cuando la
+    // descomposición ya está computada, y recompone AMBOS
+    // números desde ahí.
     scoreVelocity = re != null ? scoreVelocityFor(re) : null;
     const conf = confidenceFor(
       {
@@ -1266,20 +1462,38 @@ export function scoreAsset(
       vol,
       null
     );
-    score = conf.score;
-    stars = conf.stars;
-    scoreBand = conf.band;
-    scoreComponents = conf.components;
-    // Score de la vista prudente: el MISMO de confianza — la
-    // certeza es de los datos del activo, no de la vista.
-    scorePess = score;
+    certaintyScore = conf.score;
+    certaintyBand = conf.band;
+    certaintyComponents = conf.components;
+    const tilt = momentumTiltFor(a);
+    momentum = tilt.priceLeg != null || tilt.revisionLeg != null ? tilt : null;
+    const head = headlineScoreFor({
+      rePct: re,
+      certaintyComponents: conf.components,
+      cashPenaltyPts: cashAnchor.penaltyPts,
+      momentumTiltPts: tilt.tiltPts,
+      modelSuspect: !!a.fvModelSuspect,
+    });
+    score = head.score;
+    scoreBreakdown = head.breakdown;
+    stars = score != null ? clamp(Math.round(score / 20), 1, 5) : null;
+    // Score de la vista prudente: la MISMA composición sobre la
+    // velocidad del retorno prudente (las restricciones y el
+    // tilt no dependen de la vista).
+    scorePess = headlineScoreFor({
+      rePct: rePess,
+      certaintyComponents: conf.components,
+      cashPenaltyPts: cashAnchor.penaltyPts,
+      momentumTiltPts: tilt.tiltPts,
+      modelSuspect: !!a.fvModelSuspect,
+    }).score;
 
 
   }
   const fvToPrice =
     a.fvBase != null && a.fvBase > 0 && a.price > 0 ? a.fvBase / a.price : null;
   const destinationEligible = destinationEligibleFor({
-    isCrypto, isCash, score,
+    isCrypto, isCash, certaintyScore,
     fvComponentCount: a.fvComponentCount ?? null,
     fvToPrice, defensive: !!a.defensive, earningsGate: gate,
   });
@@ -1327,8 +1541,11 @@ export function scoreAsset(
     scoreVelocity,
     scoreAdjustmentPts,
     scoreAdjustmentDriver,
-    scoreBand,
-    scoreComponents,
+    certaintyBand,
+    certaintyComponents,
+    certaintyScore,
+    scoreBreakdown,
+    momentum,
     cashAnchorState: cashAnchor.state,
     cashAnchorPenaltyPts: cashAnchor.penaltyPts,
     cashAnchorFcfTtmUsd: cashAnchor.fcfTtmUsd,
@@ -1508,7 +1725,7 @@ export function optimizePortfolio(
   // pares candidatos, con sus historiales. Todo número de riesgo
   // de este resultado sale de acá.
   const riskMatrix = buildRiskMatrix([
-    ...inputs.map(riskSpecForInput),
+    ...inputs.map((a) => riskSpecForInput(a, totalValue > 0 ? a.value / totalValue : null)),
     ...Object.values(peersByIndustry)
       .flat()
       .map((peer) => ({
@@ -1520,16 +1737,19 @@ export function optimizePortfolio(
   ]);
   const scored = inputs.map((a) => scoreAsset(a, totalValue, opts, riskMatrix));
   const volBefore = applyRiskDecomposition(scored, opts.riskFreePct, riskMatrix);
-  // Segunda pasada del score de confianza (consolidación de
+  // Segunda pasada de CERTEZA y SCORE (consolidación de
   // riesgo): con la descomposición computada, el componente de
   // riesgo de desvío de cada posición se recalcula MARGINAL-
   // PRIMERO (R13): mandan su aporte al riesgo total (PCTR
   // relativo a su peso) y su riesgo marginal (MCTR contra la
   // volatilidad de la cartera), con la volatilidad medida como
   // insumo secundario — los mismos campos del payload que
-  // muestran el gráfico de burbujas y la ficha.
+  // muestran el gráfico de burbujas y la ficha. Desde R14 esa
+  // certeza alimenta DOS salidas: el sub-índice de certeza
+  // (fiabilidad: listón de destinos) y, como restricción, el
+  // score titular de atractivo (velocidad cobrada al riesgo).
   for (const s of scored) {
-    if (s.isCrypto || s.isCash || s.score == null) continue;
+    if (s.isCrypto || s.isCash || s.certaintyScore == null) continue;
     const input = inputs.find((i) => i.symbol === s.symbol);
     if (!input) continue;
     const conf = confidenceFor(
@@ -1549,13 +1769,29 @@ export function optimizePortfolio(
       { mctrPct: s.mctrPct, portfolioVolPct: volBefore }
     );
     if (conf.score != null) {
-      s.score = conf.score;
-      s.stars = conf.stars;
-      s.scoreBand = conf.band;
-      s.scoreComponents = conf.components;
-      s.scorePessimistic = conf.score;
+      s.certaintyScore = conf.score;
+      s.certaintyBand = conf.band;
+      s.certaintyComponents = conf.components;
+      const tiltPts = momentumTiltFor(input).tiltPts;
+      const head = headlineScoreFor({
+        rePct: s.expectedReturnPct,
+        certaintyComponents: conf.components,
+        cashPenaltyPts: s.cashAnchorPenaltyPts,
+        momentumTiltPts: tiltPts,
+        modelSuspect: s.modelSuspect,
+      });
+      s.score = head.score;
+      s.scoreBreakdown = head.breakdown;
+      s.stars = head.score != null ? clamp(Math.round(head.score / 20), 1, 5) : null;
+      s.scorePessimistic = headlineScoreFor({
+        rePct: s.expectedReturnPessimisticPct,
+        certaintyComponents: conf.components,
+        cashPenaltyPts: s.cashAnchorPenaltyPts,
+        momentumTiltPts: tiltPts,
+        modelSuspect: s.modelSuspect,
+      }).score;
       s.destinationEligible = destinationEligibleFor({
-        isCrypto: s.isCrypto, isCash: s.isCash, score: s.score,
+        isCrypto: s.isCrypto, isCash: s.isCash, certaintyScore: conf.score,
         fvComponentCount: input.fvComponentCount ?? null,
         fvToPrice: s.fvToPrice, defensive: s.defensive, earningsGate: s.earningsGate,
       });
@@ -1812,7 +2048,7 @@ export function optimizePortfolio(
         grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
         reason:
           `Sugerencia automática: la menor eficiencia retorno/riesgo entre las posiciones restantes ` +
-          `(retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual · confianza en esa predicción: ${a.score != null ? a.score + '/100' : '—'})` +
+          `(retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual · certeza de esa predicción: ${a.certaintyScore != null ? a.certaintyScore + '/100' : '—'})` +
           (a.defensive ? ' · ojo: cumple rol defensivo' : ''),
         score: a.score, expectedReturnPct: a.expectedReturnPct,
       };
@@ -1864,7 +2100,10 @@ export function optimizePortfolio(
         const src = scored.find((a) => a.symbol === e.symbol)!;
         const peer = (peersByIndustry[src.industry] ?? []).find((p) => p.ticker === e.replacementTicker)!;
         if (!peer) continue;
-        if (peer.score < DESTINATION_MIN_SCORE) continue;
+        // El listón del par es de CERTEZA (R14), no de atractivo:
+        // se lee su sub-índice de certeza (con respaldo al score
+        // para pares armados a mano sin ese campo).
+        if ((peer.certaintyScore ?? peer.score) < DESTINATION_MIN_SCORE) continue;
         if (peer.fvComponentCount != null && peer.fvComponentCount < 2) continue;
         if (peer.fvToPrice != null && peer.fvToPrice > 3) continue;
         cands.push({
@@ -1875,7 +2114,8 @@ export function optimizePortfolio(
             symbol: peer.symbol, ticker: peer.ticker, name: peer.name, isNew: true,
             industry: peer.industry, amountUsd: amount,
             qtyBought: peer.price > 0 ? amount / peer.price : 0, price: peer.price,
-            score: peer.score, expectedReturnPct: peer.expectedReturnPct,
+            score: peer.score, certaintyScore: peer.certaintyScore ?? peer.score,
+            expectedReturnPct: peer.expectedReturnPct,
             note: `NUEVO · reemplaza a ${e.ticker} en ${peer.industry}`,
           }),
         });
@@ -1894,7 +2134,8 @@ export function optimizePortfolio(
             symbol: a.symbol, ticker: a.ticker, name: a.name, isNew: false,
             industry: a.industry, amountUsd: amount,
             qtyBought: a.price > 0 ? amount / a.price : 0, price: a.price,
-            score: a.score, expectedReturnPct: a.expectedReturnPct,
+            score: a.score, certaintyScore: a.certaintyScore,
+            expectedReturnPct: a.expectedReturnPct,
             note: 'Posición reforzada',
           }),
         });
@@ -1975,7 +2216,8 @@ export function optimizePortfolio(
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
-        scoreBand: al.score != null ? scoreBandFor(al.score, false) : null, scoreComponents: null,
+        certaintyBand: null, certaintyComponents: null, certaintyScore: al.certaintyScore ?? null,
+        scoreBreakdown: null, momentum: null,
         cashAnchorState: 'sin-dato', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
         cashAnchorSource: null, cashAnchorPeriodEnd: null, cashAnchorDiscrepancy: false,
         cashAnchorProviderFcfTtmUsd: null, cashAnchorEdgarFyOnlyGap: false,
@@ -2007,7 +2249,8 @@ export function optimizePortfolio(
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
-        scoreBand: null, scoreComponents: null,
+        certaintyBand: null, certaintyComponents: null, certaintyScore: null,
+        scoreBreakdown: null, momentum: null,
         cashAnchorState: 'no-aplica', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
         cashAnchorSource: null, cashAnchorPeriodEnd: null, cashAnchorDiscrepancy: false,
         cashAnchorProviderFcfTtmUsd: null, cashAnchorEdgarFyOnlyGap: false,
@@ -2147,8 +2390,8 @@ export function buildNarrative(
   const cashHeldUsd = extras?.cashHeldUsd ?? 0;
   const stocks = assets.filter((a) => !a.isCrypto && !a.isCash);
   const top = [...assets].sort((x, y) => y.weightPct - x.weightPct).slice(0, 3);
-  const best = [...stocks].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
-  const worst = [...stocks].sort((x, y) => (x.score ?? 100) - (y.score ?? 100))[0];
+  const best = [...stocks].sort((x, y) => (y.certaintyScore ?? 0) - (x.certaintyScore ?? 0))[0];
+  const worst = [...stocks].sort((x, y) => (x.certaintyScore ?? 100) - (y.certaintyScore ?? 100))[0];
   const extractedTickers = new Set(
     extractions.filter((e) => e.kind !== 'efectivo').map((e) => e.ticker)
   );
@@ -2156,7 +2399,7 @@ export function buildNarrative(
 
   // 1) Situación y núcleo
   out.push(
-    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. La predicción más firme de la tabla es la de ${best?.ticker} (score de confianza ${best?.score}/100) y la más frágil, la de ${worst?.ticker} (${worst?.score}/100${worst?.scoreBand === 'a-revisar' ? ': estimación a revisar' : ''}). El score no premia velocidad: mide cuánto hay que creerle a cada predicción de duplicación.`
+    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. La predicción más firme de la tabla es la de ${best?.ticker} (certeza ${best?.certaintyScore}/100) y la más frágil, la de ${worst?.ticker} (${worst?.certaintyScore}/100${worst?.certaintyBand === 'a-revisar' ? ': estimación a revisar' : ''}). El score de cada tarjeta es otra cosa: es la velocidad de revalorización ya cobrada al riesgo y a la incertidumbre — ordena el atractivo, no la certeza.`
   );
 
   // 2) Concentración sectorial
@@ -2177,7 +2420,7 @@ export function buildNarrative(
     .slice(0, 2);
   if (topRisk.length) {
     out.push(
-      `En riesgo, la volatilidad estimada es ${fmtPct1(before.volatilityPct)} anual. No la aportan las posiciones más grandes sino las más volátiles: ${topRisk.map((a) => `${a.ticker} explica el ${fmtPct1(a.riskContributionPct ?? 0)} del riesgo total`).join(' y ')}. Por eso la optimización valida cada movimiento contra el riesgo total (descomposición de Euler): un cambio solo se propone si no lo empeora.`
+      `En riesgo, la volatilidad estimada en las caídas es ${fmtPct1(before.volatilityPct)} anual (se mide en los días en que la cartera baja, con más peso en las últimas semanas). No la aportan las posiciones más grandes sino las que más caen con el conjunto: ${topRisk.map((a) => `${a.ticker} explica el ${fmtPct1(a.riskContributionPct ?? 0)} del riesgo total`).join(' y ')}. Por eso la optimización valida cada movimiento contra el riesgo total (descomposición de Euler): un cambio solo se propone si no lo empeora.`
     );
   }
 
@@ -2219,7 +2462,7 @@ export function buildNarrative(
     if (a.modelSuspect) {
       return 'sus fuentes se contradicen entre sí de forma extrema, y su estimación quedó marcada a revisar';
     }
-    const comps = a.scoreComponents;
+    const comps = a.certaintyComponents;
     if (comps) {
       const named: Array<{ v: number | null; text: string }> = [
         { v: comps.legs, text: 'las dos estimaciones de su valor justo están lejos entre sí' },
@@ -2235,11 +2478,11 @@ export function buildNarrative(
     return 'sus insumos de valuación todavía no se confirman entre sí';
   };
   const fragileFast = byDoubling
-    .filter((a) => a.scoreBand === 'a-revisar' || a.scoreBand === 'media')
+    .filter((a) => a.certaintyBand === 'a-revisar' || a.certaintyBand === 'media')
     .slice(0, 2);
   for (const a of fragileFast) {
     out.push(
-      `Ojo con la letra chica de ${a.ticker}: está entre los que más rápido duplican (${fmtY(a.yearsToDouble)} años), pero su score de confianza es ${a.score}/100 (${bandWords(a.scoreBand)}) porque ${confidenceCause(a)}. La tabla ordena por la predicción; el score dice cuánto hay que creerle.`
+      `Ojo con la letra chica de ${a.ticker}: está entre los que más rápido duplican (${fmtY(a.yearsToDouble)} años), pero la certeza de su predicción es ${a.certaintyScore}/100 (${bandWords(a.certaintyBand)}) porque ${confidenceCause(a)}. La tabla ordena por la predicción; la certeza dice cuánto hay que creerle, y el score ya la cobró como restricción.`
     );
   }
 
@@ -2294,7 +2537,7 @@ export function buildNarrative(
   if (allocations.length) {
     const parts = allocations.map(
       (a) =>
-        `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, confianza ${a.score ?? '—'}/100)`
+        `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, certeza ${a.certaintyScore ?? '—'}/100)`
     );
     out.push(
       `El dinero liberado va a los destinos que superan el listón — confianza de al menos 65 en su predicción, valor justo formado por las dos estimaciones (fórmula y consenso) y sin balance en puerta: ${parts.join(' · ')}.`

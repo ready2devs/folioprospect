@@ -39,3 +39,41 @@ export function bubbleYTicks(yMin: number, yMax: number, maxTicks = 10): number[
   for (let v = from; v <= to; v += step) ticks.push(v);
   return ticks;
 }
+
+/** Orden de la tabla del Optimizador (R14, pedido del usuario
+ *  2026-11-03 12:38): por VELOCIDAD de revalorización (el orden
+ *  histórico: retorno esperado descendente; en vista prudente,
+ *  retorno prudente descendente) o por SCORE descendente — el
+ *  de la vista activa (en prudente, el score prudente). Función
+ *  pura para poder testearla: el default (esperada + velocidad)
+ *  devuelve el orden entrante INTACTO. El orden por score es
+ *  estable: a igual score desempata la velocidad de la vista, y
+ *  a igualdad total conserva el orden entrante. Los activos sin
+ *  score (cripto/caja) quedan últimos. */
+export interface SortableAsset {
+  expectedReturnPct: number | null;
+  expectedReturnPessimisticPct: number | null;
+  score: number | null;
+  scorePessimistic: number | null;
+}
+
+export function sortOptimizerAssets<T extends SortableAsset>(
+  assets: T[],
+  viewMode: 'esperada' | 'prudente',
+  sortMode: 'velocidad' | 'score'
+): T[] {
+  if (sortMode === 'velocidad' && viewMode === 'esperada') return assets;
+  const arr = [...assets];
+  if (sortMode === 'score') {
+    const scoreOf = (a: T) => (viewMode === 'prudente' ? a.scorePessimistic : a.score) ?? -Infinity;
+    const velOf = (a: T) =>
+      (viewMode === 'prudente' ? a.expectedReturnPessimisticPct : a.expectedReturnPct) ?? -Infinity;
+    arr.sort((x, y) => scoreOf(y) - scoreOf(x) || velOf(y) - velOf(x));
+    return arr;
+  }
+  // velocidad + prudente: el comparador histórico, sin cambios.
+  arr.sort(
+    (x, y) => (y.expectedReturnPessimisticPct ?? -Infinity) - (x.expectedReturnPessimisticPct ?? -Infinity)
+  );
+  return arr;
+}

@@ -137,7 +137,7 @@ describe('PEG orientador: se calcula y se muestra, pero NO ajusta ningún númer
   });
 });
 
-describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)', () => {
+describe('sub-índice de CERTEZA (nació como score de confianza, 2026-11-03 11:23; desde R14 es sub-índice)', () => {
   const SCORE_OPTS = {
     sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
     maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
@@ -154,7 +154,7 @@ describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)'
       volatilityPct: 18, ...p,
     });
 
-  it('independencia: el score NO se mueve si cambia solo el retorno esperado', () => {
+  it('independencia: la CERTEZA no se mueve si cambia solo el retorno esperado (el score titular, sí)', () => {
     const comun = {
       price: 100, fvBase: 200, fvConfidence: 'Media' as const, fvComponentCount: 2,
       fvRangeLow: 160, fvRangeHigh: 260,
@@ -164,17 +164,20 @@ describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)'
     const b = scoreAsset(base({ ...comun, analystTarget: 320 }), 1000, SCORE_OPTS);
     expect(b.expectedReturnPct!).toBeGreaterThan(a.expectedReturnPct! + 5);
     // Misma dispersión, misma volatilidad, misma caja: misma
-    // confianza, aunque la predicción de B sea mucho más rápida.
-    expect(b.score!).toBe(a.score!);
-    expect(b.scoreBand).toBe(a.scoreBand);
+    // certeza, aunque la predicción de B sea mucho más rápida.
+    expect(b.certaintyScore!).toBe(a.certaintyScore!);
+    expect(b.certaintyBand).toBe(a.certaintyBand);
+    // R14: el score TITULAR es velocidad cobrada — B, más rápida
+    // con las mismas restricciones, puntúa más alto.
+    expect(b.score!).toBeGreaterThan(a.score!);
   });
 
-  it('patas de acuerdo, fuentes tranquilas y vol baja → confianza alta', () => {
+  it('patas de acuerdo, fuentes tranquilas y vol baja → certeza alta', () => {
     const s = scoreAsset(firme(), 1000, SCORE_OPTS);
     // (90×35 + 85×30 + 88×25)/90 = 87,8
-    expect(s.score!).toBe(88);
-    expect(s.scoreBand).toBe('alta');
-    expect(s.scoreComponents).toEqual({ legs: 90, sources: 85, risk: 88 });
+    expect(s.certaintyScore!).toBe(88);
+    expect(s.certaintyBand).toBe('alta');
+    expect(s.certaintyComponents).toEqual({ legs: 90, sources: 85, risk: 88 });
   });
 
   it('fuentes en conflicto, patas lejos y vol alta → estimación a revisar', () => {
@@ -187,14 +190,15 @@ describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)'
       1000, SCORE_OPTS
     );
     // patas 35, fuentes 85−40−35 = 10, vol 14 → índice ≈ 20,8
-    expect(s.score!).toBeLessThan(40);
-    expect(s.scoreBand).toBe('a-revisar');
+    expect(s.certaintyScore!).toBeLessThan(40);
+    expect(s.certaintyBand).toBe('a-revisar');
   });
 
-  it('modelSuspect pone techo: ni con todo de acuerdo pasa de 39', () => {
+  it('modelSuspect pone techo: ni con todo de acuerdo pasa de 39 (certeza Y score)', () => {
     const s = scoreAsset(firme({ fvModelSuspect: true }), 1000, SCORE_OPTS);
+    expect(s.certaintyScore!).toBeLessThanOrEqual(39);
     expect(s.score!).toBeLessThanOrEqual(39);
-    expect(s.scoreBand).toBe('a-revisar');
+    expect(s.certaintyBand).toBe('a-revisar');
   });
 
   it('quemar caja resta 6 puntos de confianza; generar no suma nada', () => {

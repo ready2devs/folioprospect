@@ -1021,3 +1021,72 @@ El default del motor para un activo sin patas de FV era un retorno supuesto plan
 - **Retorno de cartera**: `portfolioMetrics` computa el RE (aritmético y geométrico) SOLO sobre los activos con predicción, con los pesos renormalizados dentro del subconjunto. La caja entra (su 0% es una predicción real); la cripto sin supuesto no entra ni en el numerador ni en el denominador (excluirla solo del numerador la convertiría en un 0% falso). El arrastre geométrico −σ²/2 sigue usando la volatilidad de TODA la cartera: es el riesgo que el tenedor efectivamente soporta al componer.
 
 Sin excepciones por ticker en ninguna regla de R13.
+
+## R14 — Score de revalorización, tilt de momentum, medición de riesgo a la baja con EWMA y orden conmutable (aprobada por el usuario, 2026-11-03 12:32, 12:38 y 12:56)
+
+Concepto textual del usuario que manda en esta sección: «el concepto del score es velocidad de revalorización restringido al riesgo o volatilidad del activo». Este pase SUPERSEDE el significado titular del score de R12.1 (confianza pura): con confianza pura, la posición más lenta de la tabla tenía el score más alto y el usuario lo rechazó.
+
+### 1. El score titular = velocidad cobrada al riesgo y a la incertidumbre
+
+```
+score = clamp( velocidad(RE)
+             − (100 − riesgoMarginal) × 0,35        ← restricción de riesgo
+             − (100 − dispersión) × 0,30            ← restricción de incertidumbre
+             − 6 si quemó caja (ancla de caja)
+             + tilt de momentum (0 a +5)
+             , 0, 100),  con techo 39 si modelSuspect
+```
+
+- **Velocidad**: la escala honesta de R12 (`scoreVelocityFor`: `(RE + 45)/120 × 100`).
+- **Restricción de riesgo**: REUTILIZA la sub-escala marginal-primero de la certeza (R13 lista: PCTR/peso 40% + MCTR 35% + volatilidad propia 25%). No hay una segunda medición de riesgo. Si el sub-puntaje es 100, la restricción es 0.
+- **Dispersión**: acuerdo entre patas (35) y entre fuentes (30) de la certeza, renormalizados sin la pata de riesgo — el riesgo se cobra una sola vez, por su propia restricción.
+- **Score prudente**: la misma composición con la velocidad del retorno prudente; las restricciones y el tilt no dependen de la vista.
+- El desglose viaja en el payload como `scoreBreakdown` {velocity, riskRestrictionPts, uncertaintyRestrictionPts, cashPenaltyPts, momentumTiltPts} y el tilt crudo con sus patas en `momentum`.
+- **Un solo número con un solo nombre**: la tarjeta muestra «Score de revalorización». La certeza se lee en el análisis del activo.
+
+### 2. El sub-índice de CERTEZA y el remapeo de reglas
+
+El índice de R12.1/R13 sigue existiendo, intacto, como `certaintyScore` / `certaintyBand` / `certaintyComponents` (patas 35 + fuentes 30 + riesgo 25, caja −6, techo 39). Auditar cada regla que leía el score dio este remapeo (la regla de decisión: lo que mide FALIBILIDAD lee certeza; lo que mide ATRACTIVO lee el score titular):
+
+| Regla / superficie | Lee | Por qué |
+|---|---|---|
+| Listón de destinos `destinationEligibleFor` (≥ 65) | certeza | fiabilidad del destino |
+| Listón de pares candidatos a reemplazo | certeza (respaldo: score si el par no trae el campo) | mismo listón |
+| Prosa «predicción más firme / más frágil» y «letra chica» | certeza | hablan de cuánto creerle |
+| Prosa de destinos y de candidatos a sugerencia («certeza X/100») | certeza | idem |
+| Tarjetas (columnas 1 y 3), estrellas, orden por score | score titular | atractivo |
+| Orden de pares en la capa de datos | score titular | entre elegibles manda el atractivo; el listón filtra antes |
+| Reparto de fondos entre destinos | retorno esperado (sin cambios desde R12.1) | ya estaba remapeado |
+
+### 3. Tilt de momentum (0 a +5, solo suma)
+
+Solo con datos que la app ya ingiere (Finviz y Yahoo), nunca inventado (sin dato → 0, R0):
+
+- **Pata de precio (0..1)** = 0,6 × tendencia + 0,4 × rendimiento (renormalizado si falta una): tendencia = 0,45×clamp01(distSMA50/8) + 0,55×clamp01(distSMA200/15) (distancias negativas aportan 0); rendimiento = clamp01(perfAnual/60).
+- **Pata de confirmación (0..1)** = clamp01(0,5 + 0,5×(alzas − bajas)/(alzas + bajas)) con las revisiones de EPS +1y de Yahoo (30 días).
+- **Compuesto** = 0,75 × precio + 0,25 × confirmación (renormalizado si falta una pata).
+- **Freno de euforia**: RSI(14) ≥ 80 → tilt 0; entre 70 y 80, factor lineal (80 − RSI)/10; sin RSI, sin freno.
+- **tilt = 5 × compuesto × freno** (1 decimal). El momentum toca SOLO el score: FV y RE son idénticos con el tilt activo o anulado (test de recomposición en `sistema-r14.test.ts`).
+
+### 4. Medición de riesgo: a la baja y con memoria corta (módulo ÚNICO)
+
+Los dos refinamientos aprobados por el usuario (12:56) se aplican a `shared/engine/riskMatrix.ts` y todo consumidor hereda la misma medición — no existe una matriz paralela:
+
+- **Condicionamiento a la baja**: el conjunto de medición son los días en que el retorno diario de LA CARTERA (canasta de posiciones ponderada por valor; equiponderada si no hay pesos) fue negativo — la condición estándar tipo semivarianza/Sortino. La volatilidad de cada activo pasa a ser su **desviación a la baja**: el desvío de sus retornos en esos días, anualizado ×√252 con la misma escala de siempre (es naturalmente menor que la simétrica: no es «menos riesgo», es otra regla). Las correlaciones se miden entre los retornos de ambos activos en los días de baja conjuntos (mínimo 20; si no, prior puro).
+- **EWMA λ = 0,94** (estándar RiskMetrics) sobre los días: lo reciente manda. El shrinkage hacia los priors usa el **tamaño de muestra efectivo** n_eff = (Σw)²/Σw² (≈32 como techo con λ=0,94) en el lugar del conteo crudo: n_eff/(n_eff + 60). Consecuencia declarada: la medición pesa ~⅓ y los priors ~⅔ — es el precio de la memoria corta, no un error.
+- **Semidefinida positiva**: cada descomposición verifica la submatriz de correlaciones por autovalores (Jacobi); si el mínimo es negativo, se repara por **recorte espectral** (autovalores negativos a 0, reescala a diagonal 1) antes de descomponer. La guarda numérica de la desviación a la baja: dispersión < 0,01% anual se trata como no medible (polvo de punto flotante) y manda la cadena de respaldo.
+- La cadena de respaldo de volatilidad no cambia (medida → dato externo → beta×22 → cripto 60 → default 26), ni los priors de bloque, ni la descomposición de Euler.
+
+### 5. Orden conmutable de la tabla
+
+Pedido textual (12:38): «Deja por defecto la vista ordenada por velocidad de revalorización pero ofrece ordenar por score.» Control compacto en la barra de la vista (cromo de la vista, no de la tarjeta), junto al conmutador Esperada|Prudente, persistente en la sesión como aquel (`optSortMode`). **Default: Velocidad** (en esperada, el orden entrante queda intacto — byte-equivalente; en prudente, el comparador histórico por retorno prudente). **Score**: descendente por el score de la vista activa (en prudente, el score prudente), desempate por la velocidad de la vista, sin score al final. Lógica pura en `sortOptimizerAssets` (chartScales.ts), testeada.
+
+### 6. Textos
+
+El ⓘ del score se reescribió con el concepto del usuario; nuevo ⓘ «Orden de la tabla» con la combinación vista×orden; los ⓘ de riesgo (riesgo, burbujas) ahora dicen la regla en simple: «Medimos el riesgo en los días malos: cuánto cae cada posición cuando la cartera cae, dándole más importancia a las últimas semanas. Subir junto al resto no cuenta como riesgo.» La narrativa del motor distingue certeza (cuánto creerle) de score (atractivo).
+
+### 7. Migraciones de tests (declaradas)
+
+Las propiedades de R12.1 («el score no se mueve con el RE», bandas, techo de sospechoso) viven ahora en el sub-índice de certeza: los tests de `sistema-forward-r11`, `sistema-r12`, `sistema-r13` y `optimizer.test.ts` se migraron a `certaintyScore/certaintyBand/certaintyComponents`, y varios ganaron la aserción dual (el titular SÍ se mueve con la velocidad; el techo 39 pisa AMBOS). El test de consistencia de `risk.test.ts` recomputa la volatilidad del payload como desviación a la baja bajo el condicionamiento compartido. El fixture «gemela desacoplada» de R13 se reemplazó por una cobertura anti-factor: bajo la medición a la baja, permutar la serie ya no aísla el canal marginal (cambia la dispersión condicional misma).
+
+Sin excepciones por ticker en ninguna regla de R14.

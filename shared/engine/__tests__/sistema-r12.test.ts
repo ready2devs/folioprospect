@@ -6,6 +6,7 @@ import {
   grinoldKroner,
   consensusPct,
   cashAnchorFor,
+  headlineScoreFor,
   CASH_ANCHOR_PENALTY_PTS,
   type OptimizerAssetInput,
 } from '../optimizer.js';
@@ -46,18 +47,23 @@ const neutral = (rePct: number, p: Partial<OptimizerAssetInput> = {}) =>
     ...p,
   });
 
-describe('score de confianza — independencia de la velocidad (redefinición)', () => {
+describe('certeza — independencia de la velocidad; score titular — lo contrario (R14)', () => {
   // Retornos esperados en vivo de la tabla R11 (posiciones 1–9).
   const RES = [80, 72.6, 60.5, 49.3, 42.2, 41.8, 35.5, 35.3, 29.9];
-  it('con la MISMA dispersión, nueve retornos distintos dan el MISMO score', () => {
-    // Los RE en vivo de la tabla R11 (29,9% … 80%): si el score
-    // fuera velocidad, estos puntajes irían de ~55 a 100. Con la
-    // semántica vigente (confianza) y los insumos de dispersión
-    // idénticos en los nueve fixtures (sin etiqueta de FV, sin
-    // rango de targets, misma volatilidad), el score es UNO solo:
-    // la certeza no depende de la velocidad de la predicción.
+  it('con la MISMA dispersión, nueve retornos distintos dan la MISMA certeza y scores DISTINTOS', () => {
+    // Los RE en vivo de la tabla R11 (29,9% … 80%) con los insumos
+    // de dispersión idénticos en los nueve fixtures (sin etiqueta
+    // de FV, sin rango de targets, misma volatilidad): el
+    // SUB-ÍNDICE DE CERTEZA es UNO solo — la certeza no depende de
+    // la velocidad de la predicción (semántica R12.1, conservada).
+    // El SCORE TITULAR de R14, en cambio, SÍ se mueve con la
+    // velocidad: es su núcleo, cobrado por las mismas
+    // restricciones en los nueve casos.
     const scored = RES.map((re) => scoreAsset(neutral(re), 10_000, OPTS));
-    expect(new Set(scored.map((s) => s.score)).size).toBe(1);
+    expect(new Set(scored.map((s) => s.certaintyScore)).size).toBe(1);
+    const scores = scored.map((s) => s.score!);
+    expect(new Set(scores).size).toBeGreaterThan(1);
+    expect(Math.max(...scores) - Math.min(...scores)).toBeGreaterThan(20);
     const res = scored.map((s) => s.expectedReturnPct!);
     expect(Math.max(...res) - Math.min(...res)).toBeGreaterThan(30);
   });
@@ -84,9 +90,21 @@ describe('R12 · vista prudente (lectura contra el piso del rango)', () => {
     expect(s.prudentFallback).toBe(false);
     expect(s.expectedReturnPessimisticPct!).toBeLessThan(s.expectedReturnPct!);
     expect(s.yearsToDoublePessimistic!).toBeGreaterThan(s.yearsToDouble!);
-    // El score prudente es el MISMO de confianza: la certeza es
-    // de los datos del activo, no de la vista (redefinición).
-    expect(s.scorePessimistic!).toBe(s.score!);
+    // El score prudente (R14) es la MISMA composición del titular
+    // sobre la velocidad del retorno prudente: como el prudente
+    // es menor, su score es menor. La CERTEZA no depende de la
+    // vista (un solo sub-índice por activo).
+    expect(s.certaintyScore).not.toBeNull();
+    expect(s.scorePessimistic!).toBeLessThan(s.score!);
+    expect(s.scorePessimistic!).toBe(
+      headlineScoreFor({
+        rePct: s.expectedReturnPessimisticPct,
+        certaintyComponents: s.certaintyComponents,
+        cashPenaltyPts: s.cashAnchorPenaltyPts,
+        momentumTiltPts: s.momentum?.tiltPts ?? 0,
+        modelSuspect: s.modelSuspect,
+      }).score
+    );
   });
 
   it('sin escenario pesimista válido: cae al esperado y queda marcado', () => {
@@ -385,6 +403,7 @@ describe('R12 · ancla de caja real (TTM reportado)', () => {
     expect(s.score!).toBeLessThanOrEqual(100);
     const sospechoso = scoreAsset(neutral(30, { ...peor, fvModelSuspect: true }), 10_000, OPTS);
     expect(sospechoso.score!).toBeLessThanOrEqual(39);
-    expect(sospechoso.scoreBand).toBe('a-revisar');
+    expect(sospechoso.certaintyScore!).toBeLessThanOrEqual(39);
+    expect(sospechoso.certaintyBand).toBe('a-revisar');
   });
 });

@@ -148,6 +148,10 @@ export interface AppState {
   /** Vista del Optimizador (R12): lectura esperada o prudente de la
    *  tabla y los indicadores. Presentación solamente. */
   optViewMode: 'esperada' | 'prudente';
+  /** Orden de la tabla del Optimizador (R14, pedido del usuario):
+   *  por velocidad de revalorización (default, el histórico) o por
+   *  el score de la vista activa. Presentación solamente. */
+  optSortMode: 'velocidad' | 'score';
 
   setTheme: (t: 'dark' | 'light') => void;
   toggleTheme: () => void;
@@ -164,6 +168,7 @@ export interface AppState {
   setOptSkippedSug: (u: string[] | ((p: string[]) => string[])) => void;
   setOptMobileStep: (s: 1 | 2 | 3) => void;
   setOptViewMode: (m: 'esperada' | 'prudente') => void;
+  setOptSortMode: (m: 'velocidad' | 'score') => void;
   selectAsset: (symbol: string, range?: string) => Promise<void>;
   setBenchmark: (b: string) => Promise<void>;
   setNetOrGrossMode: (m: 'net' | 'gross') => void;
@@ -212,6 +217,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   optSkippedSug: [],
   optMobileStep: 1,
   optViewMode: 'esperada',
+  optSortMode: 'velocidad',
 
   setTheme: (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -285,6 +291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setOptMobileStep: (optMobileStep) => set({ optMobileStep }),
   setOptViewMode: (optViewMode) => set({ optViewMode }),
+  setOptSortMode: (optSortMode: 'velocidad' | 'score') => set({ optSortMode }),
   selectAsset: async (symbol, range) => {
     const normSym = normalizeTradingViewSymbol(symbol);
     const r = range || get().selectedAssetRange || '1Y';
