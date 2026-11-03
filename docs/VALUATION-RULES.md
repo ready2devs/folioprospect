@@ -678,6 +678,8 @@ de la app.
 
 ## R12 — Adenda 2026-11-03 (mediodía): escala honesta, vista prudente, frontera de regímenes suave y ancla de caja real
 
+> **Addendum del mismo día (11:23): la R12.1 redefine el SCORE como confianza en la predicción.** La §1 de esta regla (escala de velocidad) quedó SIN OBJETO a las pocas horas de implementarse — se conserva como registro — y la banda de ajuste ±15 y la propiedad anti-inversión quedaron DEROGADAS. La §2 (vista prudente), la §3 (regímenes) y la §6 (capa de información) siguen vigentes tal cual; la §4 (ancla de caja) sigue vigente con su reparo reinterpretado como componente de confianza (ver R12.1).
+
 Pase aprobado por el usuario el 2026-11-03 (10:58, con agregados
 del mismo día: ancla de caja 11:06, ventana TTM 11:07, ubicaciones
 UI 11:13 y visibilidad de `modelSuspect` 11:14). Respaldo previo:
@@ -893,4 +895,49 @@ orientador):
 | Reparo del ancla de caja | −6 pts, dentro de la banda ±15 | Diseño aprobado por el usuario (2026-11-03 11:06) |
 | Texto de la advertencia de fuentes | «Estimación a revisar» | Elección de redacción del pase, aprobada como familia por el usuario (11:14) |
 | Umbral de brecha extrema del medidor PER | forward < 40% del actual y actual > 15× | Ejemplo del usuario (11:19), adoptado como decisión de diseño simple |
+
+## R12.1 — El score es CONFIANZA en la predicción (redefinición del usuario, 2026-11-03 11:23)
+
+Directiva textual del usuario: «Capaz el score debe estar relacionado a la confianza en la predicción de duplicación… el grado de certeza o bajo riesgo que se desvíe de esa predicción… Si un activo está arriba por velocidad pero tiene un score bajo, la estimación es "a revisar" o con confianza media/baja.»
+
+**La frase-semántica (va a la app): la tabla ordena por la predicción (tiempo a duplicar); el score mide cuánto hay que creerle a esa predicción.**
+
+### El índice (0–100)
+
+Solo entran dispersión e incertidumbre medibles — **nada de velocidad, nada de oportunidad precio/FV, nada de calidad del negocio**:
+
+| Componente | Peso | Construcción |
+|---|---|---|
+| Acuerdo entre las patas del FV | 35 | La etiqueta de confianza del motor (Alta 90 / Media 65 / Baja 35), que nace de la dispersión fórmula↔target; sin etiqueta, 55 si hay ≥2 componentes o 35 si hay 1; una sola pata tiene tope 40 (no puede «acordar» consigo misma) |
+| Acuerdo entre fuentes | 30 | Base 85; −40 si las fuentes discrepan en el SIGNO del EPS forward; −(ancho del rango de targets / FV − 50%) × 40, acotado a −35, si el rango es ancho. Sin rango ni señal de signo, el componente no existe (no castiga la ausencia — R0) |
+| Riesgo de desvío | 25 | Volatilidad: 100 − (vol − 12) × 2, acotada a [0, 100] (vol 12% ⇒ 100; vol 62% ⇒ 0) |
+
+Pesos renormalizados sobre los componentes disponibles. Sobre el índice: **el ancla de caja resta 6** si la empresa quemó caja en los últimos 12 meses reportados (componente de confianza, con su tope: es su única resta; generar caja no suma por encima de lo neutro — asimetría documentada: el ancla solo resta certeza, nunca la infla), y **`modelSuspect` activo pone techo 39**.
+
+**Bandas:** ≥ 70 «Confianza alta» · 40–69 «Confianza media» · < 40 «Estimación a revisar» (el sospechoso cae en «a revisar» por su techo). En la tarjeta van solo el número y las estrellas, como siempre; las palabras viven en el análisis del activo y en el ⓘ. El score de la vista prudente es el MISMO: la certeza es de los datos del activo, no de la vista.
+
+### Derogaciones
+
+- La directiva «velocidad como pata principal» (2026-11-03 04:34) y el Cambio 1 de R12 (escala de velocidad) quedan **sin objeto**; `scoreVelocityFor` sobrevive solo como dato informativo de la predicción.
+- La **propiedad anti-inversión score↔duplicación queda DEROGADA**: miden cosas distintas y la app lo explica. Un activo arriba por velocidad con score bajo no es un error: es una estimación a revisar.
+- El constructo «velocidad + ajuste acotado ±15» desaparece (`scoreAdjustmentPts`/`scoreAdjustmentDriver` quedan en null por compatibilidad de la API).
+
+### Reglas internas que consumían el score — remapeo
+
+| Regla | Antes | Ahora | Motivo |
+|---|---|---|---|
+| Listón de destinos (`destinationEligible`, pares de reemplazo) | score ≥ 65 | **confianza ≥ 65** (mismo número, nueva semántica) | Es un criterio de FIABILIDAD: al destino se le cree — uso sancionado del score nuevo |
+| Reparto entre destinos (orden y ponderación del dinero) | score² | **retorno esperado²** (positivos; si todos ≤ 0, partes iguales) | Ponderar compras por certeza sesgaría hacia lo lento-pero-seguro; el reparto es oportunidad |
+| Salida «veredicto-vender» | precio > FV×1,1 **y score bajo** (< 40; defensivas < 30) | precio > FV×1,1 **y retorno esperado bajo** (< 10%; defensivas < 5%) | Vender «por desconfianza» sería incorrecto: lo incierto se revisa, no se vende |
+| Salida «score-bajo» | score < 40 → salida | **«retorno-muy-bajo»**: RE < 5% (defensivas < 2%) → salida | Ídem: la debilidad que expulsa es retorno, no incertidumbre |
+| Reemplazo sectorial | par con score ≥ +15 y RE ≥ +3 pp | par con **RE ≥ +3 pp y FV/precio ≥ +0,15** (el par se elige por mayor RE) | Los dos criterios directos que el «+15 de score» aproximaba |
+| Recorte «bajo-retorno» | RE < 8% y bajo la mediana **y score < 55** | RE < 8% y bajo la mediana (sin score) | La condición de score era redundante con semántica vieja |
+| Sugerencias automáticas (orden) | Euler, luego score, luego RE | Euler, luego RE (el score se cita solo como información en el motivo) | El orden de candidatas es eficiencia/retorno |
+| Evaluación escrita | «mejor oportunidad según el score», párrafo de ajustes con driver | «predicción más firme / más frágil» por confianza; párrafo nuevo que nombra la causa de fragilidad de los rápidos con confianza media o a revisar (patas lejos, fuentes en conflicto, volatilidad, caja o sospechoso) | La narrativa habla el idioma nuevo |
+
+Sin cambios: tesis deteriorada (nunca usó el score), concentración, cinturón de balances, materialidad (ΔRE < 0,25 pp ⇒ «sin mejora»), tope de extracción y la regla de oro riesgo/beneficio.
+
+### Tests (284/284)
+
+Independencia (el score no se mueve si cambia solo el RE; nueve REs en vivo con la misma dispersión dan el mismo score), fixtures por componente (acuerdo → alta; conflicto → a revisar; sospechoso → techo y banda; quemador → −6 exactos), y el test R11 de «sin shrinkage» actualizado: la valuación y el RE NO se reescalan por la etiqueta de confianza (eso sigue prohibido), pero el score de confianza sí la usa como insumo — es su componente 1.
 

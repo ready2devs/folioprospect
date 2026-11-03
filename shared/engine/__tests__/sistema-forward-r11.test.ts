@@ -8,7 +8,7 @@ import { scoreAsset, type OptimizerAssetInput } from '../optimizer.js';
  * EPS forward × múltiplo justificado. Estos tests fijan las
  * propiedades que el usuario exigió: ningún override sobre el
  * consenso forward (caso Micron), el target íntegro en su rango, el
- * PEG como orientador que no toca números, y el score dominado por
+ * PEG como orientador que no toca números, y el score de confianza (redefinido) — antes dominado por
  * la capacidad de duplicar con ajustes acotados a ±15 puntos.
  */
 
@@ -137,7 +137,7 @@ describe('PEG orientador: se calcula y se muestra, pero NO ajusta ningún númer
   });
 });
 
-describe('score dominado por la capacidad de duplicar (directiva 2026-11-03 04:34)', () => {
+describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)', () => {
   const SCORE_OPTS = {
     sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
     maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
@@ -146,67 +146,61 @@ describe('score dominado por la capacidad de duplicar (directiva 2026-11-03 04:3
     symbol: 'NASDAQ:XXX', ticker: 'XXX', name: 'Test Co', sector: 'Technology',
     industry: 'Semiconductors', price: 100, qty: 10, value: 1000, ...p,
   });
+  const firme = (p: Partial<OptimizerAssetInput> = {}) =>
+    base({
+      price: 100, fvBase: 200, fvConfidence: 'Alta', fvComponentCount: 2,
+      fvRangeLow: 190, fvRangeHigh: 215,
+      earningsGrowthTotalPct: 10, analystTarget: 190,
+      volatilityPct: 18, ...p,
+    });
 
-  it('el ajuste vive en una banda de ±15 y el score es velocidad + ajuste', () => {
-    const fast = scoreAsset(
-      base({
-        price: 100, fvBase: 220, fvConfidence: 'Baja', fvComponentCount: 2,
-        earningsGrowthTotalPct: 30, analystTarget: 150,
-        volatilityPct: 90, roicPct: 3, // peores ajustes posibles
-      }),
-      1000, SCORE_OPTS
-    );
-    expect(Math.abs(fast.scoreAdjustmentPts!)).toBeLessThanOrEqual(15);
-    expect(fast.score!).toBe(
-      Math.max(0, Math.min(100, Math.round(fast.scoreVelocity! + fast.scoreAdjustmentPts!)))
-    );
-    // Escala R12: este fixture (RE ≈ 34%) ya NO satura la velocidad —
-    // con la recta nueva vale ≈ 66 (antes > 85 con la escala vieja,
-    // que daba 100 a todo RE ≥ 35%). El 100 quedó excepcional.
-    expect(fast.scoreVelocity!).toBeGreaterThan(60);
-    expect(fast.scoreVelocity!).toBeLessThan(75);
+  it('independencia: el score NO se mueve si cambia solo el retorno esperado', () => {
+    const comun = {
+      price: 100, fvBase: 200, fvConfidence: 'Media' as const, fvComponentCount: 2,
+      fvRangeLow: 160, fvRangeHigh: 260,
+      earningsGrowthTotalPct: 10, volatilityPct: 30,
+    };
+    const a = scoreAsset(base({ ...comun, analystTarget: 150 }), 1000, SCORE_OPTS);
+    const b = scoreAsset(base({ ...comun, analystTarget: 320 }), 1000, SCORE_OPTS);
+    expect(b.expectedReturnPct!).toBeGreaterThan(a.expectedReturnPct! + 5);
+    // Misma dispersión, misma volatilidad, misma caja: misma
+    // confianza, aunque la predicción de B sea mucho más rápida.
+    expect(b.score!).toBe(a.score!);
+    expect(b.scoreBand).toBe(a.scoreBand);
   });
 
-  it('una brecha de velocidad > 30 pts no se invierte ni con los peores/mejores ajustes', () => {
-    // Fixture rápido reforzado para la escala R12: con la recta
-    // nueva, una brecha de velocidad > 30 exige una brecha de RE de
-    // ≳ 36 pp (acá: RE ≈ 50% contra ≈ 3%).
-    const fast = scoreAsset(
-      base({
-        price: 100, fvBase: 320, fvConfidence: 'Baja', fvComponentCount: 2,
-        earningsGrowthTotalPct: 30, analystTarget: 200,
-        volatilityPct: 90, roicPct: 3,
-      }),
-      1000, SCORE_OPTS
-    );
-    const slow = scoreAsset(
-      base({
-        price: 100, fvBase: 110, fvConfidence: 'Alta', fvComponentCount: 2,
-        earningsGrowthTotalPct: 2, analystTarget: 105,
-        volatilityPct: 15, roicPct: 35, // mejores ajustes posibles
-      }),
-      1000, SCORE_OPTS
-    );
-    expect(fast.scoreVelocity! - slow.scoreVelocity!).toBeGreaterThan(30);
-    // Ni el peor ajuste del rápido ni el mejor del lento invierten
-    // el titular: el que duplica mucho más rápido puntúa más alto.
-    expect(fast.score!).toBeGreaterThan(slow.score!);
-    // Y el rápido no cae al tercio inferior del score (0–33).
-    expect(fast.score!).toBeGreaterThan(33);
+  it('patas de acuerdo, fuentes tranquilas y vol baja → confianza alta', () => {
+    const s = scoreAsset(firme(), 1000, SCORE_OPTS);
+    // (90×35 + 85×30 + 88×25)/90 = 87,8
+    expect(s.score!).toBe(88);
+    expect(s.scoreBand).toBe('alta');
+    expect(s.scoreComponents).toEqual({ legs: 90, sources: 85, volatility: 88 });
   });
 
-  it('el driver del ajuste queda expuesto cuando el ajuste es notable (≥5 pts)', () => {
-    const a = scoreAsset(
+  it('fuentes en conflicto, patas lejos y vol alta → estimación a revisar', () => {
+    const s = scoreAsset(
       base({
-        price: 100, fvBase: 220, fvConfidence: 'Baja', fvComponentCount: 2,
-        earningsGrowthTotalPct: 30, analystTarget: 150,
-        volatilityPct: 90, roicPct: 3,
+        price: 100, fvBase: 200, fvConfidence: 'Baja', fvComponentCount: 2,
+        epsSignDisagreement: true, fvRangeLow: 60, fvRangeHigh: 420,
+        earningsGrowthTotalPct: 10, analystTarget: 190, volatilityPct: 55,
       }),
       1000, SCORE_OPTS
     );
-    if (Math.abs(a.scoreAdjustmentPts!) >= 5) {
-      expect(a.scoreAdjustmentDriver).toBeTruthy();
-    }
-    expect(a.scoreAdjustmentDriver === null || typeof a.scoreAdjustmentDriver === 'string').toBe(true);
+    // patas 35, fuentes 85−40−35 = 10, vol 14 → índice ≈ 20,8
+    expect(s.score!).toBeLessThan(40);
+    expect(s.scoreBand).toBe('a-revisar');
+  });
+
+  it('modelSuspect pone techo: ni con todo de acuerdo pasa de 39', () => {
+    const s = scoreAsset(firme({ fvModelSuspect: true }), 1000, SCORE_OPTS);
+    expect(s.score!).toBeLessThanOrEqual(39);
+    expect(s.scoreBand).toBe('a-revisar');
+  });
+
+  it('quemar caja resta 6 puntos de confianza; generar no suma nada', () => {
+    const genera = scoreAsset(firme({ fcfTtmUsd: 5_000_000 }), 1000, SCORE_OPTS);
+    const quema = scoreAsset(firme({ fcfTtmUsd: -5_000_000 }), 1000, SCORE_OPTS);
+    expect(quema.cashAnchorPenaltyPts).toBe(-6);
+    expect(genera.score! - quema.score!).toBe(6);
   });
 });

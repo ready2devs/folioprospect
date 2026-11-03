@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   scoreAsset,
   optimizePortfolio,
-  scoreVelocityFor,
   growthAnchorFor,
   grinoldKroner,
   consensusPct,
@@ -47,28 +46,20 @@ const neutral = (rePct: number, p: Partial<OptimizerAssetInput> = {}) =>
     ...p,
   });
 
-describe('R12 · escala de velocidad del score', () => {
-  it('las anclas de la recta: RE 15% → 50; RE 75% → 100; RE −45% → 0', () => {
-    expect(scoreVelocityFor(15)).toBeCloseTo(50, 6);
-    expect(scoreVelocityFor(75)).toBeCloseTo(100, 6);
-    expect(scoreVelocityFor(-45)).toBeCloseTo(0, 6);
-  });
-
-  it('un RE de 35% ya no satura: vale ≈ 67, no 100', () => {
-    expect(scoreVelocityFor(35)).toBeCloseTo(66.7, 1);
-  });
-
-  it('censo con los RE en vivo de la tabla R11: solo 2 activos ≥ 95', () => {
-    const liveREs = [80, 72.6, 60.5, 49.3, 42.2, 41.8, 35.5, 35.3, 29.9];
-    const scored = liveREs.map((re) => scoreAsset(neutral(re), 1000, OPTS));
-    for (const s of scored) expect(s.scoreAdjustmentPts).toBeCloseTo(0, 6);
-    const ge95 = scored.filter((s) => (s.score ?? 0) >= 95);
-    expect(ge95.length).toBe(2);
-    // El orden por score no contradice el orden por RE (duplicación):
-    // la secuencia de scores sigue exactamente la de los RE dados.
-    const scores = scored.map((s) => s.score!);
-    const sorted = [...scores].sort((x, y) => y - x);
-    expect(scores).toEqual(sorted);
+describe('score de confianza — independencia de la velocidad (redefinición)', () => {
+  // Retornos esperados en vivo de la tabla R11 (posiciones 1–9).
+  const RES = [80, 72.6, 60.5, 49.3, 42.2, 41.8, 35.5, 35.3, 29.9];
+  it('con la MISMA dispersión, nueve retornos distintos dan el MISMO score', () => {
+    // Los RE en vivo de la tabla R11 (29,9% … 80%): si el score
+    // fuera velocidad, estos puntajes irían de ~55 a 100. Con la
+    // semántica vigente (confianza) y los insumos de dispersión
+    // idénticos en los nueve fixtures (sin etiqueta de FV, sin
+    // rango de targets, misma volatilidad), el score es UNO solo:
+    // la certeza no depende de la velocidad de la predicción.
+    const scored = RES.map((re) => scoreAsset(neutral(re), 10_000, OPTS));
+    expect(new Set(scored.map((s) => s.score)).size).toBe(1);
+    const res = scored.map((s) => s.expectedReturnPct!);
+    expect(Math.max(...res) - Math.min(...res)).toBeGreaterThan(30);
   });
 });
 
@@ -93,7 +84,9 @@ describe('R12 · vista prudente (lectura contra el piso del rango)', () => {
     expect(s.prudentFallback).toBe(false);
     expect(s.expectedReturnPessimisticPct!).toBeLessThan(s.expectedReturnPct!);
     expect(s.yearsToDoublePessimistic!).toBeGreaterThan(s.yearsToDouble!);
-    expect(s.scorePessimistic!).toBeLessThan(s.score!);
+    // El score prudente es el MISMO de confianza: la certeza es
+    // de los datos del activo, no de la vista (redefinición).
+    expect(s.scorePessimistic!).toBe(s.score!);
   });
 
   it('sin escenario pesimista válido: cae al esperado y queda marcado', () => {
@@ -182,7 +175,7 @@ describe('R12 · régimen por ventas futuras y frontera suave', () => {
 });
 
 describe('R12 · ancla de caja real (TTM reportado)', () => {
-  it('TTM negativo → reparo −6 y driver citado, aunque el año fiscal haya cerrado positivo', () => {
+  it('TTM negativo → reparo −6 en el score de confianza, aunque el año fiscal haya cerrado positivo', () => {
     // Caso SIMO (diseño aprobado): su último año FISCAL cerró apenas
     // positivo (~+US$6 M), pero la ventana móvil de 12 meses quema
     // caja. El motor solo recibe el TTM — el año fiscal no es un
@@ -191,8 +184,8 @@ describe('R12 · ancla de caja real (TTM reportado)', () => {
     const burn = scoreAsset(neutral(30, { fcfTtmUsd: -50_000_000 }), 1000, OPTS);
     expect(burn.cashAnchorState).toBe('quema-caja');
     expect(burn.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
-    expect(burn.scoreAdjustmentPts).toBeCloseTo(-CASH_ANCHOR_PENALTY_PTS, 6);
-    expect(burn.scoreAdjustmentDriver).toBe('quema caja en los últimos 12 meses reportados');
+    // (El «ajuste ±15» como constructo quedó desapilado por la
+    // redefinición del score: el reparo vive directo en el índice.)
     expect(burn.score!).toBe(plain.score! - CASH_ANCHOR_PENALTY_PTS);
   });
 
@@ -307,20 +300,17 @@ describe('R12 · medidor de expectativas (PER actual vs futuro, desde primitivas
 });
 
 describe('R12 · ancla de caja real (TTM reportado)', () => {
-  it('el reparo vive DENTRO de la banda ±15: el ajuste total nunca la supera', () => {
-    const s = scoreAsset(
-      base({
-        price: 100, analystTarget: 160, opportunityScore: 0,
-        fvConfidence: 'Baja', volatilityPct: 90, roicPct: -10, debtToEquity: 3,
-        fcfTtmUsd: -1_000_000,
-      }),
-      1000, OPTS
-    );
-    // El índice por sí solo ya castiga ≈ −11,6; con el reparo de −6
-    // el total se acota a la banda: −15, no −17,6. La propiedad
-    // anti-inversión (brecha de velocidad > 30 no se cruza) sigue
-    // intacta con el ancla incluida.
-    expect(s.scoreAdjustmentPts).toBe(-15);
-    expect(Math.abs(s.scoreAdjustmentPts!)).toBeLessThanOrEqual(15);
+  it('el score vive en [0, 100] y el sospechoso tiene techo 39, también en el peor fixture', () => {
+    const peor = {
+      fvConfidence: 'Baja' as const, fvComponentCount: 2,
+      epsSignDisagreement: true, fvRangeLow: 20, fvRangeHigh: 480,
+      volatilityPct: 95, fcfTtmUsd: -1_000_000,
+    };
+    const s = scoreAsset(neutral(30, peor), 10_000, OPTS);
+    expect(s.score!).toBeGreaterThanOrEqual(0);
+    expect(s.score!).toBeLessThanOrEqual(100);
+    const sospechoso = scoreAsset(neutral(30, { ...peor, fvModelSuspect: true }), 10_000, OPTS);
+    expect(sospechoso.score!).toBeLessThanOrEqual(39);
+    expect(sospechoso.scoreBand).toBe('a-revisar');
   });
 });

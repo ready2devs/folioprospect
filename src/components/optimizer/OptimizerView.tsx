@@ -52,7 +52,7 @@ const ScoreBlock: React.FC<{ a: AssetScore; prudent: boolean }> = ({ a, prudent 
     const st = Math.min(5, Math.max(1, Math.round(sc / 20)));
     return (
       <div className="opt-score">
-        {prudent ? 'Score prudente' : 'Score de inversión'}
+        Score de confianza
         <b>{sc}<span>/100</span></b>
         <Stars n={st} />
       </div>
@@ -341,9 +341,9 @@ export const OptimizerView: React.FC = () => {
             <h3>Tu cartera hoy</h3>
             <p>
               {prudent ? (
-                <>Ordenada por su piso · Score prudente <InfoTip k="vistaPrudente" /></>
+                <>Ordenada por su piso · Score de confianza <InfoTip k="vistaPrudente" /></>
               ) : (
-                <>Ordenada por tiempo a duplicar · Score de inversión <InfoTip k="score" /></>
+                <>Ordenada por tiempo a duplicar · Score de confianza <InfoTip k="score" /></>
               )}
             </p>
           </div>
@@ -576,7 +576,7 @@ export const OptimizerView: React.FC = () => {
                   <div className="opt-r2">
                     {a.score != null ? (
                       <div className="opt-score">
-                        Score de inversión
+                        Score de confianza
                         <b>{a.score}<span>/100</span></b>
                         <Stars n={a.stars} />
                       </div>

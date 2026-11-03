@@ -920,7 +920,7 @@ export const OpportunitySheet: React.FC<{
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
                 Su flujo de caja libre de los últimos 12 meses fue negativo
-                {detail.cashAnchor.fcfTtmUsd != null ? ` (${fmtFcfUsd(detail.cashAnchor.fcfTtmUsd)})` : ''}. En el Optimizador, esta ancla le resta 6 puntos al score; no cambia su valor justo ni su retorno estimado.
+                {detail.cashAnchor.fcfTtmUsd != null ? ` (${fmtFcfUsd(detail.cashAnchor.fcfTtmUsd)})` : ''}. En el Optimizador, esta ancla le resta 6 puntos de confianza a su score (el score mide cuánto se le cree a su predicción de duplicación); no cambia su valor justo ni su retorno estimado.
               </div>
             </>
           )}

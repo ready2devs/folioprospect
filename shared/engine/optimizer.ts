@@ -14,14 +14,14 @@
  *   3. Consenso de analistas a 1 año (20%): upside al target promedio, acotado.
  * Pesos renormalizados si falta un componente; jamás se rellena un dato.
  *
- * De RE salen: años para duplicar = ln2/ln(1+RE) y el Score de inversión
- * 0–100. El score lo DOMINA la capacidad de duplicar (directiva del
- * usuario 2026-11-03): la velocidad derivada del RE es la base (0–100)
- * y las demás dimensiones (oportunidad precio/FV, calidad, confianza
- * de la valuación, riesgo) entran como un AJUSTE acotado de ±15
- * puntos — pueden premiar o castigar dentro de esa banda, pero no
- * invertir el titular: la tabla ordena por duplicación y el score no
- * puede contradecirla groseramente.
+ * De RE salen los años para duplicar = ln2/ln(1+RE), que ORDENAN
+ * la tabla. El Score 0–100 es otra cosa desde la redefinición del
+ * usuario (2026-11-03 11:23): mide la CONFIANZA en esa predicción
+ * — acuerdo entre las patas del FV, acuerdo entre fuentes,
+ * volatilidad, ancla de caja y techo para estimaciones
+ * sospechosas — y no contiene velocidad ni oportunidad. Las
+ * reglas internas que necesitaban retorno/oportunidad usan el
+ * RE y el gap precio/FV directamente (ver R12.1 en los docs).
  *
  * Sistema forward (R11, docs/VALUATION-RULES.md): esta capa NO
  * corrige ni descuenta ninguna estimación. La convergencia usa el
@@ -263,9 +263,10 @@ export interface AssetScore {
   expectedReturnPessimisticPct: number | null;
   /** Años a duplicar con el retorno prudente. */
   yearsToDoublePessimistic: number | null;
-  /** Score con la velocidad del retorno prudente y el MISMO ajuste
-   *  acotado del score esperado: la coherencia score↔orden se
-   *  mantiene también en la vista prudente. */
+  /** Score en la vista prudente: el MISMO score de confianza del
+   *  activo. La certeza es de los datos (dispersión, volatilidad,
+   *  caja), no de la vista: la lectura prudente cambia la
+   *  predicción, no cuánto se le cree a los insumos. */
   scorePessimistic: number | null;
   /** true si el activo no tiene un escenario pesimista válido
    *  (sin rango de FV): su retorno prudente cae al esperado y la UI
@@ -285,19 +286,25 @@ export interface AssetScore {
    *  motor, tal cual — sin encoger por confianza ni bajar a ningún
    *  piso. Se conserva el campo por compatibilidad de la API. */
   fvEffective: number | null;
-  /** Base del score: la velocidad (capacidad de duplicar derivada del
-   *  RE), 0–100. Es la pata dominante del puntaje (directiva
-   *  2026-11-03). */
+  /** Velocidad de la predicción (el RE en escala 0–100):
+   *  INFORMATIVO. Desde la redefinición del score (2026-11-03) no
+   *  compone el puntaje: el score es confianza, no velocidad. */
   scoreVelocity: number | null;
-  /** Ajuste acotado del score (±15 pts máx): lo que las demás
-   *  dimensiones (oportunidad, calidad, confianza, riesgo) suman o
-   *  restan sobre la velocidad. */
+  /** DESAPILADO por la redefinición del score (2026-11-03): el
+   *  score ya no es «velocidad + ajuste». Quedan en null por
+   *  compatibilidad de la API. */
   scoreAdjustmentPts: number | null;
-  /** Motivo principal del ajuste, en lenguaje simple, cuando el
-   *  ajuste es llamativo (|ajuste| ≥ 5 pts): la evaluación escrita lo
-   *  cita para que ninguna diferencia score↔duplicación quede sin
-   *  explicación. */
+  /** Ídem scoreAdjustmentPts: desapilado, siempre null. */
   scoreAdjustmentDriver: string | null;
+  /** Banda del score de confianza en palabras: 'alta' (≥70,
+   *  «Confianza alta»), 'media' (40–69) o 'a-revisar' (<40 o
+   *  modelSuspect activo, «Estimación a revisar»). */
+  scoreBand: ScoreBand | null;
+  /** Sub-puntajes de confianza que compusieron el score (para la
+   *  explicación en la ficha y la evaluación): acuerdo entre las
+   *  patas del FV, acuerdo entre fuentes y riesgo de desvío por
+   *  volatilidad. null en filas sin score propio (pares, caja). */
+  scoreComponents: { legs: number | null; sources: number | null; volatility: number | null } | null;
   /** Ancla de caja real (R12): estado según el FCF de los últimos
    *  12 meses reportados. Es una MARCA visible y, si quemó caja, un
    *  reparo dentro del ajuste del score — nada más: no entra en el
@@ -358,7 +365,7 @@ export interface Extraction {
   grossUsd: number;
   netUsd: number;
   reason: string;
-  reasonCode: 'veredicto-vender' | 'score-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno' | 'manual' | 'sugerencia' | 'tesis-deteriorada';
+  reasonCode: 'veredicto-vender' | 'retorno-muy-bajo' | 'reemplazo-sectorial' | 'concentracion' | 'bajo-retorno' | 'manual' | 'sugerencia' | 'tesis-deteriorada';
   replacementTicker?: string;
   /** Señales que dispararon la salida (solo reasonCode tesis-deteriorada). */
   thesisSignals?: ThesisSignalCode[];
@@ -718,33 +725,38 @@ export function thesisSignalsFor(a: OptimizerAssetInput): ThesisSignalCode[] {
   return out;
 }
 
-/** Score mínimo para recibir fondos. */
+/** Confianza mínima (score de confianza) para recibir fondos: el
+ *  listón de destinos es un criterio de FIABILIDAD — se le cree a
+ *  la predicción del destino — y por eso usa el score en su
+ *  semántica vigente (redefinición 2026-11-03: confianza). */
 export const DESTINATION_MIN_SCORE = 65;
 
-/** Banda del ajuste del score (puntos): las dimensiones distintas de
- *  la velocidad mueven el puntaje como máximo ±15. Es la garantía
- *  estructural de que el score no contradice el orden por
- *  duplicación que muestra la tabla (directiva 2026-11-03). */
-export const SCORE_ADJUSTMENT_BAND_PTS = 15;
-/** Ajuste a partir del cual el motivo se considera llamativo y la
- *  evaluación escrita lo cita con su driver. */
-export const SCORE_ADJUSTMENT_NOTABLE_PTS = 5;
+/** Bandas del score de confianza (redefinición 2026-11-03):
+ *  ≥ 70 «Confianza alta» · 40–69 «Confianza media» · < 40
+ *  «Estimación a revisar». Decisiones de diseño simple, calibradas
+ *  para que la cartera real no quede toda en una misma banda. */
+export const SCORE_CONFIDENCE_HIGH = 70;
+export const SCORE_CONFIDENCE_LOW = 40;
+/** Techo del score cuando `modelSuspect` está activo: un activo
+ *  con las fuentes en contradicción extrema no puede quedar en
+ *  banda alta ni media — su banda es «a revisar» por definición. */
+export const SUSPECT_SCORE_CAP = 39;
 
-/** Escala de velocidad del score (R12): la recta por dos anclas —
- *  un retorno esperado de 15% anual vale 50 puntos (un retorno
- *  sólido es la mitad de la escala) y uno de 75% vale 100 (el máximo
- *  es excepcional: solo un retorno extraordinario, muy por encima
- *  del 60%, lo alcanza). velocidad = clamp(((RE + 45) / 120) × 100).
- *  La escala anterior, ((RE + 5) / 40) × 100, saturaba en 100 para
- *  todo RE ≥ 35%: en la tabla real 7–8 activos compartían el score
- *  máximo y el puntaje no discriminaba justo donde más importa, la
- *  parte alta. El segundo ancla se fijó en 75% y no en 60% porque
- *  con 60% la banda de ajuste (±15) todavía dejaba tres activos
- *  reales en ≥95 (MU, SIMO y NVDA de la tabla R11): el 100 seguiría
- *  sin ser excepcional sobre los datos que el sistema produce. Con
- *  75%, solo los retornos pegados al techo anti-basura del RE
- *  (+80%) llegan a la zona del 100. Es calibración de PRESENTACIÓN:
- *  no cambia ningún retorno ni ningún valor justo. */
+export type ScoreBand = 'alta' | 'media' | 'a-revisar';
+
+export function scoreBandFor(score: number | null, modelSuspect: boolean): ScoreBand | null {
+  if (score == null) return null;
+  if (modelSuspect) return 'a-revisar';
+  if (score >= SCORE_CONFIDENCE_HIGH) return 'alta';
+  if (score >= SCORE_CONFIDENCE_LOW) return 'media';
+  return 'a-revisar';
+}
+
+/** Velocidad de la predicción (informativo): el RE convertido a
+ *  escala 0–100 con la recta de R12 (RE 15% ⇒ 50; RE 75% ⇒ 100).
+ *  Desde la redefinición del score (2026-11-03) este número YA NO
+ *  compone el score — el score es confianza, no velocidad — y
+ *  queda expuesto solo como dato de la predicción. */
 export function scoreVelocityFor(rePct: number): number {
   return clamp(((rePct + 45) / 120) * 100, 0, 100);
 }
@@ -760,12 +772,13 @@ export function scoreVelocityFor(rePct: number): number {
 export type CashAnchorState = 'genera-caja' | 'quema-caja' | 'sin-dato' | 'no-aplica';
 
 /** Reparo del ancla de caja real (R12, diseño aprobado 2026-11-03):
- *  hasta −6 puntos de score si la empresa quemó caja en los últimos
- *  12 meses reportados. Vive DENTRO de la banda de ajuste (±15): el
- *  ajuste total se acota a la banda con el reparo incluido, así la
- *  propiedad anti-inversión (brecha de velocidad > 30 no se cruza)
- *  se mantiene intacta. Solo resta: jamás suma, y no toca ni el FV
- *  ni el RE ni el orden por duplicación. */
+ *  −6 puntos si la empresa quemó caja en los últimos 12 meses
+ *  reportados. Desde la redefinición del score (2026-11-03) se lee
+ *  como lo que es: un componente de CONFIANZA — quemar caja resta
+ *  certeza a cualquier predicción; generar caja no suma por encima
+ *  de lo neutro (el ancla solo resta, jamás infla: elección de
+ *  asimetría documentada). No toca ni el FV ni el RE ni el orden
+ *  por duplicación. */
 export const CASH_ANCHOR_PENALTY_PTS = 6;
 
 /** El FCF no aplica como métrica cuando el sector o la industria
@@ -867,6 +880,8 @@ export function scoreAsset(
 
   let gkParts: GrinoldKronerParts | null = null;
   let scoreVelocity: number | null = null;
+  let scoreBand: ScoreBand | null = null;
+  let scoreComponents: AssetScore['scoreComponents'] = null;
   let scoreAdjustmentPts: number | null = null;
   let scoreAdjustmentDriver: string | null = null;
   let rePess: number | null = null;
@@ -941,96 +956,83 @@ export function scoreAsset(
         : null);
     if (gAnchor != null) gordon = (a.dividendYieldPct ?? 0) + clamp(gAnchor, 0, 5.5);
 
-    // SCORE DOMINADO POR LA CAPACIDAD DE DUPLICAR (directiva del
-    // usuario 2026-11-03, mismo día): la base es la velocidad — el
-    // retorno esperado convertido a escala 0–100 con la recta de
-    // scoreVelocityFor (RE 15% → 50; RE 75% → 100; recalibrada en
-    // R12 para que el 100 sea excepcional) — y las demás dimensiones
-    // entran como un AJUSTE ACOTADO de ±15 puntos: oportunidad
-    // precio/FV (25/70 del ajuste), calidad del negocio (20/70),
-    // confianza de la valuación (15/70) y riesgo (10/70). El ajuste
-    // puede premiar o castigar dentro de su banda, pero no puede
-    // invertir el titular: dos activos cuya velocidad difiera en
-    // más de 30 puntos jamás se cruzan en el score. (El diseño
-    // «profesional» anterior — velocidad al 30% — invertía el orden
-    // que la tabla muestra y era contraintuitivo: score bajo arriba
-    // en la tabla.)
+    // SCORE = CONFIANZA EN LA PREDICCIÓN (redefinición del usuario
+    // 2026-11-03 11:23, que DEROGA la directiva de «velocidad como
+    // pata principal» de la mañana y el Cambio 1 de R12): la tabla
+    // ordena por la predicción (años a duplicar) y el score mide
+    // CUÁNTO HAY QUE CREERLE. Se construye SOLO con dispersión e
+    // incertidumbre medibles — nada de velocidad, nada de
+    // oportunidad precio/FV, nada de calidad del negocio:
+    //  (1) acuerdo entre las dos patas del FV (la etiqueta de
+    //      confianza del motor, que nace de esa dispersión; una
+    //      sola pata no puede «acordar» consigo misma: tope 40) — 35
+    //  (2) acuerdo entre fuentes: desacuerdo de SIGNO en el EPS
+    //      forward (−40) y dispersión del rango de targets de los
+    //      analistas (ancho relativo al FV > 50% empieza a restar,
+    //      hasta −35) — 30
+    //  (3) riesgo de desvío: la volatilidad del activo — 25
+    // Los pesos se renormalizan sobre los componentes disponibles
+    // (la volatilidad siempre está; sin dato de un componente, ese
+    // componente no castiga — R0). Sobre el índice: el ancla de
+    // caja resta 6 si quemó caja (componente de confianza) y
+    // modelSuspect pone el techo SUSPECT_SCORE_CAP: su banda es
+    // «a revisar» por definición. La propiedad anti-inversión
+    // score↔duplicación queda DEROGADA: miden cosas distintas y
+    // la app lo explica — un activo arriba por velocidad con
+    // score bajo significa «estimación a revisar», no un error.
     scoreVelocity = re != null ? scoreVelocityFor(re) : null;
-    let opportunity = a.opportunityScore ?? null;
-    if (opportunity == null && fvEffective != null && fvEffective > 0 && a.price > 0) {
-      opportunity = scoreFor(a.price / fvEffective, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
-    }
-    const quality = qualityScore(a);
-    const valuationConfidenceScore =
+    let legsScore: number | null =
       a.fvConfidence === 'Alta' ? 90 : a.fvConfidence === 'Media' ? 65 : a.fvConfidence === 'Baja' ? 35 : null;
-    const riskScore = clamp(100 - Math.max(0, vol - 15) * 1.6 - Math.max(0, (a.debtToEquity ?? 0) - 1) * 8, 0, 100);
-    const adjDims: Array<{ value: number | null; weight: number; driver: string }> = [
-      { value: opportunity, weight: 25, driver: 'su precio contra el valor justo' },
-      { value: quality, weight: 20, driver: 'su calidad (rentabilidad del capital y márgenes)' },
-      { value: valuationConfidenceScore, weight: 15, driver: 'la confianza de su valuación' },
-      { value: riskScore, weight: 10, driver: 'su riesgo (volatilidad y deuda)' },
+    if (legsScore == null && a.fvComponentCount != null) {
+      legsScore = a.fvComponentCount >= 2 ? 55 : 35;
+    }
+    if (legsScore != null && a.fvComponentCount === 1) {
+      legsScore = Math.min(legsScore, 40);
+    }
+    let sourcesScore: number | null = null;
+    if (a.epsSignDisagreement || (a.fvRangeLow != null && a.fvRangeHigh != null)) {
+      let s = 85;
+      if (a.epsSignDisagreement) s -= 40;
+      if (
+        a.fvRangeLow != null && a.fvRangeHigh != null &&
+        a.fvBase != null && a.fvBase > 0 && a.fvRangeHigh > a.fvRangeLow
+      ) {
+        s -= clamp(((a.fvRangeHigh - a.fvRangeLow) / a.fvBase - 0.5) * 40, 0, 35);
+      }
+      sourcesScore = clamp(s, 0, 100);
+    }
+    const volScore = clamp(100 - Math.max(0, vol - 12) * 2, 0, 100);
+    const confDims: Array<{ value: number | null; weight: number }> = [
+      { value: legsScore, weight: 35 },
+      { value: sourcesScore, weight: 30 },
+      { value: volScore, weight: 25 },
     ];
-    const adjAvail = adjDims.filter((d) => d.value != null);
-    if (scoreVelocity != null) {
-      let adjustment = 0;
-      // Driver: la dimensión que más empujó el ajuste (su desvío
-      // del centro, ponderado, en unidades de índice). Solo se
-      // nombra si el ajuste es llamativo: la evaluación escrita
-      // lo cita.
-      let bestDriver: string | null = null;
-      let bestPush = 0;
-      if (adjAvail.length > 0) {
-        const tw = adjAvail.reduce((s, d) => s + d.weight, 0);
-        const index = adjAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
-        adjustment = ((index - 50) / 50) * SCORE_ADJUSTMENT_BAND_PTS;
-        for (const d of adjAvail) {
-          const push = ((d.value as number) - 50) * (d.weight / tw);
-          if (Math.abs(push) > Math.abs(bestPush)) {
-            bestPush = push;
-            bestDriver = d.driver;
-          }
-        }
-      }
-      // ANCLA DE CAJA REAL (R12): si quemó caja en los últimos 12
-      // meses reportados, el ajuste resta el reparo DENTRO de la
-      // misma banda — el total se acota a ±15 con el reparo
-      // incluido, así la anti-inversión no se degrada. El reparo
-      // compite como driver con su empuje equivalente en unidades
-      // de índice (−6 pts de score = −20 de índice): cuando es el
-      // mayor empuje, la evaluación escrita lo cita.
-      if (cashAnchor.penaltyPts !== 0) {
-        const cashPush = cashAnchor.penaltyPts * (50 / SCORE_ADJUSTMENT_BAND_PTS);
-        if (Math.abs(cashPush) > Math.abs(bestPush)) {
-          bestPush = cashPush;
-          bestDriver = 'quema caja en los últimos 12 meses reportados';
-        }
-        adjustment = clamp(
-          adjustment + cashAnchor.penaltyPts,
-          -SCORE_ADJUSTMENT_BAND_PTS,
-          SCORE_ADJUSTMENT_BAND_PTS
-        );
-      }
-      if (Math.abs(adjustment) >= SCORE_ADJUSTMENT_NOTABLE_PTS) {
-        scoreAdjustmentDriver = bestDriver;
-      }
-      scoreAdjustmentPts = Math.round(adjustment * 10) / 10;
-      score = Math.round(clamp(scoreVelocity + adjustment, 0, 100));
+    const confAvail = confDims.filter((d) => d.value != null);
+    if (confAvail.length > 0) {
+      const tw = confAvail.reduce((s, d) => s + d.weight, 0);
+      const index = confAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
+      let raw = clamp(index + cashAnchor.penaltyPts, 0, 100);
+      if (a.fvModelSuspect) raw = Math.min(raw, SUSPECT_SCORE_CAP);
+      score = Math.round(raw);
       stars = clamp(Math.round(score / 20), 1, 5);
+      scoreBand = scoreBandFor(score, !!a.fvModelSuspect);
+      scoreComponents = {
+        legs: legsScore != null ? Math.round(legsScore) : null,
+        sources: sourcesScore != null ? Math.round(sourcesScore) : null,
+        volatility: Math.round(volScore),
+      };
     }
-    // Score de la vista prudente (R12): la velocidad del retorno
-    // prudente con el MISMO ajuste acotado — el ajuste mira
-    // oportunidad, calidad, confianza y riesgo, que no dependen de
-    // la vista; así el score acompaña el orden prudente igual que el
-    // esperado acompaña el suyo.
-    if (rePess != null && scoreVelocity != null) {
-      scorePess = Math.round(
-        clamp(scoreVelocityFor(rePess) + (scoreAdjustmentPts ?? 0), 0, 100)
-      );
-    }
-  }
+    // Score de la vista prudente: el MISMO de confianza — la
+    // certeza es de los datos del activo, no de la vista.
+    scorePess = score;
 
+
+  }
   const fvToPrice =
     a.fvBase != null && a.fvBase > 0 && a.price > 0 ? a.fvBase / a.price : null;
+  // Destino elegible: el listón de score acá es de FIABILIDAD —
+  // confianza ≥ 65 en la predicción del destino (semántica vigente
+  // del score desde la redefinición 2026-11-03).
   const destinationEligible =
     !isCrypto &&
     !isCash &&
@@ -1084,6 +1086,8 @@ export function scoreAsset(
     scoreVelocity,
     scoreAdjustmentPts,
     scoreAdjustmentDriver,
+    scoreBand,
+    scoreComponents,
     cashAnchorState: cashAnchor.state,
     cashAnchorPenaltyPts: cashAnchor.penaltyPts,
     cashAnchorFcfTtmUsd: cashAnchor.fcfTtmUsd,
@@ -1379,31 +1383,42 @@ export function optimizePortfolio(
     const input = inputs.find((i) => i.symbol === a.symbol)!;
     const sellVerdict =
       input.fvBase != null && input.fvBase > 0 && a.price > input.fvBase * 1.1;
-    // Las defensivas tienen un rol (contrapeso): su umbral de salida es más
-    // exigente (score <30) y siempre parcial. Decisión del usuario 2026-10-29.
-    const lowScoreBar = a.defensive ? 30 : 40;
-    if (a.score != null && a.score < lowScoreBar && sellVerdict) {
+    // REGLAS RE-FUNDADAS (redefinición del score, 2026-11-03): el
+    // score ahora mide CONFIANZA — vender «por desconfianza» sería
+    // objetivamente incorrecto (un activo incierto es «a revisar»,
+    // no «a vender»). Las salidas por debilidad se juzgan por los
+    // criterios directos que el score viejo aproximaba: RETORNO
+    // esperado y gap precio/FV. Las defensivas tienen un rol
+    // (contrapeso): su umbral de retorno es más exigente y su
+    // salida siempre parcial (decisión del usuario 2026-10-29).
+    const lowReBar = a.defensive ? 5 : 10;
+    if (a.expectedReturnPct != null && a.expectedReturnPct < lowReBar && sellVerdict) {
       pushExtraction(a, a.defensive ? 'parcial' : 'total', 0.5,
-        'Precio por encima de su valor justo y score bajo', 'veredicto-vender');
+        'Precio por encima de su valor justo y retorno esperado bajo', 'veredicto-vender');
       continue;
     }
-    // Reemplazo sectorial: par de la misma industria claramente superior.
+    // Reemplazo sectorial: par de la misma industria claramente
+    // superior EN OPORTUNIDAD — más retorno esperado (≥ +3 pp) y
+    // más recorrido hasta su valor justo (FV/precio ≥ +0,15).
     const peers = (peersByIndustry[a.industry] ?? []).filter((p) => p.ticker !== a.ticker);
-    const bestPeer = peers.sort((x, y) => y.score - x.score)[0];
+    const bestPeer = peers.sort(
+      (x, y) => (y.expectedReturnPct ?? -Infinity) - (x.expectedReturnPct ?? -Infinity)
+    )[0];
     if (
-      bestPeer && a.score != null &&
-      bestPeer.score >= a.score + 15 &&
-      a.expectedReturnPct != null &&
-      bestPeer.expectedReturnPct >= a.expectedReturnPct + 3
+      bestPeer && a.expectedReturnPct != null &&
+      bestPeer.expectedReturnPct != null &&
+      bestPeer.expectedReturnPct >= a.expectedReturnPct + 3 &&
+      (bestPeer.fvToPrice ?? 0) >= (a.fvToPrice ?? 0) + 0.15
     ) {
       pushExtraction(a, a.defensive ? 'parcial' : 'total', 0.5,
-        `Su par ${bestPeer.ticker} (misma industria) tiene mejor score (${bestPeer.score} vs ${a.score})`,
+        `Su par ${bestPeer.ticker} (misma industria) ofrece más retorno esperado (${fmtPct1(bestPeer.expectedReturnPct)} vs ${fmtPct1(a.expectedReturnPct)} anual) y más recorrido a su valor justo`,
         'reemplazo-sectorial', bestPeer.ticker);
       continue;
     }
-    if (a.score != null && a.score < lowScoreBar) {
+    const veryLowReBar = a.defensive ? 2 : 5;
+    if (a.expectedReturnPct != null && a.expectedReturnPct < veryLowReBar) {
       pushExtraction(a, a.defensive ? 'parcial' : 'total', 0.5,
-        `Score de inversión bajo (${a.score}/100)`, 'score-bajo');
+        `Retorno esperado muy bajo (${fmtPct1(a.expectedReturnPct)} anual)`, 'retorno-muy-bajo');
       continue;
     }
     if (a.weightPct > opts.maxWeightPct) {
@@ -1416,8 +1431,7 @@ export function optimizePortfolio(
       !a.defensive &&
       a.expectedReturnPct != null &&
       a.expectedReturnPct < 8 &&
-      a.expectedReturnPct < medianRE - 3 &&
-      a.score != null && a.score < 55
+      a.expectedReturnPct < medianRE - 3
     ) {
       pushExtraction(a, 'parcial', 0.5,
         'Retorno esperado muy por debajo del resto de la cartera', 'bajo-retorno');
@@ -1439,9 +1453,6 @@ export function optimizePortfolio(
         const ex = x.excessPerRisk ?? Infinity;
         const ey = y.excessPerRisk ?? Infinity;
         if (ex !== ey) return ex - ey;
-        const sx = x.score ?? 999;
-        const sy = y.score ?? 999;
-        if (sx !== sy) return sx - sy;
         return (x.expectedReturnPct ?? Infinity) - (y.expectedReturnPct ?? Infinity);
       });
     return pool.slice(0, 5).map((a) => {
@@ -1452,7 +1463,7 @@ export function optimizePortfolio(
         grossUsd: gross, netUsd: gross * (1 - opts.sellCommissionPct / 100),
         reason:
           `Sugerencia automática: la menor eficiencia retorno/riesgo entre las posiciones restantes ` +
-          `(score ${a.score != null ? a.score + '/100' : '—'} · retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual)` +
+          `(retorno esp. ${a.expectedReturnPct != null ? fmtPct1(a.expectedReturnPct) : '—'} anual · confianza en esa predicción: ${a.score != null ? a.score + '/100' : '—'})` +
           (a.defensive ? ' · ojo: cumple rol defensivo' : ''),
         score: a.score, expectedReturnPct: a.expectedReturnPct,
       };
@@ -1494,7 +1505,7 @@ export function optimizePortfolio(
     }
     const allocations: Allocation[] = [];
     if (funds >= opts.minTradeUsd) {
-      interface Cand { key: string; score: number; capUsd: number; make: (amount: number) => Allocation }
+      interface Cand { key: string; score: number; rePct: number | null; capUsd: number; make: (amount: number) => Allocation }
       const cands: Cand[] = [];
       // 1) Pares sectoriales de los reemplazos, con el mismo listón
       const seenPeer = new Set<string>();
@@ -1509,7 +1520,7 @@ export function optimizePortfolio(
         if (peer.fvToPrice != null && peer.fvToPrice > 3) continue;
         cands.push({
           key: 'peer:' + peer.symbol,
-          score: peer.score,
+          score: peer.score, rePct: peer.expectedReturnPct,
           capUsd: (totalValue * opts.newPositionCapPct) / 100,
           make: (amount) => ({
             symbol: peer.symbol, ticker: peer.ticker, name: peer.name, isNew: true,
@@ -1528,7 +1539,7 @@ export function optimizePortfolio(
         if (roomUsd < opts.minTradeUsd) continue;
         cands.push({
           key: 'held:' + a.symbol,
-          score: a.score!,
+          score: a.score!, rePct: a.expectedReturnPct,
           capUsd: roomUsd,
           make: (amount) => ({
             symbol: a.symbol, ticker: a.ticker, name: a.name, isNew: false,
@@ -1539,16 +1550,24 @@ export function optimizePortfolio(
           }),
         });
       }
-      const top = cands.sort((x, y) => y.score - x.score).slice(0, 3);
+      // El reparto entre destinos se ordena y pondera por RETORNO
+      // esperado (la oportunidad directa), no por el score: desde
+      // la redefinición el score es confianza y ponderar compras
+      // por certeza sesgaría hacia lo lento-pero-seguro. El listón
+      // de ENTRADA de cada destino sí usa la confianza (fiabilidad:
+      // DESTINATION_MIN_SCORE y destinationEligible).
+      const top = cands.sort((x, y) => (y.rePct ?? -Infinity) - (x.rePct ?? -Infinity)).slice(0, 3);
       if (top.length) {
-        const wSum = top.reduce((s, c) => s + c.score * c.score, 0);
+        const wOf = (c: Cand) => Math.pow(Math.max(c.rePct ?? 0, 0), 2);
+        const wSum = top.reduce((s, c) => s + wOf(c), 0);
+        const shareOf = (c: Cand) => (wSum > 0 ? wOf(c) / wSum : 1 / top.length);
         let assigned = 0;
         const made: Array<{ c: Cand; al: Allocation }> = [];
         top.forEach((c, i) => {
           let amount =
             i === top.length - 1
               ? funds - assigned
-              : Math.round((funds * (c.score * c.score)) / wSum);
+              : Math.round(funds * shareOf(c));
           amount = Math.min(amount, c.capUsd);
           if (amount >= opts.minTradeUsd || (i === top.length - 1 && amount > 0)) {
             assigned += amount;
@@ -1607,6 +1626,7 @@ export function optimizePortfolio(
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
+        scoreBand: al.score != null ? scoreBandFor(al.score, false) : null, scoreComponents: null,
         cashAnchorState: 'sin-dato', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
       });
     }
@@ -1636,6 +1656,7 @@ export function optimizePortfolio(
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
+        scoreBand: null, scoreComponents: null,
         cashAnchorState: 'no-aplica', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
       });
     }
@@ -1658,7 +1679,7 @@ export function optimizePortfolio(
   // política de riesgo) y nunca se retiran por esta vía: el veredicto
   // sigue diciendo con honestidad qué pasa con el retorno.
   const RULE_REASON_CODES = new Set<Extraction['reasonCode']>([
-    'veredicto-vender', 'score-bajo', 'reemplazo-sectorial', 'bajo-retorno',
+    'veredicto-vender', 'retorno-muy-bajo', 'reemplazo-sectorial', 'bajo-retorno',
   ]);
   const improvementOf = (afterM: PortfolioMetrics) => {
     const dRE = afterM.expectedReturnGeoPct - before.expectedReturnGeoPct;
@@ -1782,13 +1803,13 @@ export function buildNarrative(
 
   // 1) Situación y núcleo
   out.push(
-    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. Tu mejor oportunidad según el score (que manda la capacidad de duplicar, con ajustes acotados por calidad, precio, confianza y riesgo) es ${best?.ticker} (${best?.score}/100) y la más débil, ${worst?.ticker} (${worst?.score}/100).`
+    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. La predicción más firme de la tabla es la de ${best?.ticker} (score de confianza ${best?.score}/100) y la más frágil, la de ${worst?.ticker} (${worst?.score}/100${worst?.scoreBand === 'a-revisar' ? ': estimación a revisar' : ''}). El score no premia velocidad: mide cuánto hay que creerle a cada predicción de duplicación.`
   );
 
   // 2) Concentración sectorial
   if (before.topSectorPct >= 45) {
     out.push(
-      `El punto más delicado es la concentración: el sector ${before.topSector} pesa ${fmtPct1(before.topSectorPct)} de la cartera. No es un problema hoy si la tesis se mantiene, pero significa que un mal ciclo de ese sector define casi la mitad de tu resultado. La mejora no pasa por salir del sector, sino por rotar dentro de él hacia las empresas con mejor score.`
+      `El punto más delicado es la concentración: el sector ${before.topSector} pesa ${fmtPct1(before.topSectorPct)} de la cartera. No es un problema hoy si la tesis se mantiene, pero significa que un mal ciclo de ese sector define casi la mitad de tu resultado. La mejora no pasa por salir del sector, sino por rotar dentro de él hacia las empresas con mejor retorno esperado.`
     );
   } else {
     out.push(
@@ -1832,32 +1853,47 @@ export function buildNarrative(
     );
   }
 
-  // 3c) Ajustes de score llamativos: el score lo domina la capacidad
-  // de duplicar; cuando el ajuste acotado (±15 pts) mueve mucho a un
-  // activo visible, la nota nombra el motivo (directiva 2026-11-03:
-  // ninguna diferencia score↔duplicación sin explicación).
-  const notableAdj = [...stocks]
-    .filter(
-      (a) =>
-        a.scoreAdjustmentPts != null &&
-        Math.abs(a.scoreAdjustmentPts) >= SCORE_ADJUSTMENT_NOTABLE_PTS &&
-        a.scoreAdjustmentDriver != null &&
-        a.score != null &&
-        a.scoreVelocity != null
-    )
-    .sort((x, y) => Math.abs(y.scoreAdjustmentPts ?? 0) - Math.abs(x.scoreAdjustmentPts ?? 0))
+  // 3c) Confianza de las predicciones rápidas (redefinición del
+  // score, 2026-11-03): la tabla ordena por la predicción y el
+  // score dice cuánto creerle; cuando un activo del top-3 por
+  // duplicación tiene confianza media o «a revisar», la nota
+  // nombra la causa principal de su fragilidad. Esa divergencia
+  // ya no es una contradicción a explicar: es el sistema
+  // funcionando como el usuario lo definió.
+  const bandWords = (b: ScoreBand | null): string =>
+    b === 'alta' ? 'confianza alta' : b === 'media' ? 'confianza media' : 'estimación a revisar';
+  const confidenceCause = (a: AssetScore): string => {
+    if (a.modelSuspect) {
+      return 'sus fuentes se contradicen entre sí de forma extrema, y su estimación quedó marcada a revisar';
+    }
+    const comps = a.scoreComponents;
+    if (comps) {
+      const named: Array<{ v: number | null; text: string }> = [
+        { v: comps.legs, text: 'las dos estimaciones de su valor justo están lejos entre sí' },
+        { v: comps.sources, text: 'las fuentes de sus ganancias futuras y de su precio objetivo discrepan entre sí' },
+        { v: comps.volatility, text: 'su volatilidad hace incierto cualquier sendero' },
+      ].filter((c) => c.v != null);
+      named.sort((x, y) => (x.v as number) - (y.v as number));
+      if (named.length && (named[0].v as number) < 55) return named[0].text;
+    }
+    if (a.cashAnchorState === 'quema-caja') {
+      return 'quemó caja en los últimos 12 meses reportados, y eso resta certeza a su sendero';
+    }
+    return 'sus insumos de valuación todavía no se confirman entre sí';
+  };
+  const fragileFast = byDoubling
+    .filter((a) => a.scoreBand === 'a-revisar' || a.scoreBand === 'media')
     .slice(0, 2);
-  for (const a of notableAdj) {
-    const pts = a.scoreAdjustmentPts as number;
+  for (const a of fragileFast) {
     out.push(
-      `El score de ${a.ticker} (${a.score}/100) ${pts < 0 ? 'queda' : 'sube'} ${fmtPct1(Math.abs(pts)).replace('%', '')} puntos ${pts < 0 ? 'por debajo' : 'por encima'} de lo que marca su sola capacidad de duplicar, por ${a.scoreAdjustmentDriver}. El ajuste está acotado (±${SCORE_ADJUSTMENT_BAND_PTS} puntos): premia o castiga, pero no cambia el titular — la tabla se ordena por años para duplicar y el score acompaña ese orden.`
+      `Ojo con la letra chica de ${a.ticker}: está entre los que más rápido duplican (${fmtY(a.yearsToDouble)} años), pero su score de confianza es ${a.score}/100 (${bandWords(a.scoreBand)}) porque ${confidenceCause(a)}. La tabla ordena por la predicción; el score dice cuánto hay que creerle.`
     );
   }
 
   // 4) Salidas, por tipo de motivo
   const thesisExits = extractions.filter((e) => e.reasonCode === 'tesis-deteriorada');
   const ruleExits = extractions.filter((e) =>
-    ['veredicto-vender', 'score-bajo', 'reemplazo-sectorial', 'concentracion', 'bajo-retorno'].includes(e.reasonCode)
+    ['veredicto-vender', 'retorno-muy-bajo', 'reemplazo-sectorial', 'concentracion', 'bajo-retorno'].includes(e.reasonCode)
   );
   const userExits = extractions.filter((e) => ['manual', 'sugerencia'].includes(e.reasonCode));
   if (thesisExits.length) {
@@ -1897,7 +1933,7 @@ export function buildNarrative(
   }
   if (!extractions.length) {
     out.push(
-      'No aparecen rotaciones con fundamento suficiente: ninguna posición combina deterioro de tesis, score bajo con sobreprecio contra su valor justo o un par sectorial claramente mejor. Mantener también es una decisión.'
+      'No aparecen rotaciones con fundamento suficiente: ninguna posición combina deterioro de tesis, retorno esperado bajo con sobreprecio contra su valor justo o un par sectorial claramente mejor. Mantener también es una decisión.'
     );
   }
 
@@ -1905,10 +1941,10 @@ export function buildNarrative(
   if (allocations.length) {
     const parts = allocations.map(
       (a) =>
-        `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, score ${a.score ?? '—'})`
+        `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, confianza ${a.score ?? '—'}/100)`
     );
     out.push(
-      `El dinero liberado va a los destinos que superan el listón — score de al menos 65, valor justo formado por las dos estimaciones (fórmula y consenso) y sin balance en puerta: ${parts.join(' · ')}.`
+      `El dinero liberado va a los destinos que superan el listón — confianza de al menos 65 en su predicción, valor justo formado por las dos estimaciones (fórmula y consenso) y sin balance en puerta: ${parts.join(' · ')}.`
     );
   }
   if (cashHeldUsd >= 250) {
