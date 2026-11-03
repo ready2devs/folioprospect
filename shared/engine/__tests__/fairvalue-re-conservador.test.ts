@@ -3,10 +3,11 @@ import { computeFairValue, evaluateMultiplesComponent } from '../fairvalue.js';
 
 /**
  * Pase correctivo RE — piezas que viven en el motor de valuación:
- * (C) castigo al DCF emergente (haircut ×0,75 a la base TTM y calidad
- * al piso 0,30; el componente se castiga, no se elimina) y (D) la
- * detección del desacuerdo de signo entre fuentes directas del EPS
- * forward. Fixtures sintéticos derivados de las reglas.
+ * (C) castigo al DCF emergente (haircut ×0,75 a la base TTM; desde la
+ * arquitectura R10 ese DCF es el ancla histórica y el castigo vive
+ * dentro de ella, fuera del promedio) y (D) la detección del
+ * desacuerdo de signo entre fuentes directas del EPS forward.
+ * Fixtures sintéticos derivados de las reglas.
  */
 describe('DCF emergente castigado (C)', () => {
   const baseInput = {
@@ -27,8 +28,9 @@ describe('DCF emergente castigado (C)', () => {
       targetMeanPrice: 120,
     });
     expect(r.fvFlags).toContain('ttmBaseEmerging');
-    expect(r.dcfValue).not.toBeNull();
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    // R10: el DCF emergente vive en el ANCLA histórica (fuera del FV).
+    expect(r.historicalAnchorValue).not.toBeNull();
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.originalValue).toBe(100);
     expect(prov?.usedValue).toBeCloseTo(75, 6);
   });
@@ -47,30 +49,30 @@ describe('DCF emergente castigado (C)', () => {
       fcfHistory: [100, 100, 100],
       targetMeanPrice: 120,
     });
-    expect(fullBase.dcfValue).not.toBeNull();
-    expect(emerging.dcfValue!).toBeCloseTo(0.75 * fullBase.dcfValue!, 4);
+    expect(fullBase.historicalAnchorValue).not.toBeNull();
+    expect(emerging.historicalAnchorValue!).toBeCloseTo(0.75 * fullBase.historicalAnchorValue!, 4);
   });
 
-  it('la calidad del DCF emergente es el piso de la escala de ponderación (R9)', () => {
+  it('el DCF emergente ya no pondera: vive en el ancla, fuera del promedio (R10)', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
       fcfHistory: [100, -50, -200],
-      // Escala de ponderación vigente (directivas 2026-11-03): múltiplos
-      // con 2 grupos directos → 0,45; target de una fuente sin conteo
-      // de analistas → 0,45; DCF emergente → 0,30 (el piso). Pesos
-      // resultantes: [0,25, 0,375, 0,375] — el emergente es el menor.
       forwardEps: 5,
       forwardEpsAlt: 5,
       forwardEpsAltSource: 'finviz' as const,
       targetMeanPrice: 120,
     });
+    // El ancla emergente existe como referencia…
+    expect(r.historicalAnchorValue).not.toBeNull();
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
+    expect(prov?.flags).toContain('ttmBaseEmerging');
+    expect(prov?.usedValue).toBeCloseTo(75, 6);
+    // …pero el FV se forma SOLO con las tres patas vigentes (el pool
+    // tiene 3 componentes y ninguno es el valor del ancla).
     expect(r.fvComponents).toHaveLength(3);
+    expect(r.fvComponents).not.toContain(r.historicalAnchorValue);
     const w = r.fvComponentWeights ?? [];
-    expect(w).toHaveLength(3);
-    // Orden del pool: dcf, múltiplos, target.
-    expect(w[0]).toBeCloseTo(0.25, 6);
-    expect(w[0]).toBeLessThan(w[1]);
     expect(w.reduce((s, x) => s + x, 0)).toBeCloseTo(1, 6);
   });
 });

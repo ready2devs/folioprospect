@@ -5,6 +5,7 @@ import { findCatalogEntry } from '../shared/engine/symbolCatalog.js';
 import type { FinvizFundamentals } from '../shared/engine/finvizParse.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
 import { fetchFinvizFundamentals } from './finviz.js';
+import { fetchTvEstimates } from './tradingview.js';
 import { fetchEdgarAnnualCashflow, fetchEdgarSeries } from './edgar.js';
 
 const UA =
@@ -1391,6 +1392,26 @@ export async function fetchFundamentals(
             Number.isFinite(trendPlus1y.earningsEstimate.avg.raw)
               ? Number(trendPlus1y.earningsEstimate.avg.raw)
               : null;
+          // Tendencia de consenso para la pata de DCF sobre ganancias
+          // (R10): crecimiento del EPS del próximo año y a 5 años, y
+          // crecimiento de ingresos implícito en las estimaciones.
+          const trendGrowthRaw = (t: any): number | null => {
+            const g = t?.earningsEstimate?.growth?.raw ?? t?.growth?.raw;
+            return typeof g === 'number' && Number.isFinite(g) ? g : null;
+          };
+          const epsTrendGrowthNextYear = trendGrowthRaw(trendPlus1y);
+          const trend5y = eTrendList.find(
+            (t: any) => t?.period === '+5y' || t?.period === '5y'
+          );
+          const epsTrendGrowth5y = trendGrowthRaw(trend5y);
+          const revAvg = (t: any): number | null => {
+            const v = t?.revenueEstimate?.avg?.raw;
+            return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+          };
+          const rev0y = revAvg(eTrendList.find((t: any) => t?.period === '0y'));
+          const rev1y = revAvg(trendPlus1y);
+          const trendRevenueGrowth =
+            rev0y != null && rev1y != null ? rev1y / rev0y - 1 : null;
           // Serie anual de FCF desde los estados de flujo publicados por
           // Yahoo (OCF + capex, el capex viene negativo): respaldo de la
           // serie auditada de EDGAR para tickers sin CIK conocido.
@@ -1466,6 +1487,23 @@ export async function fetchFundamentals(
             }
             // Segunda fuente del target de analistas (Finviz).
             input.targetAltPrice = finviz?.targetPrice ?? null;
+            // Crecimientos de EPS de Finviz para la pata de ganancias.
+            input.finvizEpsNextYearPct = finviz?.epsNextYearPct ?? null;
+            input.finvizEpsNext5YPct = finviz?.epsNext5YPct ?? null;
+            // Tendencia de consenso (Yahoo) para la misma pata.
+            input.epsTrendGrowthNextYear = epsTrendGrowthNextYear;
+            input.epsTrendGrowth5y = epsTrendGrowth5y;
+            input.trendRevenueGrowth = trendRevenueGrowth;
+            // TradingView (directiva del usuario): fuente adicional de
+            // estimaciones hacia adelante; si no responde, todo queda
+            // null y la valuación sigue con Yahoo/Finviz (R0).
+            const tv = await fetchTvEstimates(symbol).catch(() => null);
+            input.tvEpsForecastNextFy = tv?.epsForecastNextFy ?? null;
+            input.tvRevenueForecastNextFy = tv?.revenueForecastNextFy ?? null;
+            input.tvRevenueTtm = tv?.revenueTtm ?? null;
+            input.targetTvPrice = tv?.targetMean ?? null;
+            input.targetTvHigh = tv?.targetHigh ?? null;
+            input.targetTvLow = tv?.targetLow ?? null;
           } catch {
             input.forwardEpsAlt = epsTrendAlt;
             input.forwardEpsAltSource = epsTrendAlt != null ? 'yahooTrend' : null;
@@ -1499,6 +1537,12 @@ export async function fetchFundamentals(
               edSeries?.epsHistory && edSeries.epsHistory.length > 0
                 ? edSeries.epsHistory
                 : null;
+            // Series para la tasa de reinversión del Optimizador
+            // (ancla de crecimiento sustentable, corrección 2026-11-03).
+            input.ocfHistory = edSeries?.ocfHistory?.length ? edSeries.ocfHistory : null;
+            input.capexHistory = edSeries?.capexHistory?.length ? edSeries.capexHistory : null;
+            input.netIncomeHistory = edSeries?.netIncomeHistory?.length ? edSeries.netIncomeHistory : null;
+            input.depreciationHistory = edSeries?.depreciationHistory?.length ? edSeries.depreciationHistory : null;
           } catch {
             input.fcfHistory = yahooFcfHistory.length > 0 ? yahooFcfHistory : null;
             input.fcfHistorySource = yahooFcfHistory.length > 0 ? 'yahoo' : null;

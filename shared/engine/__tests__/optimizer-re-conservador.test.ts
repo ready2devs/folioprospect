@@ -1,20 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
   grinoldKroner,
+  consensusPct,
+  fvConvergencePct,
   scoreAsset,
   convergenceTargetFor,
   reConfidenceFor,
-  RE_CONFIDENCE_CAP_PCT,
+  RE_SANITY_CLAMP_PCT,
   type OptimizerAssetInput,
 } from '../optimizer.js';
 
 /**
  * Pase correctivo de la capa de RE (docs/OPTIMIZER-PROFESSIONAL.md §12,
- * con la recalibración del desapilado de §13): convergencia al FV
- * encogido por confianza con piso del rango SOLO bajo el tripwire
- * modelSuspect (A), topes de RE por confianza en una sola capa
- * +35/+30/+25 (B) y desacuerdo de signo en el EPS (D). Fixtures
- * sintéticos derivados de las reglas: el motor no conoce tickers.
+ * desapilado de §13 y correcciones del usuario de §15): convergencia
+ * al FV encogido por confianza con piso del rango SOLO bajo el
+ * tripwire modelSuspect (A), SIN topes sobre las estimaciones — el
+ * consenso y la convergencia entran a valor facial y el único clamp
+ * es el anti-basura final [−50%, +80%] — y desacuerdo de signo en el
+ * EPS (D). Fixtures sintéticos derivados de las reglas: el motor no
+ * conoce tickers.
  */
 const SCORE_OPTS = {
   sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
@@ -89,15 +93,17 @@ describe('convergencia por confianza (A, desapilada §13)', () => {
       1000, SCORE_OPTS
     );
     expect(a.conservativeConvergence).toBe(false);
-    // El destino es 345 (k=0,7): su CAGR a 3 años sería 51,1%, pero el
-    // componente de convergencia conserva su clamp histórico de +35%.
-    expect(a.fvConvergencePct!).toBe(35);
+    // El destino es 345 (k=0,7) y su CAGR a 3 años entra SIN clamp
+    // (51,2%): el tope histórico de +35% fue retirado por la
+    // corrección del usuario 2026-11-03 (§15).
+    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(3.45, 1 / 3) - 1) * 100, 4);
   });
 });
 
-describe('topes de RE por confianza (B)', () => {
-  // Blend crudo deliberadamente altísimo: GK 26,8 (div 5 + recompra 5 +
-  // crecimiento 30 con fade), convergencia y consenso en sus techos.
+describe('sin topes sobre las estimaciones (corrección 2026-11-03, §15)', () => {
+  // Blend deliberadamente caliente: GK 40 (div 5 + recompra 5 +
+  // crecimiento 30 a valor facial), convergencia al encogido y
+  // consenso +200% (target 3× precio) sin recorte.
   const hot = (fvConfidence: 'Alta' | 'Media' | 'Baja') =>
     base({
       price: 100, fvBase: 450, fvConfidence, fvRangeLow: 440, fvComponentCount: 3,
@@ -105,22 +111,50 @@ describe('topes de RE por confianza (B)', () => {
       analystTarget: 300, volatilityPct: 30, roicPct: 15,
     });
 
-  it('Baja: el RE final no supera +25% aunque el blend crudo dé ~31%', () => {
+  it('el consenso entra a valor facial: +200% y −60%, sin techo ni piso', () => {
+    expect(consensusPct(base({ price: 100, analystTarget: 300 }))).toBe(200);
+    expect(consensusPct(base({ price: 100, analystTarget: 40 }))).toBe(-60);
+  });
+
+  it('la convergencia entra a valor facial: CAGR 51,2% sin el clamp histórico', () => {
+    expect(fvConvergencePct(base({ price: 100, fvBase: 345 }), 3)).toBeCloseTo(
+      (Math.pow(3.45, 1 / 3) - 1) * 100, 4
+    );
+  });
+
+  it('Baja: el RE ya no se recorta a +25% — el blend manda (~69,9%)', () => {
     const a = scoreAsset(hot('Baja'), 1000, SCORE_OPTS);
-    expect(a.expectedReturnPct).toBe(RE_CONFIDENCE_CAP_PCT.Baja);
-    expect(a.expectedReturnPct).toBe(25);
-    expect(a.yearsToDouble!).toBeCloseTo(Math.LN2 / Math.log(1.25), 4);
+    // 0,45×40 + 0,35×33,89 (encogido k=0,4 → 240) + 0,20×200 = 69,86.
+    expect(a.expectedReturnPct!).toBeCloseTo(69.86, 1);
+    expect(a.expectedReturnPct!).toBeGreaterThan(60);
+    expect(a.yearsToDouble!).toBeCloseTo(Math.LN2 / Math.log(1.6986), 2);
   });
 
-  it('Media: tope +30%', () => {
+  it('Media: menos encogido ⇒ más RE que Baja (la diferenciación vive en el FV, no en un tope)', () => {
     const a = scoreAsset(hot('Media'), 1000, SCORE_OPTS);
-    expect(a.expectedReturnPct).toBe(30);
+    // 0,45×40 + 0,35×51,16 (encogido k=0,7 → 345) + 0,20×200 = 75,91.
+    expect(a.expectedReturnPct!).toBeCloseTo(75.91, 1);
+    expect(a.expectedReturnPct!).toBeLessThan(RE_SANITY_CLAMP_PCT.max);
   });
 
-  it('Alta: el mismo blend queda por debajo del techo histórico (+35%) y no se recorta', () => {
+  it('Alta: solo el clamp anti-basura final ata, y únicamente en un fixture fuera de todo caso real', () => {
     const a = scoreAsset(hot('Alta'), 1000, SCORE_OPTS);
-    expect(a.expectedReturnPct!).toBeGreaterThan(30);
-    expect(a.expectedReturnPct!).toBeLessThanOrEqual(35);
+    // Blend crudo 80,8% (FV 4,5× precio + target 3×): el único tope
+    // que existe, el anti-basura de +80%, es el que lo deja en 80.
+    expect(a.expectedReturnPct).toBe(RE_SANITY_CLAMP_PCT.max);
+  });
+
+  it('el clamp anti-basura también acota el lado negativo (−50%)', () => {
+    const a = scoreAsset(
+      base({
+        price: 100, fvBase: 1, fvConfidence: 'Alta', fvComponentCount: 3,
+        earningsGrowthTotalPct: -30, analystTarget: 1, volatilityPct: 30,
+      }),
+      1000, SCORE_OPTS
+    );
+    // Sin encogido (Alta): GK −30 + convergencia −78,5 (FV = 1% del
+    // precio) + consenso −99 → blend crudo −60,8% → −50.
+    expect(a.expectedReturnPct).toBe(RE_SANITY_CLAMP_PCT.min);
   });
 });
 
@@ -134,25 +168,28 @@ describe('desacuerdo de signo en el EPS (D)', () => {
   });
 
   it('GK no usa crecimiento de EPS en disputa: solo ingresos; sin ingresos, crecimiento 0', () => {
-    // Con desacuerdo, el EPS +40% se ignora y manda ventas +10% (fade 7,8).
+    // Con desacuerdo, el EPS +40% se ignora y manda ventas +10% a
+    // valor facial (ventas 10 ≤ umbral de régimen; sin datos de ancla
+    // madura en el fixture, no hay techo adicional).
     expect(
       grinoldKroner(base({ epsSignDisagreement: true, epsNextYearPct: 40, epsNext5YPct: 40, salesGrowthPct: 10 }))
-    ).toBeCloseTo(7.8, 5);
+    ).toBeCloseTo(10, 5);
     // Ni siquiera el ancla de ganancias totales: solo ingresos.
     expect(
       grinoldKroner(base({ epsSignDisagreement: true, earningsGrowthTotalPct: 30, salesGrowthPct: 10 }))
-    ).toBeCloseTo(7.8, 5);
+    ).toBeCloseTo(10, 5);
     // Sin ingresos: el subcomponente vale 0 y GK computa el resto (no null).
     expect(
       grinoldKroner(base({ epsSignDisagreement: true, epsNextYearPct: 40, dividendYieldPct: 2, dilutionPct: -1 }))
     ).toBeCloseTo(3, 5);
-    // Control: sin desacuerdo, el mismo input sí usa el EPS (mediana 40 → fade 16,8).
+    // Control: sin desacuerdo, el mismo input sí usa el EPS (mediana
+    // 40, sin fade desde la corrección 2026-11-03).
     expect(
       grinoldKroner(base({ epsNextYearPct: 40, epsNext5YPct: 40, dividendYieldPct: 2, dilutionPct: -1 }))
-    ).toBeCloseTo(19.8, 5);
+    ).toBeCloseTo(43, 5);
   });
 
-  it('un Media con desacuerdo de signo converge como Baja (encogido k=0,4) y respeta el tope Baja', () => {
+  it('un Media con desacuerdo de signo converge como Baja (encogido k=0,4)', () => {
     const a = scoreAsset(
       base({
         price: 100, fvBase: 450, fvConfidence: 'Media', fvRangeLow: 150, fvRangeHigh: 900,
@@ -168,6 +205,8 @@ describe('desacuerdo de signo en el EPS (D)', () => {
     expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(2.4, 1 / 3) - 1) * 100, 4);
     // La etiqueta pública de la valuación no se toca.
     expect(a.fvConfidence).toBe('Media');
-    expect(a.expectedReturnPct!).toBeLessThanOrEqual(RE_CONFIDENCE_CAP_PCT.Baja);
+    // Sin topes: GK 0 (EPS en disputa, sin ventas) + convergencia
+    // 33,89 + consenso +50 a valor facial → 0,35×33,89 + 0,20×50.
+    expect(a.expectedReturnPct!).toBeCloseTo(21.86, 1);
   });
 });

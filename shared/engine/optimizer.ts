@@ -78,6 +78,14 @@ export interface OptimizerAssetInput {
   volatilityPct?: number | null; // anual %
   beta?: number | null;
   roicPct?: number | null;
+  /** Tasa de reinversión % calculada de los reportados ((capex −
+   *  depreciación) / ingreso neto, EDGAR): insumo del ancla de
+   *  crecimiento sustentable en régimen maduro (corrección 2). */
+  reinvestmentRatePct?: number | null;
+  /** Crecimiento sustentable % en su forma equity, ROE × (1 − payout
+   *  total), precomputado por la capa de datos: respaldo del ancla
+   *  madura cuando la reinversión no se pudo calcular con fiabilidad. */
+  sustainableGrowthPct?: number | null;
   grossMarginPct?: number | null;
   operatingMarginPct?: number | null;
   debtToEquity?: number | null;
@@ -179,6 +187,12 @@ export interface AssetScore {
   gkPct: number | null;
   fvConvergencePct: number | null;
   consensusPct: number | null;
+  /** Crecimiento efectivamente usado dentro de GK, su ancla de
+   *  cordura por régimen y el régimen aplicado (corrección 2):
+   *  trazabilidad de por qué GK cree lo que cree. */
+  gkGrowthPct: number | null;
+  growthAnchorPct: number | null;
+  growthRegime: GrowthRegime | null;
   /** RE anual estimado % (aritmético por activo). */
   expectedReturnPct: number | null;
   /** Piso de cordura Gordon: D/P + g acotado. */
@@ -348,9 +362,77 @@ const median = (xs: number[]): number => {
 export const yearsToDoubleFor = (rPct: number | null): number | null =>
   rPct != null && rPct > 0 ? Math.LN2 / Math.log(1 + rPct / 100) : null;
 
-/** Grinold-Kroner por activo. Devuelve null si no hay crecimiento estimable. */
-export function grinoldKroner(a: OptimizerAssetInput): number | null {
-  const growthCandidates: number[] = [];
+/** Umbral de régimen por crecimiento de VENTAS (% anual): por encima,
+ *  la empresa es «en crecimiento» y su crecimiento de ganancias se
+ *  ancla a las ventas; por debajo es «madura» y manda el crecimiento
+ *  sustentable. Punto medio de la banda 10–15% indicada por el
+ *  usuario (corrección 2026-11-03). */
+export const GROWTH_REGIME_SALES_PCT = 12.5;
+/** Margen de apalancamiento operativo (pp): en régimen de crecimiento
+ *  las ganancias pueden crecer hasta ventas + 10 pp (expansión de
+ *  márgenes; la recompra ya entra como componente separado de GK, no
+ *  se cuenta dos veces). */
+export const GROWTH_LEVERAGE_SLACK_PP = 10;
+/** Crecimiento sustentable a nivel firma: g = ROIC × tasa de
+ *  reinversión (estándar Damodaran; el fade de Morningstar usa la
+ *  misma lógica con su RONIC). Entradas en %. */
+export function sustainableGrowthFromRoic(
+  roicPct: number | null | undefined,
+  reinvestmentRatePct: number | null | undefined
+): number | null {
+  if (roicPct == null || reinvestmentRatePct == null) return null;
+  return (roicPct * reinvestmentRatePct) / 100;
+}
+
+export type GrowthRegime = 'crecimiento' | 'madura';
+
+/** Ancla de cordura del crecimiento de ganancias, por régimen
+ *  (corrección del usuario 2026-11-03):
+ *  - Empresa en crecimiento (ventas > +12,5%): ancla = crecimiento de
+ *    ventas + margen de apalancamiento operativo. Las ventas mandan
+ *    porque una base de ganancias casi cero (Nebius) convierte
+ *    cualquier % de EPS en un número sin sentido, mientras las ventas
+ *    son la magnitud económica real que crece.
+ *  - Empresa madura: ancla = crecimiento sustentable, g = ROIC ×
+ *    reinversión con los reportados del motor; si la reinversión no
+ *    se pudo calcular con fiabilidad, el respaldo es la forma equity
+ *    ROE × (1 − payout) que la capa de datos precomputa
+ *    (`sustainableGrowthPct`).
+ *  El ancla es TECHO de cordura, nunca piso: si el consenso implica
+ *  menos, manda el consenso. Sin datos para el ancla, no hay ancla y
+ *  la estimación entra a valor facial. */
+export function growthAnchorFor(a: OptimizerAssetInput): {
+  anchorPct: number;
+  regime: GrowthRegime;
+} | null {
+  const sales = a.salesGrowthPct ?? null;
+  if (sales != null && sales > GROWTH_REGIME_SALES_PCT) {
+    return { anchorPct: sales + GROWTH_LEVERAGE_SLACK_PP, regime: 'crecimiento' };
+  }
+  const firm = sustainableGrowthFromRoic(a.roicPct, a.reinvestmentRatePct);
+  if (firm != null) return { anchorPct: firm, regime: 'madura' };
+  if (a.sustainableGrowthPct != null) {
+    return { anchorPct: a.sustainableGrowthPct, regime: 'madura' };
+  }
+  return null;
+}
+
+export interface GrinoldKronerParts {
+  total: number | null;
+  /** Crecimiento efectivamente usado en GK (tras el ancla). */
+  growthUsedPct: number | null;
+  /** Ancla de cordura aplicada (techo), si hubo. */
+  growthAnchorPct: number | null;
+  growthRegime: GrowthRegime | null;
+  /** Crecimiento base antes del ancla (consenso de ganancias o, en su
+   *  defecto, el de ventas). */
+  growthBasePct: number | null;
+}
+
+/** Grinold-Kroner por activo, con el despiece del crecimiento.
+ *  `total` es null si no hay crecimiento estimable. */
+export function grinoldKronerParts(a: OptimizerAssetInput): GrinoldKronerParts {
+  let baseGrowth: number | null = null;
   if (a.epsSignDisagreement) {
     // Pase correctivo D: si las fuentes del EPS discrepan en el SIGNO,
     // ninguna tasa de crecimiento de ganancias derivada de ese EPS es
@@ -359,39 +441,65 @@ export function grinoldKroner(a: OptimizerAssetInput): number | null {
     // crecimiento vale 0 — no se fabrica crecimiento desde un EPS en
     // disputa, pero el resto de GK (dividendos, recompra, repricing)
     // sigue computando.
-    if (a.salesGrowthPct != null) growthCandidates.push(a.salesGrowthPct);
-    if (growthCandidates.length === 0) growthCandidates.push(0);
+    baseGrowth = a.salesGrowthPct ?? 0;
   } else {
-    // Ancla preferida: ganancias totales (anti doble conteo con el buyback).
-    if (a.earningsGrowthTotalPct != null) growthCandidates.push(a.earningsGrowthTotalPct);
-    if (a.salesGrowthPct != null) growthCandidates.push(a.salesGrowthPct);
-    if (growthCandidates.length === 0) {
-      // Sin ancla de totales: EPS amortiguado (mediana próximo año / 5 años).
+    // Estimación de crecimiento de ganancias: ganancias totales si
+    // está (anti doble conteo con el buyback); si no, la mediana del
+    // crecimiento de EPS de consenso (próximo año / 5 años).
+    if (a.earningsGrowthTotalPct != null) {
+      baseGrowth = a.earningsGrowthTotalPct;
+    } else {
       const eps: number[] = [];
       if (a.epsNextYearPct != null) eps.push(a.epsNextYearPct);
       if (a.epsNext5YPct != null) eps.push(a.epsNext5YPct);
-      if (eps.length === 0) return null;
-      growthCandidates.push(median(eps));
+      if (eps.length > 0) baseGrowth = median(eps);
     }
+    // Sin estimación de ganancias, el crecimiento de ventas es el proxy.
+    if (baseGrowth == null) baseGrowth = a.salesGrowthPct ?? null;
   }
-  const gRaw = clamp(median(growthCandidates), -10, 30);
-  // Fade institucional: el crecimiento spot (trimestral/TTM en picos de ciclo)
-  // revierte hacia el crecimiento nominal de largo plazo (~6%): por encima de
-  // ese nivel solo se conserva el 45% del exceso. Sin esto, un boom sectorial
-  // proyecta retornos imposibles de sostener.
-  const g = gRaw > 6 ? 6 + (gRaw - 6) * 0.45 : gRaw;
+  if (baseGrowth == null) {
+    return { total: null, growthUsedPct: null, growthAnchorPct: null, growthRegime: null, growthBasePct: null };
+  }
+  // Ancla por régimen (corrección 2): techo de cordura con fundamento
+  // económico según el régimen — reemplaza al fade mecánico anterior
+  // (conservar el 45% del exceso sobre 6%), que era un descuento
+  // sistemático sobre la estimación sin orden del usuario. El clamp
+  // residual [−30, +60] es protección anti-basura numérica sobre la
+  // TASA (un input corrupto no imprime crecimientos de 3 dígitos),
+  // no una opinión sobre ninguna empresa.
+  const anchor = growthAnchorFor(a);
+  const gRaw = clamp(
+    anchor != null ? Math.min(baseGrowth, anchor.anchorPct) : baseGrowth,
+    -30,
+    60
+  );
   const div = a.dividendYieldPct ?? 0;
   const buyback = a.dilutionPct != null ? -a.dilutionPct : 0;
   let repricing = 0;
   if (a.forwardPe != null && a.industryForwardPe != null && a.forwardPe > 0 && a.industryForwardPe > 0) {
     repricing = clamp((Math.pow(a.industryForwardPe / a.forwardPe, 1 / 5) - 1) * 100, -5, 5);
   }
-  return div + buyback + g + repricing;
+  return {
+    total: div + buyback + gRaw + repricing,
+    growthUsedPct: gRaw,
+    growthAnchorPct: anchor?.anchorPct ?? null,
+    growthRegime: anchor?.regime ?? null,
+    growthBasePct: baseGrowth,
+  };
+}
+
+/** Grinold-Kroner por activo. Devuelve null si no hay crecimiento estimable. */
+export function grinoldKroner(a: OptimizerAssetInput): number | null {
+  return grinoldKronerParts(a).total;
 }
 
 export function fvConvergencePct(a: OptimizerAssetInput, years: number): number | null {
   if (a.fvBase == null || !(a.fvBase > 0) || !(a.price > 0) || years <= 0) return null;
-  return clamp((Math.pow(a.fvBase / a.price, 1 / years) - 1) * 100, -25, 35);
+  // SIN tope (corrección del usuario 2026-11-03): el clamp [−25, +35]
+  // era una calibración del asistente del 30-oct, sin orden del
+  // usuario; la brecha contra el FV encogido entra a valor facial —
+  // la prudencia ya vive en el FV y en su encogido por confianza.
+  return (Math.pow(a.fvBase / a.price, 1 / years) - 1) * 100;
 }
 
 /** Factor de shrinkage del FV según la confianza de la valuación: la
@@ -428,18 +536,19 @@ export function reConfidenceFor(a: OptimizerAssetInput): ValuationConfidence {
   return baseConf === 'Alta' ? 'Media' : 'Baja';
 }
 
-/** Tope del retorno esperado final según la confianza de la capa de RE
- *  (pase correctivo B, recalibrado en el desapilado §13). Calibración
- *  profesional: el conservadurismo crece con la incertidumbre de la
- *  valuación, pero vive en UNA sola capa — los FV ya nacen prudentes
- *  (target líder acotado a su consenso, DCF contrapeso, múltiplo con
- *  tope sectorial), así que los topes son amplios: Alta +35%, Media
- *  +30%, Baja +25%. */
-export const RE_CONFIDENCE_CAP_PCT: Record<ValuationConfidence, number> = {
-  Alta: 35,
-  Media: 30,
-  Baja: 25,
-};
+/** Clamp final del retorno esperado: ÚNICA cota que queda en la capa
+ *  de RE y es protección anti-basura numérica, no una opinión. Los
+ *  topes por confianza (+35/+30/+25 del pase B/§13) y los de las patas
+ *  (consenso −20/+35, convergencia −25/+35, calibraciones del
+ *  asistente del 30-oct nunca ordenadas por el usuario) fueron
+ *  RETIRADOS por la corrección del usuario 2026-11-03: la prudencia
+ *  vive una sola vez, en el FV (target líder + ancla histórica +
+ *  encogido por confianza al converger); la capa de RE no vuelve a
+ *  desconfiar del mismo número. Este clamp [−50%, +80%] no ata en
+ *  ningún caso real observado (el RE legítimo más alto de la cartera
+ *  ronda +35%): existe para que un input corrupto no imprima un
+ *  retorno de tres dígitos en pantalla. */
+export const RE_SANITY_CLAMP_PCT = { min: -50, max: 80 } as const;
 
 /** Destino al que converge el componente de convergencia del RE
  *  (desapilado §13 — la prudencia vive una sola vez, dentro del FV):
@@ -514,9 +623,13 @@ export const DESTINATION_MIN_SCORE = 65;
 
 export function consensusPct(a: OptimizerAssetInput): number | null {
   if (a.analystTarget == null || !(a.analystTarget > 0) || !(a.price > 0)) return null;
-  // Es una vista a 1 año y suele perseguir al precio en mercados alcistas:
-  // se acota más que la convergencia a FV para que no domine el blend.
-  return clamp((a.analystTarget / a.price - 1) * 100, -20, 35);
+  // SIN tope (corrección del usuario 2026-11-03): la suba implícita en
+  // el target de analistas entra a VALOR FACIAL. El clamp [−20, +35]
+  // anterior era una calibración del asistente (30-oct) que el propio
+  // relevamiento del 2-nov ya había mostrado que «no diferenciaba»
+  // (16 de 19 activos saturados en el techo): si el número diferencia,
+  // que diferencie. Su peso en el blend (20%) ya limita su influencia.
+  return (a.analystTarget / a.price - 1) * 100;
 }
 
 function qualityScore(a: OptimizerAssetInput): number | null {
@@ -561,10 +674,12 @@ export function scoreAsset(
   const reConf: ValuationConfidence = reConfidenceFor(a);
   let conservativeConvergence = false;
 
+  let gkParts: GrinoldKronerParts | null = null;
   if (isCrypto || isCash) {
     re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
   } else {
-    gk = grinoldKroner(a);
+    gkParts = grinoldKronerParts(a);
+    gk = gkParts.total;
     // La convergencia cree la brecha solo en proporción a la confianza
     // de la valuación (shrinkage): el FV crudo queda para la ficha.
     // Solo con el FV marcado sospechoso (tripwire R9) el destino baja
@@ -590,12 +705,12 @@ export function scoreAsset(
     const avail = parts.filter(([v]) => v != null) as Array<[number, number]>;
     if (avail.length) {
       const tw = avail.reduce((s, [, w]) => s + w, 0);
-      // Tope por confianza (pase correctivo B): el blend crudo de un
-      // nombre Baja no se publica por encima de +18% anual.
+      // Sin topes por confianza ni por pata (corrección 2026-11-03):
+      // solo el clamp anti-basura final, que no ata en casos reales.
       re = clamp(
         avail.reduce((s, [v, w]) => s + v * w, 0) / tw,
-        -15,
-        RE_CONFIDENCE_CAP_PCT[reConf]
+        RE_SANITY_CLAMP_PCT.min,
+        RE_SANITY_CLAMP_PCT.max
       );
     }
     const gAnchor =
@@ -666,6 +781,9 @@ export function scoreAsset(
     gkPct: gk,
     fvConvergencePct: fv,
     consensusPct: cons,
+    gkGrowthPct: gkParts?.growthUsedPct ?? null,
+    growthAnchorPct: gkParts?.growthAnchorPct ?? null,
+    growthRegime: gkParts?.growthRegime ?? null,
     expectedReturnPct: re,
     gordonFloorPct: gordon,
     belowGordonFloor: gordon != null && re != null && re < gordon - 4,
@@ -1178,6 +1296,7 @@ export function optimizePortfolio(
         price: al.price, qty: al.qtyBought, value: al.amountUsd,
         weightPct: totalValue > 0 ? (al.amountUsd / totalValue) * 100 : 0,
         isCrypto: false, isCash: false, gkPct: null, fvConvergencePct: null, consensusPct: null,
+        gkGrowthPct: null, growthAnchorPct: null, growthRegime: null,
         expectedReturnPct: al.expectedReturnPct, gordonFloorPct: null, belowGordonFloor: false,
         score: al.score, stars: al.score != null ? clamp(Math.round(al.score / 20), 1, 5) : null,
         yearsToDouble: yearsToDoubleFor(al.expectedReturnPct),
@@ -1202,6 +1321,7 @@ export function optimizePortfolio(
         industry: 'Efectivo', price: 1, qty: cashLeft, value: cashLeft,
         weightPct: totalValue > 0 ? (cashLeft / totalValue) * 100 : 0,
         isCrypto: false, isCash: true, gkPct: null, fvConvergencePct: null, consensusPct: null,
+        gkGrowthPct: null, growthAnchorPct: null, growthRegime: null,
         expectedReturnPct: 0, gordonFloorPct: null, belowGordonFloor: false, score: null, stars: null,
         yearsToDouble: null, volatilityPct: 0, mctrPct: null, riskContributionPct: null,
         excessPerRisk: null, locked: false, defensive: false, confidence: 'alta',

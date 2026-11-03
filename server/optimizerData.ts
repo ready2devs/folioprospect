@@ -216,7 +216,16 @@ async function buildAssetInput(
           return i >= 0 ? fv.fvComponentWeights?.[i] : undefined;
         };
         const pool: FvComponentInput[] = [];
-        if (fv.dcfValue != null) pool.push({ key: 'dcf', value: fv.dcfValue, quality: qualityOf('dcf') });
+        // La pata 'dcf' es el DCF corto sobre ganancias (R10): escala
+        // linealmente con el nivel de EPS (flujos y terminal), así que
+        // la normalización cíclica la re-escala por la misma razón que
+        // a los múltiplos.
+        if (fv.dcfValue != null)
+          pool.push({
+            key: 'dcf',
+            value: fv.dcfValue * (midCycleEps / forwardEpsUsed),
+            quality: qualityOf('dcf'),
+          });
         pool.push({ key: 'multiples', value: midCycleEps * multiple, quality: qualityOf('multiples') });
         if (fv.analystTarget != null) pool.push({ key: 'target', value: fv.analystTarget, quality: qualityOf('target') });
         const agg = aggregateFairValue(pool, {
@@ -287,6 +296,41 @@ async function buildAssetInput(
       })(),
       beta: extras.beta ?? finviz?.beta ?? null,
       roicPct: extras.roicPct ?? finviz?.roicPct ?? null,
+      // Tasa de reinversión % desde los reportados de EDGAR: (capex −
+      // depreciación) / ingreso neto del último año fiscal disponible
+      // de cada serie. El NOPAT se aproxima por el ingreso neto
+      // reportado (post-impuestos): en firmas apalancadas el ingreso
+      // neto es MENOR que el NOPAT, así que la tasa resultante es un
+      // techo generoso — coherente con que el ancla madura es un techo
+      // de cordura y manda el menor entre ancla y consenso. Sin los
+      // tres insumos, null y GK cae al respaldo equity (corrección
+      // del usuario 2026-11-03; docs/OPTIMIZER-PROFESSIONAL.md §15).
+      reinvestmentRatePct: (() => {
+        const ni = fund.netIncomeHistory?.[0] ?? null;
+        const da = fund.depreciationHistory?.[0] ?? null;
+        const cx = fund.capexHistory?.[0] ?? null;
+        if (ni == null || !(ni > 0) || da == null || cx == null) return null;
+        return Math.max(0, Math.min(90, ((cx - da) / ni) * 100));
+      })(),
+      // Crecimiento sustentable en su forma equity: ROE × (1 − payout
+      // total), con payout total = dividendos + recompras netas sobre
+      // el ingreso neto TTM (EPS trailing × acciones). Respaldo del
+      // ancla madura cuando la reinversión no se pudo calcular.
+      sustainableGrowthPct: (() => {
+        const roe = fund.returnOnEquity ?? null;
+        const shares = fund.sharesOutstanding ?? null;
+        const ni =
+          fund.trailingEps != null && shares ? fund.trailingEps * shares : null;
+        if (roe == null || ni == null || !(ni > 0) || !shares) return null;
+        const mktCap = baseInput.price * shares;
+        const divYieldPct =
+          extras.forwardDividendYieldPct ?? extras.dividendYieldPct ?? finviz?.dividendEstPct ?? null;
+        const divTotal = divYieldPct != null ? (divYieldPct / 100) * mktCap : 0;
+        const buybackTotal =
+          fund.sharesGrowthYoYPct != null ? -(fund.sharesGrowthYoYPct / 100) * mktCap : 0;
+        const retention = Math.max(-0.5, Math.min(1, (ni - divTotal - buybackTotal) / ni));
+        return roe * 100 * retention;
+      })(),
       grossMarginPct: extras.grossMarginPct ?? finviz?.grossMarginPct ?? null,
       operatingMarginPct: extras.operatingMarginPct ?? finviz?.operatingMarginPct ?? null,
       debtToEquity: extras.debtToEquity ?? finviz?.debtToEquity ?? null,

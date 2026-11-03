@@ -175,6 +175,16 @@ export interface EdgarSeries {
   /** Acciones promedio ponderadas diluidas anuales, más reciente primero,
    *  máx 5: la variación interanual ES la dilución/recompra real (ΔS). */
   sharesHistory: number[];
+  /** Flujo operativo anual alineado por cierre fiscal con `capexHistory`
+   *  (los mismos años que componen `fcfHistory`). */
+  ocfHistory: number[];
+  /** Capex anual (valor absoluto) alineado con `ocfHistory`. */
+  capexHistory: number[];
+  /** Ingreso neto anual reportado, más reciente primero, máx 5. */
+  netIncomeHistory: number[];
+  /** Depreciación y amortización anual reportada, más reciente
+   *  primero, máx 5 (vacía si el emisor no la desglosa). */
+  depreciationHistory: number[];
 }
 
 const SHARES_CONCEPTS: Array<{ concept: string; taxonomies: string[] }> = [
@@ -236,12 +246,37 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
   const capex = annualSeriesUsd(facts, CAPEX_CONCEPTS);
   const capexByEnd = new Map(capex.map((p) => [p.end, Math.abs(p.val)]));
   const fcfHistory: number[] = [];
+  const ocfHistory: number[] = [];
+  const capexHistory: number[] = [];
   for (const p of ocf) {
     const cx = capexByEnd.get(p.end);
     if (cx == null) continue;
     fcfHistory.push(p.val - cx);
+    ocfHistory.push(p.val);
+    capexHistory.push(cx);
     if (fcfHistory.length >= 5) break;
   }
+  // Ingreso neto y depreciación anuales: insumos de la tasa de
+  // reinversión (capex neto / NOPAT) del ancla de crecimiento
+  // sustentable del Optimizador (corrección del usuario 2026-11-03).
+  // Series independientes: cada concepto aporta su año más reciente.
+  const NET_INCOME_CONCEPTS = [
+    'NetIncomeLoss',
+    'ProfitLoss',
+    'NetIncomeLossAvailableToCommonStockholdersBasic',
+  ];
+  const netIncomeHistory = annualSeriesUsd(facts, NET_INCOME_CONCEPTS)
+    .slice(0, 5)
+    .map((p) => p.val);
+  const DEPRECIATION_CONCEPTS = [
+    'DepreciationDepletionAndAmortization',
+    'DepreciationAmortizationAndAccretion',
+    'Depreciation',
+    'DepreciationAndAmortisation',
+  ];
+  const depreciationHistory = annualSeriesUsd(facts, DEPRECIATION_CONCEPTS)
+    .slice(0, 5)
+    .map((p) => Math.abs(p.val));
   // El EPS se reporta en unidades «USD/shares», no «USD»: leerlo de la
   // unidad equivocada dejaba la serie vacía para todos los emisores
   // (bug detectado al auditar la normalización cíclica del Optimizador:
@@ -262,7 +297,15 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
   const epsHistory = epsPts.slice(0, 5).map((p) => p.val);
   const sharesHistory = annualSeriesShares(facts).slice(0, 5).map((p) => p.val);
   if (fcfHistory.length === 0 && epsHistory.length === 0 && sharesHistory.length === 0) return null;
-  return { fcfHistory, epsHistory, sharesHistory };
+  return {
+    fcfHistory,
+    epsHistory,
+    sharesHistory,
+    ocfHistory,
+    capexHistory,
+    netIncomeHistory,
+    depreciationHistory,
+  };
 }
 
 /** Último valor anual (período ≥300 días) en USD de un concepto, entre taxonomías. */

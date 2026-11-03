@@ -298,10 +298,14 @@ prudencia, por honestidad de calibración:
   demostró ser increíble y se converge al escenario conservador que
   el propio motor publica como rango.
 - Topes de RE por confianza en una sola capa: Alta +35% / Media +30% /
-  Baja +25%.
+  Baja +25%. **(Retirados por la Corrección 1 de §15 el mismo día: la
+  capa de RE ya no pone ningún tope sobre las estimaciones; queda
+  solo el clamp anti-basura final.)**
 - Se mantienen de §12: el castigo al DCF emergente (haircut ×0,75 y
-  calidad 0,30) y el desacuerdo de signo del EPS (un escalón menos de
-  confianza para RE y GK sin crecimiento de EPS).
+  calidad 0,30 — desde R10 ese DCF es el ancla histórica y el castigo
+  vive dentro de ella, sin peso en el promedio) y el desacuerdo de
+  signo del EPS (un escalón menos de confianza para RE y GK sin
+  crecimiento de EPS).
 
 **Sin mandato de años en el sistema.** El usuario declaró su objetivo
 personal de duplicación (≤5 años) y corrigió explícitamente que es un
@@ -312,3 +316,92 @@ ninguna meta de años embebida: el tiempo a duplicar es un resultado
 calculado que se reporta como hecho, sin veredicto contra ninguna
 meta fija. (Si algún día existe, será una preferencia configurable
 por usuario; fuera de alcance.)
+
+## §14 — La capa de retorno tras la arquitectura de tres patas (R10)
+
+El FV que consume el Optimizador es el de R10 (target ~45% /
+múltiplos ~30% / DCF-ganancias ~25%); el DCF de FCF histórico ya no
+forma parte del promedio ni de la confianza — es el **ancla
+histórica**, expuesta como referencia y usada por las fichas para el
+escenario pesimista solo cuando no es un outlier contra las patas
+vigentes (mediana de las patas / 1,8 como piso de admisión). Para la
+capa de RE nada más cambia por esta vía: la convergencia sigue
+apuntando al FV encogido por confianza (y al piso del rango solo
+bajo `modelSuspect`), y la confianza que modula el encogido es la de
+las tres patas — un ancla histórica ínfima (SIMO ~52) ya no castiga
+la convergencia de un activo cuyas patas hacia adelante convergen.
+
+## §15 — Correcciones del usuario a la capa de RE (2026-11-03): nada de topes sobre estimaciones + ancla de crecimiento por régimen
+
+**Corrección 1 — la prudencia vive una sola vez, en el FV.** «¿Quién
+te dijo que pongas un techo de +35%? Si ya tira abajo la valuación
+el DCF, ¿para qué tirás abajo o ponés un tope a la estimación de
+analistas?» Inventario de topes de la capa y su destino:
+
+- **Consenso [−20%, +35%] — RETIRADO.** La suba implícita en el
+  target entra a valor facial. Nota histórica: este tope (y el de
+  convergencia [−25%, +35%]) fueron calibraciones del asistente del
+  30-oct tras la primera corrida con datos reales («retornos
+  imposibles» en la cartera semilla), **sin orden del usuario**; la
+  auditoría del 2-nov ya había detectado que el consenso topado «no
+  diferenciaba» (16 de 19 activos saturaban el techo). La saturación
+  se resuelve quitando el tope, no agregando un descuento: queda
+  también retirada la propuesta de un «factor de realización» 0,6×
+  sobre el consenso (nunca se implementó).
+- **Convergencia [−25%, +35%] — RETIRADO.** La brecha contra el FV
+  encogido entra a valor facial.
+- **Topes de RE por confianza +35/+30/+25 (§12/§13) — RETIRADOS.**
+  Volvían a desconfiar, por nivel de confianza, de números que ya
+  nacen prudentes en el FV (target líder acotado a su consenso,
+  múltiplo con tope sectorial) y que además ya llegan encogidos a la
+  convergencia. La diferenciación por confianza sigue existiendo
+  donde corresponde: en el encogido del FV (Alta ×1,0 / Media ×0,7 /
+  Baja ×0,4) y en el piso del rango bajo `modelSuspect`.
+- **Clamp final del RE [−50%, +80%] — QUEDA**, como única cota de la
+  capa y justificado como protección anti-basura numérica: no ata en
+  ningún caso real observado (el RE legítimo más alto de la cartera
+  ronda +35%) y existe para que un input corrupto no imprima un
+  retorno de tres dígitos.
+- **Fade mecánico de GK (conservar el 45% del exceso sobre +6%) —
+  RETIRADO**, reemplazado por el ancla por régimen de la Corrección
+  2. Quedan en GK solo cotas anti-basura sobre la TASA de
+  crecimiento ([−30%, +60%]) y sobre el repricing (±5 pp, es una
+  convergencia de múltiplo en 5 años, no una opinión sobre la
+  empresa). La saturación de la velocidad del score ((RE+5)/40) es
+  presentación del puntaje 0–100, no altera el RE publicado.
+- Fuera de la capa de RE (revisados por completitud): la elegibilidad
+  de destinos (score ≥ 65, FV con ≥2 componentes, FV/precio ≤ 3) y
+  los listones de materialidad son REGLAS DE ASIGNACIÓN de capital,
+  no topes sobre una estimación: quedan.
+
+**Corrección 2 — el ancla del crecimiento depende del régimen.** El
+crecimiento de ganancias que entra a Grinold-Kroner queda teñido por
+un techo de cordura con fundamento económico, según el régimen de la
+empresa (clasificado por su crecimiento de VENTAS: > +12,5% anual =
+en crecimiento, punto medio de la banda 10–15% indicada por el
+usuario):
+
+- **En crecimiento:** ancla = crecimiento de ventas + **10 pp** de
+  margen por apalancamiento operativo (expansión de márgenes; la
+  recompra ya entra como componente separado de GK, no se cuenta dos
+  veces). Las ventas anclan porque con una base de ganancias casi
+  cero cualquier % de EPS es un número sin sentido (caso Nebius),
+  mientras las ventas son la magnitud real que crece.
+- **Madura:** ancla = crecimiento sustentable **g = ROIC × tasa de
+  reinversión**, el estándar de Damodaran (el fade de Morningstar
+  usa la misma lógica con su RONIC). La reinversión se calcula de
+  los reportados de EDGAR como (capex − depreciación) / ingreso
+  neto del último año disponible de cada serie (el NOPAT se aproxima
+  por el ingreso neto: techo generoso, documentado en el código).
+  Si la reinversión no se puede calcular con fiabilidad (faltan
+  conceptos en el 20-F/10-K), respaldo documentado: la forma equity
+  **ROE × (1 − payout total)**, con payout total = dividendos +
+  recompras netas sobre el ingreso neto TTM.
+- En ambos regímenes, **si el consenso implica MENOS que el ancla,
+  manda el consenso**: el ancla es techo de cordura, no piso. Sin
+  datos para construir el ancla, la estimación entra a valor facial.
+  El desacuerdo de signo del EPS (pase D) sigue mandando sobre todo
+  lo anterior: con el EPS en disputa, GK solo cree el crecimiento de
+  ventas (o 0). El score expone el crecimiento usado, el ancla y el
+  régimen por activo (`gkGrowthPct`, `growthAnchorPct`,
+  `growthRegime`) para que el número sea auditable.

@@ -148,7 +148,7 @@ describe('referencia robusta de la banda (R9-2b)', () => {
   });
 });
 
-describe('base del DCF en cíclicas sin serie (R9-3)', () => {
+describe('base del ANCLA histórica en cíclicas sin serie (R9-3, hoy ancla R10)', () => {
   const baseInput = {
     symbol: 'TEST',
     currentPrice: 100,
@@ -161,7 +161,7 @@ describe('base del DCF en cíclicas sin serie (R9-3)', () => {
 
   it('FCF yield TTM de 30%: la base entra con haircut hacia el yield de mitad de ciclo (×0,40)', () => {
     const r = computeFairValue({ ...baseInput, freeCashflow: 300 });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.originalValue).toBe(300);
     expect(prov?.usedValue).toBeCloseTo(120, 6);
     expect(r.fvFlags).toContain('cyclicalBaseHaircut');
@@ -169,14 +169,14 @@ describe('base del DCF en cíclicas sin serie (R9-3)', () => {
 
   it('FCF yield de 20%: haircut parcial ×0,60 (continuo, sin escalón)', () => {
     const r = computeFairValue({ ...baseInput, freeCashflow: 200 });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBeCloseTo(120, 6);
     expect(r.fvFlags).toContain('cyclicalBaseHaircut');
   });
 
   it('FCF yield de 10%: sin haircut, la base TTM entra pelada', () => {
     const r = computeFairValue({ ...baseInput, freeCashflow: 100 });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBe(100);
     expect(r.fvFlags).not.toContain('cyclicalBaseHaircut');
   });
@@ -187,7 +187,7 @@ describe('base del DCF en cíclicas sin serie (R9-3)', () => {
       freeCashflow: 300,
       fcfHistory: [300, 100, 100], // mediana 100, yield TTM 30%
     });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBe(100);
     expect(prov?.sources).toEqual(['fcfHistoryMedian']);
     expect(r.fvFlags).not.toContain('cyclicalBaseHaircut');
@@ -245,6 +245,8 @@ describe('tripwire de plausibilidad modelSuspect (R9-4)', () => {
     expect(r.fvModelSuspect).toBe(true);
     expect(r.fvSuspectDominant).toBe('dcf');
     expect(r.fvConfidence).toBe('Baja');
+    // La desviación dominante la marca la pata vigente ('dcf' = DCF
+    // sobre ganancias), nunca el ancla histórica.
     const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
     expect(prov?.flags).toContain('dominantDeviation');
     // Y el target, pese a la banda, nunca supera su máximo de consenso.
@@ -253,7 +255,7 @@ describe('tripwire de plausibilidad modelSuspect (R9-4)', () => {
   });
 });
 
-describe('ponderación: target líder, DCF contrapeso, múltiplos menor (directivas 2026-11-03)', () => {
+describe('ponderación: target ~45% / múltiplos ~30% / DCF-ganancias ~25% (R10)', () => {
   const full = {
     symbol: 'TEST',
     currentPrice: 100,
@@ -263,14 +265,17 @@ describe('ponderación: target líder, DCF contrapeso, múltiplos menor (directi
     totalCash: 0,
     totalDebt: 0,
     freeCashflow: 500,
-    fcfHistory: [500, 500, 500, 500, 500], // serie mediana 5 años → DCF 0,65
+    fcfHistory: [500, 500, 500, 500, 500], // historia para el ancla (fuera del pool)
     forwardEps: 5,
     forwardEpsAlt: 5,
-    forwardEpsAltSource: 'finviz' as const, // 2 grupos directos → múltiplos 0,45
+    forwardEpsAltSource: 'finviz' as const, // 2 grupos directos → múltiplos 0,67
+    // Crecimiento de consenso completo → DCF-ganancias calidad 0,56.
+    epsTrendGrowthNextYear: 0.2,
+    finvizEpsNext5YPct: 18,
     targetMeanPrice: 120,
   };
 
-  it('cobertura completa (≥5 analistas, dispersión moderada): target ~48% y es el mayor peso', () => {
+  it('cobertura completa: los pesos reproducen la referencia 45/30/25', () => {
     const r = computeFairValue({
       ...full,
       targetHighPrice: 150,
@@ -279,28 +284,36 @@ describe('ponderación: target líder, DCF contrapeso, múltiplos menor (directi
     });
     const w = r.fvComponentWeights ?? [];
     expect(w).toHaveLength(3);
-    // [DCF 0,65 · múltiplos 0,45 · target 1,0] → [0,310 · 0,214 · 0,476].
-    expect(w[2]).toBeGreaterThan(0.44);
-    expect(w[2]).toBeLessThan(0.52);
-    expect(w[2]).toBeGreaterThan(w[0]);
-    expect(w[0]).toBeGreaterThan(w[1]);
+    // Orden del pool: [dcf-ganancias 0,56 · múltiplos 0,67 · target 1,0]
+    // → [0,251 · 0,300 · 0,448].
+    expect(w[2]).toBeGreaterThan(0.42);
+    expect(w[2]).toBeLessThan(0.48);
+    expect(w[1]).toBeGreaterThan(0.27);
+    expect(w[1]).toBeLessThan(0.33);
+    expect(w[0]).toBeGreaterThan(0.22);
+    expect(w[0]).toBeLessThan(0.28);
+    expect(w[2]).toBeGreaterThan(w[1]);
+    expect(w[1]).toBeGreaterThan(w[0]);
   });
 
-  it('cobertura escasa (1–2 analistas): el target baja a ~30% y no domina', () => {
+  it('cobertura escasa (1–2 analistas): el target baja a ~27% y no domina', () => {
     const r = computeFairValue({ ...full, analystCount: 2 });
     const w = r.fvComponentWeights ?? [];
-    // [0,65 · 0,45 · 0,45] → target 0,29: manda el DCF contrapeso.
-    expect(w[2]).toBeGreaterThan(0.26);
-    expect(w[2]).toBeLessThan(0.34);
+    // [0,56 · 0,67 · 0,45] → target 0,268: mandan los múltiplos.
+    expect(w[2]).toBeGreaterThan(0.24);
+    expect(w[2]).toBeLessThan(0.32);
+    expect(w[2]).toBeLessThan(w[1]);
     expect(w[2]).toBeLessThan(w[0]);
   });
 
-  it('sin target en ninguna fuente: el DCF pesa más que los múltiplos (contrapeso)', () => {
+  it('sin target: múltiplos y DCF-ganancias se reparten, con múltiplos arriba', () => {
     const { targetMeanPrice: _drop, ...noTarget } = full;
     const r = computeFairValue(noTarget);
     const w = r.fvComponentWeights ?? [];
     expect(w).toHaveLength(2);
-    expect(w[0]).toBeGreaterThan(w[1]);
-    expect(w[0]).toBeCloseTo(0.65 / 1.1, 2);
+    // [0,56 · 0,67] → [0,455 · 0,545]: el contrapeso conservador ya no
+    // vive en el promedio — es el ancla histórica, fuera del pool.
+    expect(w[1]).toBeGreaterThan(w[0]);
+    expect(w[0]).toBeCloseTo(0.56 / 1.23, 2);
   });
 });

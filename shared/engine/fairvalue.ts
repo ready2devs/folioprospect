@@ -25,6 +25,15 @@ export interface FundamentalInput {
    *  referencia preferida del tope sectorial del múltiplo (R9). Si
    *  falta, el tope usa el P/E forward recomputado del propio activo. */
   industryForwardPe?: number | null;
+  /** Series anuales de EDGAR (USD, más reciente primero): flujo
+   *  operativo y capex alineados por cierre fiscal, ingreso neto y
+   *  depreciación. Las consume la capa de datos del Optimizador para
+   *  la tasa de reinversión del ancla de crecimiento sustentable
+   *  (corrección 2026-11-03); el motor de FV no las usa. */
+  ocfHistory?: number[] | null;
+  capexHistory?: number[] | null;
+  netIncomeHistory?: number[] | null;
+  depreciationHistory?: number[] | null;
   /** Procedencia de la serie anual de FCF ('edgar' | 'yahoo'). */
   fcfHistorySource?: 'edgar' | 'yahoo' | null;
   /** La base TTM de FCF vino de los estados auditados de EDGAR porque el
@@ -73,6 +82,38 @@ export interface FundamentalInput {
   returnOnAssets?: number | null; // decimal
   debtToEquity?: number | null;
   beta?: number | null;
+  // ---- Arquitectura simplificada (R10): DCF corto sobre ganancias ----
+  /** Crecimiento del EPS del próximo año fiscal según la tendencia de
+   *  consenso (Yahoo earningsTrend +1y, decimal): fija el año +2 de la
+   *  pata de DCF sobre ganancias (E2 = E1 × (1 + g)). */
+  epsTrendGrowthNextYear?: number | null;
+  /** Crecimiento de EPS a 5 años de la tendencia de consenso (Yahoo
+   *  earningsTrend +5y, decimal): ancla del desvanecimiento. */
+  epsTrendGrowth5y?: number | null;
+  /** Crecimiento de EPS del próximo año según Finviz («EPS next Y», %). */
+  finvizEpsNextYearPct?: number | null;
+  /** Crecimiento de EPS a 5 años según Finviz («EPS next 5Y», %). */
+  finvizEpsNext5YPct?: number | null;
+  /** Crecimiento de ingresos implícito en las estimaciones de la
+   *  tendencia (revenueEstimate +1y vs 0y, decimal): contraste de
+   *  cordura del crecimiento de la pata de ganancias. */
+  trendRevenueGrowth?: number | null;
+  // ---- TradingView (directiva del usuario 2026-11-03) ----
+  /** EPS forecast del próximo año fiscal según el scanner de
+   *  TradingView: fuente directa adicional de la cadena de reparación
+   *  (independencia parcial: los universos de analistas se solapan). */
+  tvEpsForecastNextFy?: number | null;
+  /** Ingresos forecast del próximo año fiscal según TradingView:
+   *  contraste de crecimiento de la pata de ganancias. */
+  tvRevenueForecastNextFy?: number | null;
+  /** Ingresos TTM según TradingView (misma fuente que el forecast:
+   *  el crecimiento implícito se calcula dentro del mismo proveedor). */
+  tvRevenueTtm?: number | null;
+  /** Target promedio de analistas según TradingView: tercera fuente
+   *  del componente target, con su propio rango [low, high]. */
+  targetTvPrice?: number | null;
+  targetTvHigh?: number | null;
+  targetTvLow?: number | null;
   isCrypto?: boolean;
 }
 
@@ -132,7 +173,10 @@ export interface FvWinsorizedComponent {
 }
 
 export interface FvProvenance {
-  component: FvComponentKey;
+  /** Las tres patas del FV más 'anchor': el ancla histórica (DCF de
+   *  FCF reportado), que ya NO forma parte del promedio — se expone
+   *  como referencia y escenario pesimista (arquitectura R10). */
+  component: FvComponentKey | 'anchor';
   /** Valor crudo de la fuente primaria (null si no existía). */
   originalValue: number | null;
   /** Valor efectivamente usado tras la cadena de reparación. */
@@ -490,6 +534,9 @@ export function evaluateMultiplesComponent(args: {
    *  preferida del tope. Sin él, el tope usa el P/E forward recomputado
    *  del propio activo (el veredicto del mercado sobre ese papel). */
   industryForwardPe?: number | null;
+  /** EPS forecast del próximo año fiscal según TradingView: fuente
+   *  directa adicional (grupo propio; independencia parcial). */
+  forwardEpsTv?: number | null;
 }): MultiplesEvaluation {
   const flags: string[] = [];
   const price = args.currentPrice;
@@ -528,6 +575,21 @@ export function evaluateMultiplesComponent(args: {
       value: price / args.altPublishedForwardPe,
       source: 'finvizPeDerivedEps',
       group: 'finviz',
+      direct: true,
+    });
+  }
+
+  // Fuente directa adicional: TradingView (directiva del usuario
+  // 2026-11-03). Grupo de independencia propio; la independencia es
+  // PARCIAL (los universos de analistas se solapan entre proveedores)
+  // y el horizonte es el próximo año fiscal según el proveedor de TV,
+  // cercano al NTM de Yahoo pero no idéntico: la cadena de reparación
+  // media con su lógica habitual de acuerdo/desacuerdo entre fuentes.
+  if (args.forwardEpsTv != null && Number.isFinite(args.forwardEpsTv)) {
+    candidates.push({
+      value: args.forwardEpsTv,
+      source: 'tradingviewEpsForecastNextFy',
+      group: 'tradingview',
       direct: true,
     });
   }
@@ -619,29 +681,48 @@ export function evaluateMultiplesComponent(args: {
   }
   if (primaryFromRatio) flags.push('unconfirmedEps');
 
-  // Normalización de base (ordinaria vs ADS) entre fuentes directas: la
-  // fuente menor se expresa en la base del instrumento multiplicándola
-  // por el factor detectado (el EPS por ADS es el mayor).
+  // Normalización de base (ordinaria vs ADS) entre fuentes directas.
+  // La base de referencia es la PRIMITIVA PRIMARIA (el EPS forward de
+  // Yahoo, del que el motor recomputa todo ratio — doctrina R9): las
+  // demás fuentes se expresan en esa base cuando un factor entero
+  // (2, 3, 4, 5, 8, 10) explica su distancia, en cualquier dirección.
+  // La primitiva primaria NUNCA se escala lejos de sí misma: con tres
+  // fuentes (Yahoo 10, Finviz 10,2, TV 30) la lectura ingenua «el
+  // mayor es la base ADS» escalaba la MAYORÍA hacia el outlier; con el
+  // ancla primaria, el 30 de TV se interpreta como la misma ganancia
+  // en una base 3× menor y se armoniza a ~10. Sin primitiva primaria
+  // (sin dato de Yahoo), rige el criterio legado: escalar hacia el
+  // mayor (el EPS por ADS es el mayor).
   let values = candidates.map((c) => c.value);
-  const directPositives = candidates
-    .map((c, i) => ({ direct: c.direct, v: values[i] }))
-    .filter((x) => x.direct && x.v > 0)
-    .map((x) => x.v);
-  if (directPositives.length >= 2) {
-    const hi = Math.max(...directPositives);
-    let normalized = false;
+  let basisNormalizedAny = false;
+  if (primaryEps != null && primaryEps > 0) {
     values = values.map((v, i) => {
-      if (candidates[i].direct && v > 0 && v < hi) {
-        const k = basisFactorBetween(hi, v);
-        if (k != null) {
-          normalized = true;
-          return v * k;
-        }
-      }
-      return v;
+      if (!candidates[i].direct || v <= 0 || v === primaryEps) return v;
+      const k = basisFactorBetween(primaryEps!, v);
+      if (k == null) return v;
+      basisNormalizedAny = true;
+      return v > primaryEps! ? v / k : v * k;
     });
-    if (normalized) flags.push('basisNormalized');
+  } else {
+    const directPositives = candidates
+      .map((c, i) => ({ direct: c.direct, v: values[i] }))
+      .filter((x) => x.direct && x.v > 0)
+      .map((x) => x.v);
+    if (directPositives.length >= 2) {
+      const hi = Math.max(...directPositives);
+      values = values.map((v, i) => {
+        if (candidates[i].direct && v > 0 && v < hi) {
+          const k = basisFactorBetween(hi, v);
+          if (k != null) {
+            basisNormalizedAny = true;
+            return v * k;
+          }
+        }
+        return v;
+      });
+    }
   }
+  if (basisNormalizedAny) flags.push('basisNormalized');
 
   // Selección del EPS: partición por plausibilidad del earnings yield.
   const plausible = values.filter((v) => v > 0 && price > 0 && v / price <= 0.33);
@@ -742,6 +823,142 @@ export function evaluateMultiplesComponent(args: {
     excluded: null,
     signDisagreement,
     provenance: provenance(epsUsed),
+  };
+}
+
+/** Tasa de descuento ÚNICA del DCF corto sobre ganancias (R10): una
+ *  sola tasa para todos los activos — la simplicidad manda sobre el
+ *  ajuste fino por beta; la dispersión entre patas y la winsorización
+ *  ya cobran la incertidumbre. */
+export const EARNINGS_DCF_DISCOUNT_PCT = 10;
+/** Conversión EPS → flujo de caja del accionista (proxy único,
+ *  documentado): las ganancias contables sobredeclaran la caja
+ *  distribuible por el capex de mantenimiento y el capital de trabajo
+ *  que el D&A no captura; ×0,85 es el haircut medio prudente. Se
+ *  aplica a los flujos proyectados Y a la base del valor terminal,
+ *  para que la pata sea internamente consistente. */
+export const EARNINGS_CASH_CONVERSION = 0.85;
+/** Topes sanos del crecimiento de la pata de ganancias (R10): el
+ *  crecimiento del año +2 se acota a [−30%, +60%]; el de largo plazo
+ *  (consenso a 5 años) a [−10%, +35%]; el terminal a [−5%, +6%]. */
+export const EARNINGS_G1_MIN = -0.3;
+export const EARNINGS_G1_MAX = 0.6;
+export const EARNINGS_G5_MIN = -0.1;
+export const EARNINGS_G5_MAX = 0.35;
+export const EARNINGS_GTERM_MIN = -0.05;
+export const EARNINGS_GTERM_MAX = 0.06;
+/** Holgura del chequeo de ingresos: el EPS puede crecer más rápido
+ *  que las ventas por expansión de márgenes y recompras, pero no
+ *  indefinidamente — el crecimiento de ganancias usado no supera el
+ *  crecimiento de ingresos de consenso + 15 pp. */
+export const EARNINGS_REVENUE_SLACK = 0.15;
+
+export interface EarningsDcfEvaluation {
+  /** Valor de la pata (por acción), o null si el sendero colapsa. */
+  value: number | null;
+  /** Sendero de EPS proyectado años 1–5 (E1 = epsUsed). */
+  epsPath: number[];
+  /** Crecimientos efectivamente usados: año +2, largo plazo y terminal. */
+  growthUsed: { g1: number; g5: number; gTerm: number };
+  /** Procedencia del crecimiento: 'consensus' (g1 y g5 de consenso),
+   *  'partial' (uno de los dos por respaldo), 'fallback' (ninguno:
+   *  crecimiento de ingresos o de ganancias contable). Gobierna la
+   *  calidad — y el peso — de la pata. */
+  growthTier: 'consensus' | 'partial' | 'fallback';
+  flags: string[];
+}
+
+/**
+ * Pata 3 de la arquitectura simplificada (R10): DCF CORTO SOBRE
+ * GANANCIAS de consenso. Reemplaza al DCF de FCF histórico como pata
+ * central (que queda como ancla histórica, fuera del promedio).
+ *
+ * Operación transparente: E1 = EPS forward de consenso ya reparado
+ * (el mismo de la pata de múltiplos); E2 = E1 × (1 + g1) con g1 =
+ * crecimiento de consenso del próximo año; el crecimiento se desvanece
+ * hacia el consenso a 5 años (g5) y de ahí al terminal (gTerm): años
+ * 3–5 interpolan linealmente. Cada EPS se convierte a flujo con
+ * ×0,85 y se descuenta al 10% único; el valor terminal es E5 × 0,85 ×
+ * múltiplo del sector (el mismo múltiplo acotado de la pata 2),
+ * descontado 5 años. Al ser sobre ganancias (lógica FCFE), la pata
+ * aplica también a financieras.
+ *
+ * Quien llama decide la n/m (R-C): EPS ≤ 0 o desacuerdo de signo
+ * irresoluble entre fuentes ⇒ la pata no se computa.
+ */
+export function evaluateEarningsDcf(args: {
+  epsYear1: number;
+  /** Crecimiento de EPS año +2 de consenso (tendencia +1y o Finviz
+   *  «next Y»), decimal. */
+  growthNextYear?: number | null;
+  /** Crecimiento de EPS a 5 años de consenso, decimal. */
+  growth5y?: number | null;
+  /** Respaldo final de crecimiento (ingresos o ganancias contable). */
+  growthFallback?: number | null;
+  /** Crecimiento de ingresos de consenso (contraste): si existe, el
+   *  crecimiento de ganancias usado no lo supera por más de 15 pp. */
+  revenueGrowthCheck?: number | null;
+  /** Múltiplo del sector ya acotado (el de la pata de múltiplos). */
+  sectorMultiple: number;
+}): EarningsDcfEvaluation {
+  const flags: string[] = [];
+  const fromPct = (v: number | null | undefined): number | null =>
+    v != null && Number.isFinite(v) ? v : null;
+  const gNextRaw = fromPct(args.growthNextYear);
+  const g5Raw = fromPct(args.growth5y);
+  const gFallback = fromPct(args.growthFallback);
+
+  let g1 = gNextRaw ?? g5Raw ?? gFallback ?? 0.05;
+  let g5 = g5Raw ?? gNextRaw ?? gFallback ?? 0.05;
+  const tier: EarningsDcfEvaluation['growthTier'] =
+    gNextRaw != null && g5Raw != null
+      ? 'consensus'
+      : gNextRaw != null || g5Raw != null
+        ? 'partial'
+        : 'fallback';
+  if (tier !== 'consensus') flags.push('earningsDcfGrowthFallback');
+
+  // Chequeo de ingresos (contraste de cordura): el crecimiento de
+  // ganancias no puede despegarse del de ventas para siempre.
+  const revCheck = fromPct(args.revenueGrowthCheck);
+  if (revCheck != null) {
+    const cap = revCheck + EARNINGS_REVENUE_SLACK;
+    if (g1 > cap || g5 > cap) flags.push('earningsDcfRevenueCapped');
+    g1 = Math.min(g1, cap);
+    g5 = Math.min(g5, cap);
+  }
+
+  g1 = clamp(g1, EARNINGS_G1_MIN, EARNINGS_G1_MAX);
+  g5 = clamp(g5, EARNINGS_G5_MIN, EARNINGS_G5_MAX);
+  const gTerm = clamp(g5, EARNINGS_GTERM_MIN, EARNINGS_GTERM_MAX);
+
+  // Sendero con desvanecimiento: año 2 a g1; año 3 a mitad de camino
+  // hacia g5; año 4 a g5; año 5 a mitad de camino hacia el terminal.
+  const e1 = args.epsYear1;
+  const e2 = e1 * (1 + g1);
+  const e3 = e2 * (1 + (g1 + (g5 - g1) * 0.5));
+  const e4 = e3 * (1 + g5);
+  const e5 = e4 * (1 + (g5 + (gTerm - g5) * 0.5));
+  const epsPath = [e1, e2, e3, e4, e5];
+
+  const r = EARNINGS_DCF_DISCOUNT_PCT / 100;
+  let value = 0;
+  for (let t = 0; t < 5; t++) {
+    const flow = Math.max(epsPath[t], 0) * EARNINGS_CASH_CONVERSION;
+    value += flow / Math.pow(1 + r, t + 1);
+  }
+  const terminal =
+    (Math.max(e5, 0) * EARNINGS_CASH_CONVERSION * args.sectorMultiple) /
+    Math.pow(1 + r, 5);
+  value += terminal;
+  if (epsPath.some((e) => e <= 0)) flags.push('earningsDcfPathNegative');
+
+  return {
+    value: value > 0 && Number.isFinite(value) ? value : null,
+    epsPath,
+    growthUsed: { g1, g5, gTerm },
+    growthTier: tier,
+    flags,
   };
 }
 
@@ -880,6 +1097,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       currentPrice,
       fairValue: null,
       dcfValue: null,
+      historicalAnchorValue: null,
       analystTarget: null,
       fvComponents: [],
       fvComponentWeights: [],
@@ -929,9 +1147,15 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   const moat: 'Wide' | 'Narrow' | 'None' =
     moatScore >= 74 ? 'Wide' : moatScore >= 52 ? 'Narrow' : 'None';
 
-  // 2-stage 10-year DCF per share (sobre la base normalizada; los caps
-  //  mecánicos de crecimiento y el WACC no cambian)
-  let dcfValue: number | null = null;
+  // ANCLA HISTÓRICA (R10): el DCF de FCF reportado (2 etapas, 10 años,
+  //  sobre la base normalizada) se sigue computando EXACTAMENTE igual,
+  //  pero ya no es una pata del promedio: es la referencia «valor según
+  //  historia reportada» — escenario pesimista y contrapeso — expuesta
+  //  en la procedencia como componente 'anchor'. La arquitectura
+  //  anterior lo distorsionaba todo ante cambios de paradigma (una
+  //  empresa en inflexión quedaba condenada por su historia, y una en
+  //  pico de ciclo, coronada por ella).
+  let anchorValue: number | null = null;
   if (dcfBase && input.sharesOutstanding && input.sharesOutstanding > 0) {
     const fcfPerShare = dcfBase / input.sharesOutstanding;
     const rawGrowth =
@@ -953,9 +1177,10 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       ((input.totalCash ?? 0) - (input.totalDebt ?? 0)) / input.sharesOutstanding;
     const rawDcf = pvSum + pvTerminal + netCashPerShare;
     if (rawDcf > 0 && Number.isFinite(rawDcf)) {
-      dcfValue = rawDcf;
+      anchorValue = rawDcf;
     }
   }
+  const anchorExcluded = dcfPreExcluded;
 
   // Componente de múltiplos: EPS forward reparado entre fuentes × múltiplo
   // de moat. El P/E publicado jamás entra como input directo.
@@ -975,8 +1200,65 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     // Tope sectorial (R9): prima sobre la referencia según el moat.
     moatPremium: moat === 'Wide' ? 1.5 : moat === 'Narrow' ? 1.25 : 1,
     industryForwardPe: input.industryForwardPe ?? null,
+    forwardEpsTv: input.tvEpsForecastNextFy ?? null,
   });
   fvFlags.push(...mult.flags);
+
+  // Pata 3 (R10): DCF corto sobre ganancias de consenso, con el mismo
+  // EPS reparado y el mismo múltiplo sectorial de la pata 2. N/m solo
+  // ante imposibilidad (R-C): EPS ≤ 0 o desacuerdo de signo irresoluble
+  // entre fuentes — un sendero que arranca en break-even no proyecta.
+  const revenueChecks: number[] = [];
+  if (input.trendRevenueGrowth != null && Number.isFinite(input.trendRevenueGrowth)) {
+    revenueChecks.push(input.trendRevenueGrowth);
+  }
+  if (
+    input.tvRevenueForecastNextFy != null &&
+    input.tvRevenueTtm != null &&
+    input.tvRevenueTtm > 0
+  ) {
+    revenueChecks.push(input.tvRevenueForecastNextFy / input.tvRevenueTtm - 1);
+  }
+  const revenueGrowthCheck =
+    revenueChecks.length > 0
+      ? revenueChecks.reduce((a, b) => a + b, 0) / revenueChecks.length
+      : null;
+  let earningsDcf: EarningsDcfEvaluation | null = null;
+  let earningsDcfExcluded: FvExcludedComponent | null = null;
+  if (mult.epsUsed != null && mult.epsUsed > 0 && mult.multipleUsed != null) {
+    if (mult.signDisagreement) {
+      earningsDcfExcluded = {
+        component: 'dcf',
+        reason: 'epsSignDisagreement',
+        value: null,
+      };
+      fvFlags.push('earningsDcfSignDisagreement');
+    } else {
+      earningsDcf = evaluateEarningsDcf({
+        epsYear1: mult.epsUsed,
+        growthNextYear:
+          input.epsTrendGrowthNextYear ??
+          (input.finvizEpsNextYearPct != null ? input.finvizEpsNextYearPct / 100 : null),
+        growth5y:
+          input.epsTrendGrowth5y ??
+          (input.finvizEpsNext5YPct != null ? input.finvizEpsNext5YPct / 100 : null),
+        growthFallback: input.earningsGrowth ?? input.revenueGrowth ?? null,
+        revenueGrowthCheck,
+        sectorMultiple: mult.multipleUsed,
+      });
+      fvFlags.push(...earningsDcf.flags);
+      if (earningsDcf.value == null) {
+        earningsDcfExcluded = {
+          component: 'dcf',
+          reason: 'earningsPathCollapsed',
+          value: null,
+        };
+      }
+    }
+  } else {
+    earningsDcfExcluded = { component: 'dcf', reason: 'notMeaningful', value: null };
+  }
+  const dcfValue = earningsDcf?.value ?? null;
 
   // Componente target: promedio de las fuentes de target disponibles
   // (Yahoo — promedio o, en su defecto, mediana del mismo consenso — y
@@ -991,6 +1273,11 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   if (input.targetAltPrice && input.targetAltPrice > 0) {
     targetSources.push({ value: input.targetAltPrice, source: 'finvizTargetPrice' });
   }
+  // Tercera fuente: TradingView (directiva del usuario 2026-11-03) —
+  // un promedio más en la muestra, con independencia parcial.
+  if (input.targetTvPrice != null && input.targetTvPrice > 0) {
+    targetSources.push({ value: input.targetTvPrice, source: 'tradingviewTargetMean' });
+  }
   let analystTarget =
     targetSources.length > 0 ? meanOf(targetSources.map((t) => t.value)) : null;
   // Ancla de consenso (R9): el componente vive SIEMPRE dentro del rango
@@ -998,14 +1285,24 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   // deja por encima de la estimación más optimista de los analistas que
   // lo componen (a VIST el promedio multifuente lo había dejado en
   // 97,48 con máximo publicado de ~95, y la winsorización lo levantó
-  // después hasta 124).
+  // después hasta 124). Con dos proveedores que publican rango
+  // (Yahoo y TradingView), el rango efectivo es la UNIÓN: el techo es
+  // el máximo de los máximos y el piso el mínimo de los mínimos.
+  const consensusHighs = [input.targetHighPrice, input.targetTvHigh].filter(
+    (v): v is number => v != null && v > 0
+  );
+  const consensusLows = [input.targetLowPrice, input.targetTvLow].filter(
+    (v): v is number => v != null && v > 0
+  );
+  const consensusHigh = consensusHighs.length > 0 ? Math.max(...consensusHighs) : null;
+  const consensusLow = consensusLows.length > 0 ? Math.min(...consensusLows) : null;
   if (analystTarget != null) {
     let clampedTarget = analystTarget;
-    if (input.targetHighPrice != null && input.targetHighPrice > 0) {
-      clampedTarget = Math.min(clampedTarget, input.targetHighPrice);
+    if (consensusHigh != null) {
+      clampedTarget = Math.min(clampedTarget, consensusHigh);
     }
-    if (input.targetLowPrice != null && input.targetLowPrice > 0) {
-      clampedTarget = Math.max(clampedTarget, input.targetLowPrice);
+    if (consensusLow != null) {
+      clampedTarget = Math.max(clampedTarget, consensusLow);
     }
     if (clampedTarget !== analystTarget) {
       fvFlags.push('targetClampedToConsensus');
@@ -1017,47 +1314,53 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   // borde de la banda, nunca se borra; con 1 componente el FV es ese
   // componente. El fallback precio × 1,05 no existe: el FV jamás se
   // fabrica desde el precio.
-  // PONDERACIÓN (directivas del usuario, 2026-11-03): el TARGET de
-  // analistas es el componente de mayor peso cuando su cobertura es
-  // razonable — es el promedio de muchas estimaciones independientes
-  // (ley de los grandes números: el promedio se acerca al valor real
-  // más que cualquier modelo propio) —; el DCF sobre flujos REPORTADOS
-  // es el CONTRAPESO conservador designado y pesa más que los
-  // múltiplos, porque el múltiplo sobre EPS forward es el insumo más
-  // exuberante de los tres. La escala de calidades produce, en un caso
-  // típico de cobertura completa, ~50% target / ~30% DCF / ~20%
-  // múltiplos, modulado por la calidad medible de cada componente:
+  // PONDERACIÓN (arquitectura simplificada R10, directiva del usuario
+  // 2026-11-03): referencia central target ~45% / múltiplos ~30% /
+  // DCF-sobre-ganancias ~25%, modulada por la calidad medible:
   //   target: ≥5 analistas y dispersión (high−low)/media ≤ 0,6 → 1,0
   //           (dispersión alta → 0,85); 3–4 analistas → 0,8;
   //           1–2 analistas o cobertura desconocida de fuente única →
   //           0,45 (nunca dominante); 2+ fuentes sin conteo → 0,8.
-  //   DCF: serie mediana ≥5 años → 0,65; 3–4 años → 0,55; foto TTM →
-  //           0,40; derivado de estados anuales → 0,35; emergente → 0,30.
-  //   múltiplos: EPS directo de 2 proveedores → 0,45; de 1 → 0,35;
-  //           solo derivado → 0,30.
-  const dcfQuality =
-    dcfBaseSource === 'ttmEmerging'
-      ? EMERGING_DCF_QUALITY
-      : dcfBaseSource === 'edgarAnnualCashflow'
-        ? 0.35
-        : dcfBaseSource === 'ttm'
-          ? 0.4
-          : fcfSeries.length >= 5
-            ? 0.65
-            : 0.55;
+  //           Sigue siendo el mayor con cobertura razonable: es el
+  //           promedio de muchas estimaciones independientes (ley de
+  //           los grandes números).
+  //   múltiplos: EPS directo de ≥2 proveedores → 0,67; de 1 → 0,55;
+  //           solo derivado → 0,45.
+  //   DCF-ganancias: crecimiento año +2 y a 5 años ambos de consenso
+  //           → 0,56; uno por respaldo → 0,48; ninguno → 0,40.
+  // La directiva intermedia «el DCF de historia pesa más que los
+  // múltiplos como contrapeso» queda SUSTITUIDA por esta arquitectura:
+  // el rol de contrapeso conservador lo cumple ahora el ANCLA
+  // HISTÓRICA fuera del promedio (escenario pesimista), y dentro del
+  // promedio manda el consenso hacia adelante.
+  const earningsDcfQuality =
+    earningsDcf == null
+      ? 0.4
+      : earningsDcf.growthTier === 'consensus'
+        ? 0.56
+        : earningsDcf.growthTier === 'partial'
+          ? 0.48
+          : 0.4;
   const multGroups = new Set(
     mult.provenance.sources.map((s) =>
-      s.startsWith('finviz') ? 'finviz' : s.startsWith('yahoo') ? 'yahoo' : s.startsWith('edgar') ? 'filings' : 'fundamentals'
+      s.startsWith('finviz')
+        ? 'finviz'
+        : s.startsWith('yahoo')
+          ? 'yahoo'
+          : s.startsWith('tradingview')
+            ? 'tradingview'
+            : s.startsWith('edgar')
+              ? 'filings'
+              : 'fundamentals'
     )
   );
-  const multDirectGroups = (['yahoo', 'finviz'] as const).filter((g) => multGroups.has(g)).length;
-  const multiplesQuality = multDirectGroups >= 2 ? 0.45 : multDirectGroups === 1 ? 0.35 : 0.3;
+  const multDirectGroups = (['yahoo', 'finviz', 'tradingview'] as const).filter((g) =>
+    multGroups.has(g)
+  ).length;
+  const multiplesQuality = multDirectGroups >= 2 ? 0.67 : multDirectGroups === 1 ? 0.55 : 0.45;
   const targetDispersion =
-    analystTarget != null &&
-    analystTarget > 0 &&
-    input.targetHighPrice != null &&
-    input.targetLowPrice != null
-      ? (input.targetHighPrice - input.targetLowPrice) / analystTarget
+    analystTarget != null && analystTarget > 0 && consensusHigh != null && consensusLow != null
+      ? (consensusHigh - consensusLow) / analystTarget
       : null;
   const analystCount = input.analystCount ?? null;
   const targetQuality =
@@ -1074,7 +1377,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
             : 0.45;
 
   const pool: FvComponentInput[] = [];
-  if (dcfValue != null) pool.push({ key: 'dcf', value: dcfValue, troughAdjusted, quality: dcfQuality });
+  if (dcfValue != null) pool.push({ key: 'dcf', value: dcfValue, quality: earningsDcfQuality });
   if (mult.value != null) pool.push({ key: 'multiples', value: mult.value, quality: multiplesQuality });
   if (analystTarget != null)
     pool.push({
@@ -1082,23 +1385,35 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       value: analystTarget,
       quality: targetQuality,
       // Techo duro: ni la winsorización lo levanta sobre el máximo del
-      // consenso (R9).
-      clipCeiling:
-        input.targetHighPrice != null && input.targetHighPrice > 0
-          ? input.targetHighPrice
-          : undefined,
+      // consenso (R9; con dos proveedores, la unión de rangos).
+      clipCeiling: consensusHigh ?? undefined,
     });
   const agg = aggregateFairValue(pool, {
     currentPrice,
     flags: fvFlags,
-    excluded: [dcfPreExcluded, mult.excluded].filter(
+    excluded: [earningsDcfExcluded, mult.excluded].filter(
       (x): x is FvExcludedComponent => x != null
     ),
   });
 
   const fvProvenance: FvProvenance[] = [
     {
+      // Pata 3 (R10): DCF corto sobre ganancias — la «base» trazable es
+      // el EPS de consenso del año 1 y el valor usado, el de la pata.
       component: 'dcf',
+      originalValue: mult.provenance.usedEps,
+      usedValue: dcfValue,
+      sources: earningsDcf != null ? ['consensusEpsPath'] : [],
+      flags:
+        earningsDcf != null
+          ? earningsDcf.flags
+          : [earningsDcfExcluded?.reason ?? 'notMeaningful'],
+    },
+    {
+      // Ancla histórica (R10): DCF de FCF reportado, fuera del
+      // promedio. Su procedencia conserva la base y los flags de
+      // siempre (mediana, valle, emergente, filings).
+      component: 'anchor',
       originalValue: fcfBase,
       usedValue: dcfBase,
       sources: dcfBase != null ? [dcfBaseSource] : [],
@@ -1107,6 +1422,9 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
         ...(troughAdjusted ? ['troughAdjusted'] : []),
         ...(dcfBaseSource === 'edgarAnnualCashflow' ? ['derivedFromFilings'] : []),
         ...(dcfBaseSource === 'ttmEmerging' ? ['ttmBaseEmerging'] : []),
+        ...(anchorExcluded?.reason === 'medianFcfNonPositive'
+          ? ['medianFcfNonPositive']
+          : []),
       ],
     },
     {
@@ -1164,6 +1482,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     currentPrice,
     fairValue,
     dcfValue,
+    historicalAnchorValue: anchorValue,
     analystTarget,
     fvComponents: agg.components.map((c) => c.value),
     fvComponentWeights: agg.weights,

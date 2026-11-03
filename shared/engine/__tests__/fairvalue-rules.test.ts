@@ -341,8 +341,8 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
       freeCashflow: 999,
       fcfHistory: [600, 500, 400],
     });
-    expect(withHistory.dcfValue).toBeCloseTo(ttm.dcfValue ?? 0, 6);
-    const prov = withHistory.fvProvenance?.find((p) => p.component === 'dcf');
+    expect(withHistory.historicalAnchorValue).toBeCloseTo(ttm.historicalAnchorValue ?? 0, 6);
+    const prov = withHistory.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.originalValue).toBe(999);
     expect(prov?.usedValue).toBe(500);
     expect(prov?.sources).toEqual(['fcfHistoryMedian']);
@@ -355,19 +355,24 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
       fcfHistory: [2000, 500, 400],
     });
     expect(r.fvFlags).toContain('normalizedBase');
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBe(500);
   });
 
-  it('mediana de FCF ≤ 0: DCF null por imposibilidad; el activo se valúa con el resto', () => {
+  it('mediana de FCF ≤ 0: el ANCLA es null por imposibilidad; el activo se valúa con el resto', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
       fcfHistory: [100, -50, -200],
       targetMeanPrice: 120,
     });
-    expect(r.dcfValue).toBeNull();
-    expect(r.fvExcluded?.some((e) => e.reason === 'medianFcfNonPositive')).toBe(true);
+    // R10: la imposibilidad de la historia se registra en la
+    // procedencia del ancla, no como exclusión del pool (el ancla ya
+    // no es una pata). Sin EPS tampoco hay patas de ganancias: el FV
+    // queda solo con el target.
+    expect(r.historicalAnchorValue).toBeNull();
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
+    expect(prov?.flags).toContain('medianFcfNonPositive');
     expect(r.fairValue).toBe(120);
     expect(r.fvFlags).toContain('singleComponent');
   });
@@ -379,7 +384,7 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
       fcfHistory: [300, 1000, 1100],
     });
     expect(r.fvFlags).toContain('troughAdjusted');
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBe(1000);
   });
 
@@ -391,7 +396,7 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
       freeCashflow: 500,
       fcfHistory: [700],
     });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.usedValue).toBe(500);
     expect(prov?.sources).toEqual(['ttm']);
     expect(r.fvFlags).not.toContain('normalizedBase');
@@ -427,11 +432,11 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
       freeCashflow: 500,
       fcfDerivedFromFilings: true,
     });
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.sources).toEqual(['edgarAnnualCashflow']);
     expect(prov?.flags).toContain('derivedFromFilings');
     expect(r.fvFlags).toContain('derivedFromFilings');
-    expect(r.dcfValue).not.toBeNull();
+    expect(r.historicalAnchorValue).not.toBeNull();
   });
 });
 
@@ -445,7 +450,7 @@ describe('DCF emergente y ponderación por calidad (Optimizador profesional §9�
     totalDebt: 0,
   };
 
-  it('mediana ≤ 0 pero TTM > 0 e ingresos creciendo > 15%: DCF sobre base TTM con flag, no null', () => {
+  it('mediana ≤ 0 pero TTM > 0 e ingresos creciendo > 15%: el ANCLA usa la base TTM con flag, no null', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
@@ -453,16 +458,16 @@ describe('DCF emergente y ponderación por calidad (Optimizador profesional §9�
       revenueGrowth: 0.3,
       targetMeanPrice: 120,
     });
-    expect(r.dcfValue).not.toBeNull();
+    expect(r.historicalAnchorValue).not.toBeNull();
     expect(r.fvFlags).toContain('ttmBaseEmerging');
-    expect(r.fvExcluded?.some((e) => e.reason === 'medianFcfNonPositive')).toBe(false);
-    const prov = r.fvProvenance?.find((p) => p.component === 'dcf');
+    const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.flags).toContain('ttmBaseEmerging');
-    // Y el activo queda valuado con MÁS de un componente (no singleComponent).
-    expect(r.fvFlags).not.toContain('singleComponent');
+    // R10: el ancla ya no cuenta como componente del FV — sin EPS,
+    // este activo queda valuado solo con el target (singleComponent).
+    expect(r.fvFlags).toContain('singleComponent');
   });
 
-  it('sin crecimiento que lo explique (≤ 15%), la mediana ≤ 0 sí anula el DCF', () => {
+  it('sin crecimiento que lo explique (≤ 15%), la mediana ≤ 0 sí anula el ancla', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
@@ -470,7 +475,7 @@ describe('DCF emergente y ponderación por calidad (Optimizador profesional §9�
       revenueGrowth: 0.15,
       targetMeanPrice: 120,
     });
-    expect(r.dcfValue).toBeNull();
+    expect(r.historicalAnchorValue).toBeNull();
   });
 
   it('aggregateFairValue: la calidad mueve el promedio con ratio acotado y los pesos suman 1', () => {

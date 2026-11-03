@@ -351,3 +351,112 @@ exuberante: EPS forward × múltiplo): 2 proveedores directos ⇒ 0,45;
 fuente, DCF y múltiplos se reparten el total como siempre (R0).
 La frescura del target no está disponible en las fuentes actuales:
 escala por cobertura y dispersión solamente (brecha documentada).
+**(Esta ponderación fue SUPERADA el mismo día por R10: ver la regla
+siguiente. La referencia vigente es target ~45% / múltiplos ~30% /
+DCF sobre ganancias ~25%, y el contrapeso conservador pasó al ancla
+histórica fuera del promedio.)**
+
+## R10 — Adenda 2026-11-03 (noche): arquitectura simplificada de tres patas y ancla histórica
+
+**Decisión del usuario (2026-11-03), que REVIERTE su decisión del
+2-nov («el DCF de FCF histórico déjalo como está»).** Motivo declarado:
+el DCF sobre flujos reportados distorsiona ante cambios de paradigma
+— castiga a la empresa que está invirtiendo en su inflexión (SIMO con
+su FCF pre-inflexión, NVDA en pleno capex de IA, NBIS en valle de FCF
+por construcción de datacenters) y premia picos de ciclo (VIST). El FV
+central pasa a ser una triangulación de tres operaciones transparentes
+y todas mirando hacia adelante:
+
+1. **Target de analistas (~45%).** Como en R9: multifuente reparado
+   (Yahoo + TradingView, ver abajo), jamás recortado hacia arriba ni
+   por encima del máximo del consenso. Calidad: ≥5 analistas y
+   dispersión ≤ 0,6 ⇒ 1,0 (dispersión alta ⇒ 0,85); 3–4 ⇒ 0,8; 1–2 o
+   fuente única sin conteo ⇒ 0,45 (nunca dominante); 2+ fuentes sin
+   conteo ⇒ 0,8.
+2. **Múltiplos sobre ganancias futuras (~30%).** EPS forward reparado
+   multifuente × múltiplo acotado por el sector (el anclaje de R9 es
+   el corazón de esta pata: múltiplo aplicado = mínimo entre la tabla
+   por moat y la referencia sectorial con prima de moat y de
+   crecimiento). Calidad: ≥2 grupos directos de EPS ⇒ 0,67; 1 grupo
+   ⇒ 0,55; solo derivado ⇒ 0,45.
+3. **DCF CORTO SOBRE GANANCIAS (~25%).** Nuevo. Sendero de EPS de
+   consenso: año +1 (el EPS reparado de la pata 2), año +2 con el
+   crecimiento del año siguiente de la tendencia de ganancias (o
+   Finviz «próximo año»), desvanecimiento en 5 años hacia el
+   crecimiento de EPS a 5 años de consenso (acotado a [−10%, +35%];
+   el primer año a [−30%, +60%]) y tasa terminal = ese crecimiento
+   acotado a [−5%, +6%]. Descuento a UNA tasa única para todos: **10%
+   anual** (simplicidad deliberada; no hay CAPM por activo en esta
+   pata). Conversión ganancia→flujo: **×0,85** único y documentado,
+   aplicado a los flujos y a la base del terminal. Valor terminal =
+   EPS del año 5 × el MISMO múltiplo de sector de la pata 2,
+   descontado. Chequeo de cordura con ventas: el crecimiento de
+   ganancias usado no supera el crecimiento de INGRESOS de consenso
+   (tendencia de ingresos de Yahoo y/o estimación de TradingView
+   contra su TTM) por más de 15 pp (`earningsDcfRevenueCapped`).
+   N/m SOLO ante imposibilidad (R5): EPS de consenso ≤ 0 o desacuerdo
+   de signo irresoluble entre fuentes; el activo se valúa con las
+   patas restantes (R0 intacta). Calidad: crecimiento de consenso
+   completo ⇒ 0,56; parcial ⇒ 0,48; respaldo (crecimiento de
+   ingresos/ganancia contable o 5% por defecto) ⇒ 0,40.
+
+**Ponderación resultante (referencia con cobertura completa):
+target ~45% / múltiplos ~30% / DCF-ganancias ~25%**, modulada por la
+calidad de cada pata como siempre. Esto SUSTITUYE la directiva previa
+«el DCF pesa más que los múltiplos»: esa directiva suponía al DCF de
+historia reportada dentro del promedio como contrapeso; en la
+arquitectura nueva el rol de contrapeso conservador lo cumple el
+**ancla histórica** en el escenario pesimista (abajo), y dentro del
+promedio las tres patas son estimaciones hacia adelante de naturaleza
+comparable.
+
+**El ancla histórica (ex DCF de FCF).** Se sigue computando con la
+misma matemática de siempre (base mediana de FCF 3–5 años de EDGAR,
+con la normalización cíclica de R9-3 y el castigo al emergente de
+R8/§12 — haircut ×0,75 a la base TTM — ahora INTERNOS del ancla), se
+expone en la procedencia/API como `historicalAnchorValue` («valor
+según historia reportada») y alimenta el escenario pesimista SOLO si
+no es un outlier contra las patas vigentes: entra como valor mínimo
+del pesimista únicamente si supera la mediana de las patas / 1,8 (y
+queda por debajo de la menor de las patas, dentro de una banda de
+cordura contra el precio): un ancla pre-inflexión no debe condenar
+el escenario. **La confianza se mide sobre las tres
+patas vigentes, nunca sobre el ancla**: que el DCF viejo de SIMO dé
+~52 no baja su confianza si sus tres patas convergen. Consecuencia
+sectorial: como la pata 3 es sobre ganancias (lógica FCFE), SÍ
+aplica a financieras — un banco conserva sus tres patas; el error de
+categoría era del DCF de FCF, no de un DCF de ganancias.
+
+**TradingView como fuente adicional (directiva del usuario
+2026-11-03: «de ahí los tomo yo cuando analizo»).** Se ingesta vía su
+endpoint interno de scanner (`scanner.tradingview.com/america/scan`,
+sin autenticación, JSON estructurado — NO es una API pública oficial:
+es la ruta menos frágil disponible frente a scrapear HTML). Campos
+efectivamente ingestados: EPS estimado del próximo año fiscal
+(`earnings_per_share_forecast_next_fy`, fuente directa más en la
+cadena de reparación del EPS — patas 2 y 3), target promedio/alto/
+bajo (suma a las fuentes del target de la pata 1; la cota de no
+recorte usa la UNIÓN de rangos Yahoo+TV) y estimación de ingresos del
+próximo año fiscal contra el TTM reportado (chequeo de crecimiento
+de la pata 3 — la app no ingería estimaciones de ingresos en ningún
+cálculo hasta esta pasada). La independencia es PARCIAL (los
+universos de analistas se solapan entre proveedores) y el horizonte
+de TV es el próximo año fiscal según su proveedor, cercano al NTM de
+Yahoo pero no idéntico: suma como fuente para promediar según la
+doctrina de ampliar la muestra, sin fingir independencia total.
+Degradación elegante (R0): caché 30 min, timeout corto, nunca lanza;
+si TV no responde, la cadena Yahoo/Finviz valúa igual sin esa fuente.
+Kill-switch: `TRADINGVIEW_ESTIMATES=off`. Brecha de campos: las
+variantes de ingresos `*_fy`/`*_curr_fy` del scanner devuelven null
+de forma consistente; el campo operativo es
+`revenue_forecast_next_fy`.
+
+**Corrección de la normalización de base (misma pasada).** La cadena
+de reparación del EPS armoniza fuentes en distinta base (ordinaria
+vs ADS) con factores enteros. La regla anterior escalaba hacia el
+valor MAYOR asumiendo que era la base ADS; al sumar TradingView como
+tercera fuente directa, eso escalaba la mayoría (Yahoo 10 + Finviz
+10,2) hacia el outlier (TV 30). Regla vigente: la base de referencia
+es la primitiva primaria (el EPS forward de Yahoo, del que se
+recomputa todo ratio) y las demás fuentes se expresan en esa base en
+cualquier dirección; sin primitiva primaria rige el criterio legado.

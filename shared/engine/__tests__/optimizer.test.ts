@@ -9,7 +9,6 @@ import {
   shrunkFairValue,
   convergenceTargetFor,
   reConfidenceFor,
-  RE_CONFIDENCE_CAP_PCT,
   thesisSignalsFor,
   fmtPairPct,
   fmtPairYears,
@@ -44,8 +43,9 @@ describe('Grinold-Kroner', () => {
         industryForwardPe: 20, // sin repricing
       })
     );
-    // g=8 con fade institucional (>6): 6 + 2*0.45 = 6,9
-    expect(gk).toBeCloseTo(2 + 1 + 6.9 + 0, 5);
+    // Sin fade (retirado por la corrección 2026-11-03) y sin datos
+    // para el ancla por régimen: el crecimiento entra a valor facial.
+    expect(gk).toBeCloseTo(2 + 1 + 8 + 0, 5);
   });
 
   it('usa ganancias totales y no EPS cuando ambas están (anti doble conteo)', () => {
@@ -60,12 +60,13 @@ describe('Grinold-Kroner', () => {
     expect(gk).toBeCloseTo(8, 5);
   });
 
-  it('acota el crecimiento y el repricing', () => {
+  it('acota el crecimiento (clamp anti-basura de la tasa) y el repricing', () => {
     const gk = grinoldKroner(
       base({ earningsGrowthTotalPct: 90, forwardPe: 10, industryForwardPe: 40 })
     );
-    // g acotado a 30 y con fade: 6 + 24*0.45 = 16,8; repricing acotado a +5
-    expect(gk).toBeCloseTo(21.8, 5);
+    // Crecimiento acotado a +60 (protección numérica, no fade);
+    // repricing acotado a +5.
+    expect(gk).toBeCloseTo(65, 5);
   });
 
   it('sin crecimiento estimable devuelve null', () => {
@@ -77,8 +78,12 @@ describe('convergencia FV y consenso', () => {
   it('CAGR a 3 años hasta el FV base', () => {
     expect(fvConvergencePct(base({ price: 100, fvBase: 133.1 }), 3)).toBeCloseTo(10, 1);
   });
-  it('consenso acotado a +35', () => {
-    expect(consensusPct(base({ price: 100, analystTarget: 300 }))).toBe(35);
+  it('consenso SIN tope: la suba implícita en el target entra a valor facial', () => {
+    // Corrección del usuario 2026-11-03: el clamp [−20, +35] era una
+    // calibración del asistente del 30-oct, nunca ordenada; si el
+    // número diferencia, que diferencie.
+    expect(consensusPct(base({ price: 100, analystTarget: 300 }))).toBe(200);
+    expect(consensusPct(base({ price: 100, analystTarget: 40 }))).toBe(-60);
   });
 });
 

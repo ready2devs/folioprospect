@@ -203,7 +203,15 @@ export interface FairValueResult {
   symbol: string;
   currentPrice: number;
   fairValue: number | null;
+  /** Pata 3 de la arquitectura R10: DCF corto sobre ganancias de
+   *  consenso (EPS +1/+2 con desvanecimiento a 5 años, descuento único
+   *  10%, conversión a caja ×0,85, terminal × múltiplo del sector). */
   dcfValue: number | null;
+  /** Ancla histórica (R10): DCF de FCF reportado (base mediana de la
+   *  serie). Ya NO integra el Fair Value: es la referencia «valor
+   *  según historia reportada» y alimenta el escenario pesimista solo
+   *  cuando no es un outlier contra las patas vigentes. */
+  historicalAnchorValue?: number | null;
   analystTarget: number | null;
   /** Componentes finales que forman el fairValue: valores winsorizados
    *  cuando fueron recortados a la banda (docs/VALUATION-RULES.md). */
@@ -233,10 +241,12 @@ export interface FairValueResult {
     clippedValue: number;
   }>;
   /** Procedencia por componente: valor crudo de la fuente primaria,
-   *  valor usado tras la cadena de reparación, fuentes y flags. Para el
-   *  DCF los valores son la base de FCF; para múltiplos, el EPS. */
+   *  valor usado tras la cadena de reparación, fuentes y flags. Para
+   *  la pata de ganancias los valores son el EPS año 1 y el valor de
+   *  la pata; para múltiplos, el EPS; la entrada 'anchor' trae la base
+   *  de FCF y el DCF histórico (fuera del promedio, R10). */
   fvProvenance?: Array<{
-    component: 'dcf' | 'multiples' | 'target';
+    component: 'dcf' | 'multiples' | 'target' | 'anchor';
     originalValue: number | null;
     usedValue: number | null;
     sources: string[];
