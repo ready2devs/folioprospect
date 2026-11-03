@@ -1149,7 +1149,11 @@ export function optimizePortfolio(
     verdictText = `Las salidas propuestas no buscan mejorar el retorno de corto plazo (${reBv} → ${reAv}): responden a deterioro medible de tesis. Es una decisión de calidad de cartera, no de optimización.`;
   } else if (hasConcentrationMoves) {
     verdict = 'sin-mejora';
-    verdictText = `El recorte propuesto es una decisión de riesgo, no de retorno: baja la volatilidad (${volBv} → ${volAv}) a costa de algo de retorno estimado (${reBv} → ${reAv}). Es el precio de no depender tanto de una sola posición.`;
+    const costClause =
+      after.expectedReturnGeoPct < before.expectedReturnGeoPct - 0.005
+        ? `a costa de algo de retorno estimado (${reBv} → ${reAv})`
+        : `sin costo de retorno estimado (${reBv} → ${reAv})`;
+    verdictText = `El recorte propuesto es una decisión de riesgo, no de retorno: baja la volatilidad (${volBv} → ${volAv}), ${costClause}. Es el precio de no depender tanto de una sola posición.`;
   } else {
     verdict = 'sin-mejora';
     verdictText = 'Los movimientos propuestos son decisiones tuyas (manuales o sugerencias aceptadas); por retorno/riesgo, la cartera no mejora de forma material.';
