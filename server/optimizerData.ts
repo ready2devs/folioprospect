@@ -74,14 +74,20 @@ async function upcomingEarningsMap(
   const want = new Set(tickers.map((t) => t.toUpperCase()));
   const found = new Map<string, { date: string; businessDays: number }>();
   const today = todayInNewYork();
-  for (let i = 0; i <= 14 && found.size < want.size; i++) {
-    const date = addDays(today, i);
-    let rows: Awaited<ReturnType<typeof fetchNasdaqEarningsDay>> = [];
-    try {
-      rows = await fetchNasdaqEarningsDay(date);
-    } catch {
-      continue;
-    }
+  // En paralelo: secuencial, 15 días de Nasdaq empujaban la función de
+  // Vercel fuera de su timeout. Las respuestas se cachean por día y se
+  // procesan en orden cronológico (gana la fecha más cercana).
+  const dates = Array.from({ length: 15 }, (_, i) => addDays(today, i));
+  const perDay = await Promise.all(
+    dates.map(async (date) => {
+      try {
+        return { date, rows: await fetchNasdaqEarningsDay(date) };
+      } catch {
+        return { date, rows: [] as Awaited<ReturnType<typeof fetchNasdaqEarningsDay>> };
+      }
+    })
+  );
+  for (const { date, rows } of perDay) {
     for (const r of rows) {
       const t = (r.symbol || '').toUpperCase();
       if (want.has(t) && !found.has(t)) {
