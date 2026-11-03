@@ -209,11 +209,15 @@ describe('consistencia score ↔ gráfico ↔ ficha (mismo payload, mismos campo
       // (2) El gráfico y la ficha leen mctrPct/riskContributionPct del
       // mismo payload; el componente de riesgo del score se recomputa
       // desde ESOS campos con la fórmula documentada y coincide.
+      // Desde R13 la composición es MARGINAL-PRIMERO: aporte
+      // relativo (PCTR/peso) 40% + riesgo marginal (MCTR contra la
+      // volatilidad de la cartera) 35% + volatilidad propia 25%.
       expect(a.mctrPct).not.toBeNull();
       expect(a.riskContributionPct).not.toBeNull();
       const volScore = clamp(100 - Math.max(0, a.volatilityPct - 12) * 2, 0, 100);
-      const pctrScore = clamp(120 - 40 * (a.riskContributionPct! / a.weightPct), 0, 100);
-      const expectedRisk = Math.round(0.7 * volScore + 0.3 * pctrScore);
+      const relScore = clamp(120 - 40 * (a.riskContributionPct! / a.weightPct), 0, 100);
+      const mctrScore = clamp(120 - 60 * (a.mctrPct! / result.before.volatilityPct), 0, 100);
+      const expectedRisk = Math.round(0.4 * relScore + 0.35 * mctrScore + 0.25 * volScore);
       expect(a.scoreComponents?.risk).toBe(expectedRisk);
       expect(a.score).not.toBeNull();
     }

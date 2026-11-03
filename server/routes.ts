@@ -43,7 +43,7 @@ import {
   normalizeTradingViewSymbol,
   findCatalogEntry,
 } from '../shared/engine/index.js';
-import { buildOptimizerResult } from './optimizerData.js';
+import { buildAssetOptimizerFv, buildOptimizerResult } from './optimizerData.js';
 import { resolveAnchorFromFundamentals } from './cashAnchor.js';
 import type {
   CashTx,
@@ -691,6 +691,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     // con el anual auditado. En cripto no hay ficha de caja: null y
     // la vista no la muestra.
     const isCryptoAsset = matchedKey.startsWith('BINANCE:');
+    // UN SOLO VALOR JUSTO (unificación R13): la ficha consume el
+    // FV del motor del Optimizador para este activo — el mismo
+    // camino de puntuación (buildAssetInput + scoreAsset) que
+    // produce la tabla del Optimizador — y su rango es el piso/
+    // techo del rango del motor. El cálculo propio de escenarios
+    // de la ficha dejó de existir como fuente de verdad. null en
+    // cripto o si el motor no produce FV para el activo.
+    const optimizerFv = isCryptoAsset
+      ? null
+      : await buildAssetOptimizerFv(matchedKey, quote.price);
     const anchorFcfDetail = isCryptoAsset ? null : resolveAnchorFromFundamentals(fundInput);
     const cashAnchor = isCryptoAsset
       ? null
@@ -768,6 +778,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       sparkline: sparklines[matchedKey],
       chart,
       fairValue,
+      optimizerFv,
       cashAnchor,
       pePair,
       extras,

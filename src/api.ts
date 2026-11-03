@@ -30,6 +30,7 @@ import {
   type OptimizerResult,
   type CashAnchorInfo,
   type PePairInfo,
+  type MotorFvView,
 } from '@shared/engine';
 
 export type { ArgFxResponse };
@@ -242,6 +243,11 @@ export interface AssetDetailResponse {
     dividendEvents?: { date: string; amount: number }[];
   };
   fairValue: FairValueResult;
+  /** El valor justo DEL MOTOR DEL OPTIMIZADOR para este activo
+   *  y el piso/techo de su rango (unificación R13): la ficha se
+   *  siembra desde acá — un solo FV por activo en toda la app.
+   *  null en cripto o si el motor no produce FV. */
+  optimizerFv?: MotorFvView | null;
   /** Ancla de caja real (R12): la misma marca del Optimizador,
    *  calculada en el servidor con el criterio del motor. */
   cashAnchor?: CashAnchorInfo | null;

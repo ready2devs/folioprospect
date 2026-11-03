@@ -22,6 +22,11 @@ const DupChip: React.FC<{ a: AssetScore }> = ({ a }) => (
         Duplica en {fmtY(a.yearsToDouble)} años
         <small>RETORNO ESP. {a.expectedReturnPct != null ? fmtPct(a.expectedReturnPct) : '—'} / AÑO</small>
       </>
+    ) : a.isCrypto && a.expectedReturnPct == null ? (
+      // Cripto fuera del sistema de predicción (R13): no «no
+      // duplica» (eso sería una predicción de estancamiento)
+      // sino la ausencia declarada de predicción.
+      'Sin predicción'
     ) : (
       'No duplica'
     )}
@@ -37,6 +42,8 @@ const DupChipPrudent: React.FC<{ a: AssetScore }> = ({ a }) => (
         Duplica en {fmtY(a.yearsToDoublePessimistic)} años
         <small>RETORNO PRUD. {a.expectedReturnPessimisticPct != null ? fmtPct(a.expectedReturnPessimisticPct) : '—'} / AÑO</small>
       </>
+    ) : a.isCrypto && a.expectedReturnPessimisticPct == null ? (
+      'Sin predicción'
     ) : (
       'No duplica'
     )}
@@ -59,6 +66,17 @@ const ScoreBlock: React.FC<{ a: AssetScore; prudent: boolean }> = ({ a, prudent 
     );
   }
   const reShown = prudent ? a.expectedReturnPessimisticPct : a.expectedReturnPct;
+  if (a.isCrypto && reShown == null) {
+    // Cripto sin predicción (R13): la tarjeta lo declara, sin
+    // porcentaje supuesto — el «% supuesto» queda solo para un
+    // supuesto explícito cargado en el input.
+    return (
+      <div className="opt-score">
+        Cripto · sin predicción
+        <b className="opt-assumed">—</b>
+      </div>
+    );
+  }
   return (
     <div className="opt-score">
       {a.isCrypto ? 'Cripto · sin score' : 'Sin score'}
@@ -581,7 +599,7 @@ export const OptimizerView: React.FC = () => {
                         <Stars n={a.stars} />
                       </div>
                     ) : (
-                      <div className="opt-score">{a.isCrypto ? 'Cripto · sin score' : 'Sin score'}<b className="opt-assumed">{a.expectedReturnPct != null ? fmtPct(a.expectedReturnPct) : '—'}</b></div>
+                      <div className="opt-score">{a.isCrypto ? (a.expectedReturnPct == null ? 'Cripto · sin predicción' : 'Cripto · sin score') : 'Sin score'}<b className="opt-assumed">{a.expectedReturnPct != null ? fmtPct(a.expectedReturnPct) : '—'}</b></div>
                     )}
                     <DupChip a={a} />
                   </div>

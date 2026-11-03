@@ -6,10 +6,12 @@
  */
 import {
   computeFairValue,
+  motorFvViewFor,
   optimizePortfolio,
   scoreAsset,
   RISK_FREE_PCT,
   type DatedClose,
+  type MotorFvView,
   type OptimizerAssetInput,
   type OptimizerResult,
   type ScoredPeer,
@@ -45,6 +47,23 @@ function isCryptoSymbol(symbol: string, ticker: string): boolean {
     ticker.endsWith('USDT') ||
     ['BTC', 'ETH', 'SOL', 'BNB'].includes(ticker)
   );
+}
+
+/** Activo BASE de un ticker de par (BTCUSDT → BTC; USDTUSDT →
+ *  USDT; un ticker sin sufijo de cotización queda como está).
+ *  La tenencia de Tether se guarda como el par USDTUSDT, así
+ *  que la detección de caja que solo miraba el ticker completo
+ *  la trataba como cripto volátil: con el 11,5% inventado y
+ *  volatilidad 60% en la matriz de riesgo (corregido en R13). */
+function pairBaseAsset(ticker: string): string {
+  return ticker.endsWith('USDT') && ticker.length > 4 ? ticker.slice(0, -4) : ticker;
+}
+
+/** Caja y equivalentes: la unidad estable misma (USD o USDT),
+ *  venga como ticker suelto o como base de su par. */
+function isCashTicker(ticker: string): boolean {
+  const base = pairBaseAsset(ticker);
+  return base === 'USDT' || base === 'USD' || ticker === 'USDT' || ticker === 'USD';
 }
 
 const medianOf = (xs: number[]): number => {
@@ -127,7 +146,7 @@ async function buildAssetInput(
 ): Promise<OptimizerAssetInput> {
   const ticker = cleanTicker(h.symbol).toUpperCase();
   const crypto = isCryptoSymbol(h.symbol, ticker);
-  const isCash = ticker === 'USDT' || ticker === 'USD';
+  const isCash = isCashTicker(ticker);
   const baseInput: OptimizerAssetInput = {
     symbol: h.symbol,
     ticker,
@@ -438,6 +457,32 @@ async function fetchIndustryPeers(
     return peers.sort((a, b) => b.score - a.score);
   } catch {
     return [];
+  }
+}
+
+/** LA vista del valor justo del motor para UN activo suelto
+ *  (unificación R13): corre el MISMO camino que el Optimizador
+ *  (buildAssetInput + scoreAsset) para que la ficha del activo
+ *  muestre exactamente el FV que el Optimizador publica para
+ *  ese activo — un solo valor justo por activo en toda la app.
+ *  Devuelve null si el activo no tiene FV del motor (cripto,
+ *  caja o fuentes caídas): la ficha cae a su lectura de respaldo
+ *  y ningún número compite con el del motor. */
+export async function buildAssetOptimizerFv(symbol: string, price: number): Promise<MotorFvView | null> {
+  try {
+    const ticker = cleanTicker(symbol).toUpperCase();
+    const input = await buildAssetInput(
+      { symbol, ticker, name: ticker, sector: '', qty: 1, lastPrice: price, value: price },
+      null
+    );
+    if (input.isCrypto || input.isCash || input.fvBase == null) return null;
+    const scored = scoreAsset(input, price, {
+      sellCommissionPct: 0.5, riskFreePct: RISK_FREE_PCT, yearsToCorrection: 3, minTradeUsd: 250,
+      maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
+    });
+    return motorFvViewFor(input, scored);
+  } catch {
+    return null;
   }
 }
 

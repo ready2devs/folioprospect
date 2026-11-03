@@ -86,6 +86,31 @@ export function labelForScore(score: number): string {
   return 'Sin oportunidad · cara';
 }
 
+/** Escenarios de la ficha DESDE EL MOTOR (unificación R13): la
+ *  ficha ya no sintetiza escenarios propios — su pesimista es el
+ *  piso del rango del motor, su base es EL valor justo del motor
+ *  y su optimista es el techo del rango. Este mapeo es el único
+ *  puente entre la vista del motor (MotorFvView en optimizer.ts)
+ *  y los inputs de la ficha, para que el test de consistencia lo
+ *  cubra entero: ficha y Optimizador leen el mismo FV. */
+export interface MotorScenarioSeed {
+  fvPesimista: number;
+  fvBase: number;
+  fvOptimista: number;
+}
+
+export function scenariosFromMotorFv(view: {
+  fv: number;
+  fvPesimista: number;
+  fvOptimista: number;
+}): MotorScenarioSeed {
+  return {
+    fvPesimista: view.fvPesimista,
+    fvBase: view.fv,
+    fvOptimista: view.fvOptimista,
+  };
+}
+
 export interface OpportunityInput {
   price: number;
   fvPesimista: number;

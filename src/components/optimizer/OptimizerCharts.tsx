@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Maximize2, X as CloseIcon } from 'lucide-react';
 import { fmtPairPct, type AssetScore, type PortfolioMetrics } from '@shared/engine';
 import { InfoTip } from './InfoTip';
+import { bubbleYTicks } from './chartScales';
 
 /** Cerrar la vista expandida con Escape (la X y el fondo también cierran). */
 function useEscapeClose(expanded: boolean, close: () => void) {
@@ -355,7 +356,7 @@ export const BubbleChart: React.FC<{
             <text x={X(v)} y={H - 16} fill="#64748B" fontSize="10" textAnchor="middle">{v}%</text>
           </g>
         ))}
-        {[0, 3, 6, 9, 12, 15, 18].filter((v) => v >= yMin && v <= yMax).map((v) => (
+        {bubbleYTicks(yMin, yMax).map((v) => (
           <g key={'y' + v}>
             <line x1={P.l} y1={Y(v)} x2={W - P.r} y2={Y(v)} stroke="#111A29" />
             <text x={P.l - 7} y={Y(v) + 4} fill="#64748B" fontSize="10" textAnchor="end">{v}%</text>

@@ -1,6 +1,7 @@
 import type { AssetDetailResponse } from '@/api';
 import {
   normalizeUncertainty,
+  scenariosFromMotorFv,
   type MoatLevel,
   type ScenarioKey,
   type UncertaintyLevel,
@@ -160,48 +161,43 @@ function albPreset(detail: AssetDetailResponse): OpportunityFormState {
 export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFormState {
   if ((detail.meta?.ticker || '').toUpperCase() === 'ALB') return albPreset(detail);
 
-  const { meta, quote, fairValue, extras } = detail as AssetDetailResponse & {
+  const { meta, quote, fairValue, extras, optimizerFv } = detail as AssetDetailResponse & {
     extras?: AssetDetailResponse['extras'];
   };
   const price = quote?.price ?? 0;
   const fv = fairValue?.fairValue ?? null;
-  const dcf = fairValue?.dcfValue ?? null;
   const analyst = extras?.targetMean ?? fairValue?.analystTarget ?? null;
-  const anchor = fairValue?.historicalAnchorValue ?? null;
 
-  // Escenarios desde la dispersión de las DOS PATAS vigentes del motor
-  // (fórmula de múltiplo justificado / target de consenso —
-  // fvComponents): pesimista = la pata más baja, optimista = la más
-  // alta, base = FV del motor.
-  // El ANCLA HISTÓRICA (DCF de FCF reportado) solo puede bajar el
-  // pesimista si no es un outlier contra las patas (dentro de 1,8× de
-  // su mediana): la historia de una empresa en inflexión (ancla ~52
-  // contra patas ~350) no condena el escenario por sí sola.
-  // Fallback para payloads sin componentes: los métodos clásicos.
-  const legs = (fairValue?.fvComponents ?? []).filter(
-    (v): v is number => v != null && Number.isFinite(v) && v > price * 0.2 && v < price * 4
-  );
-  let methods = legs.length >= 2 ? legs : [dcf, analyst, fv].filter(
-    (v): v is number => v != null && Number.isFinite(v) && v > price * 0.2 && v < price * 4
-  );
-  if (legs.length >= 2 && anchor != null && anchor > price * 0.2 && anchor < price * 4) {
-    const sortedLegs = [...legs].sort((a, b) => a - b);
-    const medianLegs = sortedLegs[Math.floor(sortedLegs.length / 2)];
-    if (anchor >= medianLegs / 1.8 && anchor < Math.min(...legs)) {
-      methods = [...legs, anchor];
-    }
+  // Escenarios DESDE EL MOTOR (unificación R13): la ficha consume
+  // la vista del FV del motor del Optimizador que trae el payload
+  // (optimizerFv, producida por el mismo camino de puntuación que
+  // la tabla del Optimizador): base = EL valor justo del motor,
+  // pesimista = piso de su rango, optimista = techo. El cálculo
+  // propio de escenarios que vivía acá (dispersión de métodos con
+  // filtros de banda, ancla histórica acotando el pesimista,
+  // recortes por mediana y respaldos ×0,65/×1,4) dejó de existir
+  // como fuente de verdad: era un segundo FV para el mismo
+  // activo, conviviendo con el del Optimizador (VIST: ficha
+  // US$131,33 contra motor US$109,88 en la misma app).
+  // Respaldo si el payload no trae la vista del motor (cripto o
+  // motor sin FV para el activo): el resultado crudo del motor
+  // de valuación del detalle — el MISMO motor, sin síntesis de
+  // escenarios: base = su FV y escenarios = su rango publicado.
+  const motorView = optimizerFv ?? null;
+  const fvRange = fairValue?.fvRange ?? null;
+  let fvBase: number;
+  let fvPes: number;
+  let fvOpt: number;
+  if (motorView && motorView.fv > 0) {
+    const sc = scenariosFromMotorFv(motorView);
+    fvBase = sc.fvBase;
+    fvPes = sc.fvPesimista;
+    fvOpt = sc.fvOptimista;
+  } else {
+    fvBase = fv ?? (price > 0 ? price * 1.05 : 0);
+    fvPes = fvRange && fvRange[0] > 0 ? fvRange[0] : fvBase;
+    fvOpt = fvRange && fvRange[1] > 0 ? fvRange[1] : fvBase;
   }
-  let fvBase = fv ?? (price > 0 ? price * 1.05 : 0);
-  let fvPes = methods.length ? Math.min(...methods) : fvBase * 0.6;
-  let fvOpt = methods.length ? Math.max(...methods) : fvBase * 1.45;
-  if (methods.length >= 3) {
-    const sorted = [...methods].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    if (fvOpt > median * 1.8) fvOpt = sorted[sorted.length - 2];
-    if (fvPes < median / 1.8) fvPes = sorted[1];
-  }
-  if (fvPes >= fvBase) fvPes = fvBase * 0.65;
-  if (fvOpt <= fvBase) fvOpt = fvBase * 1.4;
 
   const m = fairValue?.multiples;
   const revG = m?.revenueGrowthPct;
@@ -300,7 +296,7 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
     fvBase: num(fvBase),
     fvOpt: num(fvOpt),
     scenario: 'Base',
-    uncertainty: normalizeUncertainty(fairValue?.uncertainty),
+    uncertainty: normalizeUncertainty(motorView?.uncertainty ?? fairValue?.uncertainty),
     moat: (fairValue?.moat as MoatLevel) || 'None',
     moatDesc,
     mcap: fmtMcap(extras?.marketCap ?? quote?.marketCap),
@@ -346,8 +342,8 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
       'Las ganancias futuras dependen de supuestos (precios, volúmenes, costos): por eso la ficha trabaja con 3 escenarios de Fair Value y no con un solo número.',
     persp3Title: 'Precio y momento: ¿conviene comprar ahora?',
     persp3Fav:
-      fv != null && price > 0
-        ? `Frente al Fair Value del motor (US$ ${fv.toFixed(2)}), el precio de hoy deja un upside que la ficha calcula arriba.`
+      fvBase > 0 && price > 0
+        ? `Frente al Fair Value del motor (US$ ${fvBase.toFixed(2)}), el precio de hoy deja un upside que la ficha calcula arriba.`
         : 'Completá el Fair Value por escenarios para ver el upside.',
     persp3Con:
       trendTxt?.s50 && trendTxt?.s200
@@ -356,7 +352,7 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
     verdictDetail:
       'Veredicto calculado con la regla de la ficha: compra fuerte si hasta el escenario pesimista deja más de +20% de upside; comprar de a poco si el upside al base es de +30% o más pero el pesimista no deja colchón; mantener si el upside base es chico (entre −10% y +30%); vender si el precio ya supera al valor justo base.',
     seedNote:
-      'Precarga automática: precio y múltiplos en vivo; Fair Value y escenarios desde el motor (dos estimaciones hacia adelante: el target de consenso de analistas y la fórmula de ganancias futuras por el múltiplo justificado; el valor según la historia reportada solo acota el pesimista). Todo es editable: el juicio del analista manda.',
+      'Precarga automática: precio y múltiplos en vivo; el Fair Value es EL del motor del Optimizador (el mismo número que publica su tabla para este activo) y los escenarios son el piso y el techo del rango del motor. Todo es editable: el juicio del analista manda.',
   };
 }
 

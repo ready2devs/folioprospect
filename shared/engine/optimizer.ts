@@ -94,7 +94,11 @@ export interface OptimizerAssetInput {
   value: number; // US$ actuales
   isCrypto?: boolean;
   isCash?: boolean;
-  assumedReturnPct?: number | null; // cripto/caja: retorno supuesto anual %
+  /** Retorno supuesto EXPLÍCITO anual % (cripto/caja): solo
+   *  entra si alguien lo declara como supuesto; sin él, la
+   *  caja rinde 0 y la cripto queda fuera de la predicción
+   *  (R13: nada de defaults inventados por el motor). */
+  assumedReturnPct?: number | null;
   dividendYieldPct?: number | null;
   /** Crecimiento de ganancias TOTALES % (ancla GK anti doble conteo). */
   earningsGrowthTotalPct?: number | null;
@@ -951,22 +955,60 @@ function riskSpecForInput(a: OptimizerAssetInput): RiskAssetSpec {
   };
 }
 
+/** Insumos MARGINALES del componente de riesgo de desvío: el
+ *  riesgo que la posición le suma a ESTA cartera, según la
+ *  descomposición de Euler del módulo único de riesgo. */
+export interface ConfidenceMarginalRisk {
+  /** MCTR de la posición (%): su riesgo marginal en la cartera. */
+  mctrPct?: number | null;
+  /** Volatilidad total de la cartera (%) — la escala contra la
+   *  que se lee el MCTR (identidad de Euler: es el promedio
+   *  ponderado de los MCTR). */
+  portfolioVolPct?: number | null;
+}
+
 /** Componente de RIESGO DE DESVÍO del score de confianza, desde el
- *  módulo único de riesgo: la volatilidad medida del activo y,
- *  cuando la posición ya está en la cartera analizada, su aporte
- *  al riesgo total (PCTR) RELATIVO a su peso: lo que hace riesgosa
- *  a una predicción no es pesar mucho, sino aportar más riesgo
- *  del que su tamaño sugiere. volScore: 100 − (vol − 12) × 2 (vol
- *  12% ⇒ 100; 62% ⇒ 0). pctrScore: 120 − 40 × (PCTR/peso) —
- *  aporta la mitad de su peso ⇒ 100; en proporción ⇒ 80; el
- *  doble ⇒ 40; el triple ⇒ 0. Mezcla 70/30. Sin PCTR (activos
- *  fuera de la cartera, p. ej. pares), manda la volatilidad sola. */
-export function confidenceRiskComponent(volPct: number, pctrPct: number | null, weightPct?: number | null): number {
+ *  módulo único de riesgo. Desde R13 es MARGINAL-PRIMERO: el
+ *  conductor principal es el aporte de la posición a ESTA cartera
+ *  — no cuánto se mueve el activo solo, sino cuánto puede desviar
+ *  el resultado del portafolio que el usuario efectivamente
+ *  tiene. Composición interna de la sub-escala (0–100):
+ *   · aporte relativo (peso 40% cuando está el bloque marginal):
+ *     PCTR/peso — aportar la mitad del riesgo que el tamaño
+ *     sugiere ⇒ ~100; en proporción ⇒ 80; el doble ⇒ 40; el
+ *     triple ⇒ 0. Fórmula: 120 − 40 × (PCTR/peso).
+ *   · riesgo marginal (peso 35%): MCTR contra la volatilidad de
+ *     la cartera — la mitad de σp ⇒ 90; igual a σp ⇒ 60; 1,5×σp
+ *     ⇒ 30; 2×σp ⇒ 0. Fórmula: 120 − 60 × (MCTR/σp).
+ *   · volatilidad propia (peso 25%, insumo SECUNDARIO): la de
+ *     siempre — 100 − (vol − 12) × 2 (vol 12% ⇒ 100; 62% ⇒ 0).
+ *  Escalera de disponibilidad (sin dato, ese insumo no castiga —
+ *  R0): con PCTR pero sin MCTR, aporte 65% / volatilidad 35%;
+ *  con MCTR pero sin PCTR, marginal 60% / volatilidad 40%; sin
+ *  bloque marginal (activos fuera de la cartera analizada, p.
+ *  ej. pares o la ficha suelta), manda la volatilidad sola. */
+export function confidenceRiskComponent(
+  volPct: number,
+  pctrPct: number | null,
+  weightPct?: number | null,
+  marginal?: ConfidenceMarginalRisk | null
+): number {
   const volScore = clamp(100 - Math.max(0, volPct - 12) * 2, 0, 100);
-  if (pctrPct == null || weightPct == null || weightPct <= 0) return Math.round(volScore);
-  const ratio = pctrPct / weightPct;
-  const pctrScore = clamp(120 - 40 * ratio, 0, 100);
-  return Math.round(0.7 * volScore + 0.3 * pctrScore);
+  const relScore =
+    pctrPct != null && weightPct != null && weightPct > 0
+      ? clamp(120 - 40 * (pctrPct / weightPct), 0, 100)
+      : null;
+  const mctrScore =
+    marginal?.mctrPct != null && marginal.mctrPct > 0 &&
+    marginal?.portfolioVolPct != null && marginal.portfolioVolPct > 0
+      ? clamp(120 - 60 * (marginal.mctrPct / marginal.portfolioVolPct), 0, 100)
+      : null;
+  if (relScore != null && mctrScore != null) {
+    return Math.round(0.4 * relScore + 0.35 * mctrScore + 0.25 * volScore);
+  }
+  if (relScore != null) return Math.round(0.65 * relScore + 0.35 * volScore);
+  if (mctrScore != null) return Math.round(0.6 * mctrScore + 0.4 * volScore);
+  return Math.round(volScore);
 }
 
 interface ConfidenceFields {
@@ -994,8 +1036,10 @@ interface ConfidenceFields {
  *       forward (−40) y dispersión del rango de targets
  *       (ancho relativo al FV > 50% empieza a restar, hasta −35) — 30
  *   (3) riesgo de desvío, del módulo único de riesgo
- *       (confidenceRiskComponent: volatilidad medida y aporte
- *       de la posición a la cartera) — 25
+ *       (confidenceRiskComponent: desde R13 manda el aporte
+ *       MARGINAL de la posición a esta cartera — PCTR relativo
+ *       al peso y MCTR — y la volatilidad propia entra como
+ *       insumo secundario) — 25
  *  Pesos renormalizados sobre los componentes disponibles (sin
  *  dato de un componente, ese componente no castiga — R0). Sobre
  *  el índice: el ancla de caja resta 6 si quemó caja (componente
@@ -1006,7 +1050,8 @@ function confidenceFor(
   f: ConfidenceFields,
   volPct: number,
   pctrPct: number | null,
-  weightPct?: number | null
+  weightPct?: number | null,
+  marginal?: ConfidenceMarginalRisk | null
 ): {
   score: number | null;
   stars: number | null;
@@ -1033,7 +1078,7 @@ function confidenceFor(
     }
     sourcesScore = clamp(s, 0, 100);
   }
-  const riskScore = confidenceRiskComponent(volPct, pctrPct, weightPct);
+  const riskScore = confidenceRiskComponent(volPct, pctrPct, weightPct, marginal);
   const confDims: Array<{ value: number | null; weight: number }> = [
     { value: legsScore, weight: 35 },
     { value: sourcesScore, weight: 30 },
@@ -1124,9 +1169,19 @@ export function scoreAsset(
   let prudentFallback = false;
   let scorePess: number | null = null;
   if (isCrypto || isCash) {
-    re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
-    // Cripto y caja no tienen rango de FV: su «prudente» es el mismo
-    // retorno supuesto, marcado como caída (prudentFallback).
+    // SIN retorno inventado (R13): la caja rinde 0 y la cripto
+    // queda FUERA del sistema de predicción — no tiene patas de
+    // FV, así que no hay retorno esperado ni duplicación que
+    // mostrarle; solo entra un retorno si viene como SUPUESTO
+    // EXPLÍCITO en el input (assumedReturnPct), que es un dato
+    // del usuario y no una invención del motor (ninguna fuente
+    // de datos de producción lo completa). Antes el default era
+    // un 11,5% plano para toda cripto — hasta para el USDT —
+    // que contaminaba el retorno de cartera y las tarjetas.
+    re = a.assumedReturnPct ?? (isCash ? 0 : null);
+    // Cripto y caja no tienen rango de FV: su «prudente» es el
+    // mismo retorno (0 en caja, ninguno en cripto), marcado como
+    // caída (prudentFallback).
     rePess = re;
     prudentFallback = true;
   } else {
@@ -1296,6 +1351,41 @@ export function scoreAsset(
   };
 }
 
+/** LA vista del valor justo del motor para superficies que no
+ *  son el Optimizador (la ficha del activo): UN solo FV por
+ *  activo en toda la app (unificación R13, aprobada por el
+ *  usuario 2026-11-03). La ficha consume ESTOS números — el FV
+ *  efectivo del activo puntuado y el piso/techo del rango del
+ *  motor — y su antiguo cálculo propio de escenarios deja de
+ *  ser una fuente de verdad: ningún número visible de la ficha
+ *  puede salir de otra valuación que la del motor. */
+export interface MotorFvView {
+  /** El FV del motor para el activo (AssetScore.fvEffective). */
+  fv: number;
+  /** Piso del rango del motor (fvRangeLow; respaldo: el piso de
+   *  los componentes que formaron el FV, input.fvPesimista). */
+  fvPesimista: number;
+  /** Techo del rango del motor (fvRangeHigh; respaldo: el techo
+   *  de los componentes, input.fvOptimista). */
+  fvOptimista: number;
+  /** Incertidumbre del motor de FV (la de la ficha, normalizada
+   *  por la propia ficha). */
+  uncertainty: string | null;
+}
+
+export function motorFvViewFor(a: OptimizerAssetInput, scored: AssetScore): MotorFvView | null {
+  const fv = scored.fvEffective;
+  if (fv == null || !(fv > 0)) return null;
+  const lo = a.fvRangeLow ?? a.fvPesimista ?? null;
+  const hi = a.fvRangeHigh ?? a.fvOptimista ?? null;
+  return {
+    fv,
+    fvPesimista: lo != null && lo > 0 ? lo : fv,
+    fvOptimista: hi != null && hi > 0 ? hi : fv,
+    uncertainty: a.uncertainty ?? null,
+  };
+}
+
 /** Descomposición de Euler (MCTR/PCTR) y volatilidad de cartera,
  *  computadas desde el MÓDULO ÚNICO DE RIESGO (riskMatrix.ts):
  *  misma matemática de siempre, alimentada por la matriz medida
@@ -1336,11 +1426,22 @@ export function applyRiskDecomposition(assets: AssetScore[], riskFreePct: number
 
 export function portfolioMetrics(assets: AssetScore[], volPct: number): PortfolioMetrics {
   const totalValue = assets.reduce((s, a) => s + a.value, 0);
+  // El retorno de cartera se computa SOLO sobre los activos CON
+  // predicción (R13): los pesos se renormalizan dentro de ese
+  // subconjunto. La caja (RE 0, una predicción real) entra; la
+  // cripto sin supuesto explícito (RE null) no entra ni en el
+  // numerador ni en el denominador — antes entraba con el 11,5%
+  // inventado y, si se la excluyera solo del numerador, pesaría
+  // como un 0% falso. El arrastre geométrico sigue usando la
+  // volatilidad de TODA la cartera: es el riesgo que el tenedor
+  // efectivamente soporta al componer.
+  const predicted = assets.filter((a) => a.expectedReturnPct != null);
+  const predictedValue = predicted.reduce((s, a) => s + a.value, 0);
   const reArith =
-    totalValue > 0
-      ? assets.reduce((s, a) => s + (a.value / totalValue) * (a.expectedReturnPct ?? 0), 0)
+    predictedValue > 0
+      ? predicted.reduce((s, a) => s + (a.value / predictedValue) * (a.expectedReturnPct as number), 0)
       : 0;
-  const reGeo = reArith - Math.pow(volPct / 100, 2) * 50; // −σ²/2 en %
+  const reGeo = predictedValue > 0 ? reArith - Math.pow(volPct / 100, 2) * 50 : 0; // −σ²/2 en %
   const hhi = assets.reduce((s, a) => s + Math.pow(a.weightPct, 2), 0);
   const sectorMap = new Map<string, number>();
   assets.forEach((a) => sectorMap.set(a.sector, (sectorMap.get(a.sector) ?? 0) + a.weightPct));
@@ -1421,9 +1522,12 @@ export function optimizePortfolio(
   const volBefore = applyRiskDecomposition(scored, opts.riskFreePct, riskMatrix);
   // Segunda pasada del score de confianza (consolidación de
   // riesgo): con la descomposición computada, el componente de
-  // riesgo de desvío de cada posición suma su aporte al riesgo
-  // total (PCTR) a la volatilidad medida — los mismos campos del
-  // payload que muestran el gráfico de burbujas y la ficha.
+  // riesgo de desvío de cada posición se recalcula MARGINAL-
+  // PRIMERO (R13): mandan su aporte al riesgo total (PCTR
+  // relativo a su peso) y su riesgo marginal (MCTR contra la
+  // volatilidad de la cartera), con la volatilidad medida como
+  // insumo secundario — los mismos campos del payload que
+  // muestran el gráfico de burbujas y la ficha.
   for (const s of scored) {
     if (s.isCrypto || s.isCash || s.score == null) continue;
     const input = inputs.find((i) => i.symbol === s.symbol);
@@ -1441,7 +1545,8 @@ export function optimizePortfolio(
       },
       s.volatilityPct,
       s.riskContributionPct,
-      s.weightPct
+      s.weightPct,
+      { mctrPct: s.mctrPct, portfolioVolPct: volBefore }
     );
     if (conf.score != null) {
       s.score = conf.score;
