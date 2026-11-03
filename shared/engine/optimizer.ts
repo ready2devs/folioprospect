@@ -62,16 +62,26 @@
  * del ajuste en la tarjeta y la bandera modelSuspect («Estimación
  * a revisar») en tarjeta y ficha.
  * A nivel cartera el RE es GEOMÉTRICO: se
- * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
- * matriz de correlaciones por bloques (aproximación documentada) y
- * descomposición de Euler: MCTR y PCTR por activo, que ordenan desempates
- * de extracción y validan swaps.
+ * resta el arrastre de volatilidad σ²/2 (Invesco CMA). TODO el
+ * riesgo (volatilidades, correlaciones, Euler: MCTR y PCTR por
+ * activo) sale del módulo único de riesgo (riskMatrix.ts):
+ * mediciones desde el historial de precios con shrinkage hacia
+ * los priors de bloque, que ordenan desempates de extracción,
+ * validan swaps y alimentan el score de confianza.
  *
  * Sin dependencias de red: lo alimentan el servidor (Yahoo + Finviz) y lo
  * consumen el cliente y los tests. Cripto y caja quedan fuera del score, con
  * retorno supuesto explícito, y no se proponen ventas automáticas de cripto.
  */
 import { scoreFor, normalizeUncertainty, type UncertaintyLevel } from './opportunity.js';
+import {
+  buildRiskMatrix,
+  volForSpec,
+  RISK_FREE_PCT,
+  type DatedClose,
+  type RiskAssetSpec,
+  type RiskMatrix,
+} from './riskMatrix.js';
 
 export interface OptimizerAssetInput {
   symbol: string;
@@ -121,6 +131,10 @@ export interface OptimizerAssetInput {
   analystTarget?: number | null;
   volatilityPct?: number | null; // anual %
   beta?: number | null;
+  /** Historial de precios (cierres fechados, ~1 año diario) que
+   *  alimenta el módulo único de riesgo: volatilidad y
+   *  correlaciones MEDIDAS. Sin él, el módulo usa sus respaldos. */
+  priceHistory?: DatedClose[] | null;
   roicPct?: number | null;
   /** Tasa de reinversión % calculada de los reportados ((capex −
    *  depreciación) / ingreso neto, EDGAR): insumo del ancla de
@@ -195,6 +209,9 @@ export interface ScoredPeer {
   fvConfidence?: 'Alta' | 'Media' | 'Baja' | null;
   fvComponentCount?: number | null;
   fvToPrice?: number | null;
+  /** Historial de precios para la matriz de riesgo (correlaciones
+   *  medidas del par si llega a entrar a la cartera propuesta). */
+  priceHistory?: DatedClose[] | null;
 }
 
 export interface OptimizerOptions {
@@ -304,7 +321,7 @@ export interface AssetScore {
    *  explicación en la ficha y la evaluación): acuerdo entre las
    *  patas del FV, acuerdo entre fuentes y riesgo de desvío por
    *  volatilidad. null en filas sin score propio (pares, caja). */
-  scoreComponents: { legs: number | null; sources: number | null; volatility: number | null } | null;
+  scoreComponents: { legs: number | null; sources: number | null; risk: number | null } | null;
   /** Ancla de caja real (R12): estado según el FCF de los últimos
    *  12 meses reportados. Es una MARCA visible y, si quemó caja, un
    *  reparo dentro del ajuste del score — nada más: no entra en el
@@ -842,22 +859,164 @@ function qualityScore(a: OptimizerAssetInput): number | null {
   return parts.length ? parts.reduce((s, x) => s + x, 0) / parts.length : null;
 }
 
+
+/** Spec de riesgo de un input (para el módulo único). */
+function riskSpecForInput(a: OptimizerAssetInput): RiskAssetSpec {
+  return {
+    key: a.symbol,
+    sector: a.sector,
+    industry: a.industry,
+    isCrypto: !!a.isCrypto,
+    isCash: !!a.isCash,
+    closes: a.priceHistory ?? null,
+    fallbackVolPct: a.volatilityPct ?? null,
+    beta: a.beta ?? null,
+  };
+}
+
+/** Componente de RIESGO DE DESVÍO del score de confianza, desde el
+ *  módulo único de riesgo: la volatilidad medida del activo y,
+ *  cuando la posición ya está en la cartera analizada, su aporte
+ *  al riesgo total (PCTR) RELATIVO a su peso: lo que hace riesgosa
+ *  a una predicción no es pesar mucho, sino aportar más riesgo
+ *  del que su tamaño sugiere. volScore: 100 − (vol − 12) × 2 (vol
+ *  12% ⇒ 100; 62% ⇒ 0). pctrScore: 120 − 40 × (PCTR/peso) —
+ *  aporta la mitad de su peso ⇒ 100; en proporción ⇒ 80; el
+ *  doble ⇒ 40; el triple ⇒ 0. Mezcla 70/30. Sin PCTR (activos
+ *  fuera de la cartera, p. ej. pares), manda la volatilidad sola. */
+export function confidenceRiskComponent(volPct: number, pctrPct: number | null, weightPct?: number | null): number {
+  const volScore = clamp(100 - Math.max(0, volPct - 12) * 2, 0, 100);
+  if (pctrPct == null || weightPct == null || weightPct <= 0) return Math.round(volScore);
+  const ratio = pctrPct / weightPct;
+  const pctrScore = clamp(120 - 40 * ratio, 0, 100);
+  return Math.round(0.7 * volScore + 0.3 * pctrScore);
+}
+
+interface ConfidenceFields {
+  fvConfidence: 'Alta' | 'Media' | 'Baja' | null;
+  fvComponentCount: number | null;
+  epsSignDisagreement?: boolean;
+  fvRangeLow?: number | null;
+  fvRangeHigh?: number | null;
+  fvBase: number | null;
+  fvModelSuspect?: boolean;
+  cashPenaltyPts: number;
+}
+
+/** SCORE = CONFIANZA EN LA PREDICCIÓN (redefinición del usuario
+ *  2026-11-03 11:23, que DEROGA la directiva de «velocidad como
+ *  pata principal» y el Cambio 1 de R12): la tabla ordena por la
+ *  predicción (años a duplicar) y el score mide CUÁNTO HAY QUE
+ *  CREERLE. Se construye SOLO con dispersión e incertidumbre
+ *  medibles — nada de velocidad, nada de oportunidad precio/FV,
+ *  nada de calidad del negocio:
+ *   (1) acuerdo entre las dos patas del FV (la etiqueta de
+ *       confianza del motor, que nace de esa dispersión; una
+ *       sola pata no puede «acordar» consigo misma: tope 40) — 35
+ *   (2) acuerdo entre fuentes: desacuerdo de SIGNO en el EPS
+ *       forward (−40) y dispersión del rango de targets
+ *       (ancho relativo al FV > 50% empieza a restar, hasta −35) — 30
+ *   (3) riesgo de desvío, del módulo único de riesgo
+ *       (confidenceRiskComponent: volatilidad medida y aporte
+ *       de la posición a la cartera) — 25
+ *  Pesos renormalizados sobre los componentes disponibles (sin
+ *  dato de un componente, ese componente no castiga — R0). Sobre
+ *  el índice: el ancla de caja resta 6 si quemó caja (componente
+ *  de confianza) y modelSuspect pone el techo SUSPECT_SCORE_CAP.
+ *  La propiedad anti-inversión score↔duplicación queda DEROGADA:
+ *  miden cosas distintas y la app lo explica. */
+function confidenceFor(
+  f: ConfidenceFields,
+  volPct: number,
+  pctrPct: number | null,
+  weightPct?: number | null
+): {
+  score: number | null;
+  stars: number | null;
+  band: ScoreBand | null;
+  components: AssetScore['scoreComponents'];
+} {
+  let legsScore: number | null =
+    f.fvConfidence === 'Alta' ? 90 : f.fvConfidence === 'Media' ? 65 : f.fvConfidence === 'Baja' ? 35 : null;
+  if (legsScore == null && f.fvComponentCount != null) {
+    legsScore = f.fvComponentCount >= 2 ? 55 : 35;
+  }
+  if (legsScore != null && f.fvComponentCount === 1) {
+    legsScore = Math.min(legsScore, 40);
+  }
+  let sourcesScore: number | null = null;
+  if (f.epsSignDisagreement || (f.fvRangeLow != null && f.fvRangeHigh != null)) {
+    let s = 85;
+    if (f.epsSignDisagreement) s -= 40;
+    if (
+      f.fvRangeLow != null && f.fvRangeHigh != null &&
+      f.fvBase != null && f.fvBase > 0 && f.fvRangeHigh > f.fvRangeLow
+    ) {
+      s -= clamp(((f.fvRangeHigh - f.fvRangeLow) / f.fvBase - 0.5) * 40, 0, 35);
+    }
+    sourcesScore = clamp(s, 0, 100);
+  }
+  const riskScore = confidenceRiskComponent(volPct, pctrPct, weightPct);
+  const confDims: Array<{ value: number | null; weight: number }> = [
+    { value: legsScore, weight: 35 },
+    { value: sourcesScore, weight: 30 },
+    { value: riskScore, weight: 25 },
+  ];
+  const confAvail = confDims.filter((d) => d.value != null);
+  if (confAvail.length === 0) return { score: null, stars: null, band: null, components: null };
+  const tw = confAvail.reduce((s, d) => s + d.weight, 0);
+  const index = confAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
+  let raw = clamp(index + f.cashPenaltyPts, 0, 100);
+  if (f.fvModelSuspect) raw = Math.min(raw, SUSPECT_SCORE_CAP);
+  const score = Math.round(raw);
+  return {
+    score,
+    stars: clamp(Math.round(score / 20), 1, 5),
+    band: scoreBandFor(score, !!f.fvModelSuspect),
+    components: {
+      legs: legsScore != null ? Math.round(legsScore) : null,
+      sources: sourcesScore != null ? Math.round(sourcesScore) : null,
+      risk: riskScore,
+    },
+  };
+}
+
+/** Listón de destinos: FIABILIDAD (confianza ≥ 65 en la
+ *  predicción del destino), dos patas de FV, FV no más de 3× el
+ *  precio, sin rol defensivo y sin balance en puerta. */
+function destinationEligibleFor(args: {
+  isCrypto: boolean;
+  isCash: boolean;
+  score: number | null;
+  fvComponentCount: number | null;
+  fvToPrice: number | null;
+  defensive: boolean;
+  earningsGate: unknown;
+}): boolean {
+  return (
+    !args.isCrypto &&
+    !args.isCash &&
+    args.score != null &&
+    args.score >= DESTINATION_MIN_SCORE &&
+    (args.fvComponentCount == null || args.fvComponentCount >= 2) &&
+    (args.fvToPrice == null || args.fvToPrice <= 3) &&
+    !args.defensive &&
+    args.earningsGate == null
+  );
+}
+
 export function scoreAsset(
   a: OptimizerAssetInput,
   totalValue: number,
-  opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers' | 'manualExtractions' | 'extraCashUsd' | 'acceptedSuggestions'>>
+  opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers' | 'manualExtractions' | 'extraCashUsd' | 'acceptedSuggestions'>>,
+  risk?: RiskMatrix
 ): AssetScore {
   const isCrypto = !!a.isCrypto;
   const isCash = !!a.isCash;
   const weightPct = totalValue > 0 ? (a.value / totalValue) * 100 : 0;
-  const vol =
-    a.volatilityPct != null && a.volatilityPct > 0
-      ? a.volatilityPct
-      : a.beta != null
-        ? clamp(a.beta * 22, 8, 90)
-        : isCrypto
-          ? 60
-          : 26;
+  // LA volatilidad sale del módulo único de riesgo (medida desde
+  // el historial cuando hay; respaldos documentados si no).
+  const vol = risk && risk.has(a.symbol) ? risk.volPct(a.symbol) : volForSpec(riskSpecForInput(a));
 
   let gk: number | null = null;
   let fv: number | null = null;
@@ -956,72 +1115,29 @@ export function scoreAsset(
         : null);
     if (gAnchor != null) gordon = (a.dividendYieldPct ?? 0) + clamp(gAnchor, 0, 5.5);
 
-    // SCORE = CONFIANZA EN LA PREDICCIÓN (redefinición del usuario
-    // 2026-11-03 11:23, que DEROGA la directiva de «velocidad como
-    // pata principal» de la mañana y el Cambio 1 de R12): la tabla
-    // ordena por la predicción (años a duplicar) y el score mide
-    // CUÁNTO HAY QUE CREERLE. Se construye SOLO con dispersión e
-    // incertidumbre medibles — nada de velocidad, nada de
-    // oportunidad precio/FV, nada de calidad del negocio:
-    //  (1) acuerdo entre las dos patas del FV (la etiqueta de
-    //      confianza del motor, que nace de esa dispersión; una
-    //      sola pata no puede «acordar» consigo misma: tope 40) — 35
-    //  (2) acuerdo entre fuentes: desacuerdo de SIGNO en el EPS
-    //      forward (−40) y dispersión del rango de targets de los
-    //      analistas (ancho relativo al FV > 50% empieza a restar,
-    //      hasta −35) — 30
-    //  (3) riesgo de desvío: la volatilidad del activo — 25
-    // Los pesos se renormalizan sobre los componentes disponibles
-    // (la volatilidad siempre está; sin dato de un componente, ese
-    // componente no castiga — R0). Sobre el índice: el ancla de
-    // caja resta 6 si quemó caja (componente de confianza) y
-    // modelSuspect pone el techo SUSPECT_SCORE_CAP: su banda es
-    // «a revisar» por definición. La propiedad anti-inversión
-    // score↔duplicación queda DEROGADA: miden cosas distintas y
-    // la app lo explica — un activo arriba por velocidad con
-    // score bajo significa «estimación a revisar», no un error.
+    // SCORE = CONFIANZA EN LA PREDICCIÓN (confidenceFor): en
+    // esta pasada el componente de riesgo usa solo la volatilidad
+    // del módulo; optimizePortfolio lo completa con el aporte al
+    // riesgo (PCTR) cuando la descomposición ya está computada.
     scoreVelocity = re != null ? scoreVelocityFor(re) : null;
-    let legsScore: number | null =
-      a.fvConfidence === 'Alta' ? 90 : a.fvConfidence === 'Media' ? 65 : a.fvConfidence === 'Baja' ? 35 : null;
-    if (legsScore == null && a.fvComponentCount != null) {
-      legsScore = a.fvComponentCount >= 2 ? 55 : 35;
-    }
-    if (legsScore != null && a.fvComponentCount === 1) {
-      legsScore = Math.min(legsScore, 40);
-    }
-    let sourcesScore: number | null = null;
-    if (a.epsSignDisagreement || (a.fvRangeLow != null && a.fvRangeHigh != null)) {
-      let s = 85;
-      if (a.epsSignDisagreement) s -= 40;
-      if (
-        a.fvRangeLow != null && a.fvRangeHigh != null &&
-        a.fvBase != null && a.fvBase > 0 && a.fvRangeHigh > a.fvRangeLow
-      ) {
-        s -= clamp(((a.fvRangeHigh - a.fvRangeLow) / a.fvBase - 0.5) * 40, 0, 35);
-      }
-      sourcesScore = clamp(s, 0, 100);
-    }
-    const volScore = clamp(100 - Math.max(0, vol - 12) * 2, 0, 100);
-    const confDims: Array<{ value: number | null; weight: number }> = [
-      { value: legsScore, weight: 35 },
-      { value: sourcesScore, weight: 30 },
-      { value: volScore, weight: 25 },
-    ];
-    const confAvail = confDims.filter((d) => d.value != null);
-    if (confAvail.length > 0) {
-      const tw = confAvail.reduce((s, d) => s + d.weight, 0);
-      const index = confAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
-      let raw = clamp(index + cashAnchor.penaltyPts, 0, 100);
-      if (a.fvModelSuspect) raw = Math.min(raw, SUSPECT_SCORE_CAP);
-      score = Math.round(raw);
-      stars = clamp(Math.round(score / 20), 1, 5);
-      scoreBand = scoreBandFor(score, !!a.fvModelSuspect);
-      scoreComponents = {
-        legs: legsScore != null ? Math.round(legsScore) : null,
-        sources: sourcesScore != null ? Math.round(sourcesScore) : null,
-        volatility: Math.round(volScore),
-      };
-    }
+    const conf = confidenceFor(
+      {
+        fvConfidence: a.fvConfidence ?? null,
+        fvComponentCount: a.fvComponentCount ?? null,
+        epsSignDisagreement: a.epsSignDisagreement,
+        fvRangeLow: a.fvRangeLow,
+        fvRangeHigh: a.fvRangeHigh,
+        fvBase: a.fvBase ?? null,
+        fvModelSuspect: a.fvModelSuspect,
+        cashPenaltyPts: cashAnchor.penaltyPts,
+      },
+      vol,
+      null
+    );
+    score = conf.score;
+    stars = conf.stars;
+    scoreBand = conf.band;
+    scoreComponents = conf.components;
     // Score de la vista prudente: el MISMO de confianza — la
     // certeza es de los datos del activo, no de la vista.
     scorePess = score;
@@ -1030,18 +1146,11 @@ export function scoreAsset(
   }
   const fvToPrice =
     a.fvBase != null && a.fvBase > 0 && a.price > 0 ? a.fvBase / a.price : null;
-  // Destino elegible: el listón de score acá es de FIABILIDAD —
-  // confianza ≥ 65 en la predicción del destino (semántica vigente
-  // del score desde la redefinición 2026-11-03).
-  const destinationEligible =
-    !isCrypto &&
-    !isCash &&
-    score != null &&
-    score >= DESTINATION_MIN_SCORE &&
-    (a.fvComponentCount == null || a.fvComponentCount >= 2) &&
-    (fvToPrice == null || fvToPrice <= 3) &&
-    !a.defensive &&
-    gate == null;
+  const destinationEligible = destinationEligibleFor({
+    isCrypto, isCash, score,
+    fvComponentCount: a.fvComponentCount ?? null,
+    fvToPrice, defensive: !!a.defensive, earningsGate: gate,
+  });
 
   const components = [gk, fv, cons].filter((x) => x != null).length;
   return {
@@ -1105,40 +1214,42 @@ export function scoreAsset(
   };
 }
 
-/** Correlación asumida por bloques (aproximación v1, documentada en la UI). */
-function blockCorrelation(x: AssetScore, y: AssetScore): number {
-  if (x.symbol === y.symbol) return 1;
-  if (x.isCash || y.isCash) return 0;
-  if (x.isCrypto && y.isCrypto) return 0.7;
-  if (x.isCrypto || y.isCrypto) return 0.25;
-  if (x.industry === y.industry) return 0.65;
-  if (x.sector === y.sector) return 0.55;
-  return 0.45;
-}
-
-/** Volatilidad de cartera y descomposición de Euler (MCTR/PCTR) in-place. */
-export function applyRiskDecomposition(assets: AssetScore[], riskFreePct: number): number {
+/** Descomposición de Euler (MCTR/PCTR) y volatilidad de cartera,
+ *  computadas desde el MÓDULO ÚNICO DE RIESGO (riskMatrix.ts):
+ *  misma matemática de siempre, alimentada por la matriz medida
+ *  (con shrinkage a los priors de bloque). Sin matriz explícita
+ *  se construye una de priors puros con las volatilidades que ya
+ *  traen los activos — el respaldo documentado del módulo. */
+export function applyRiskDecomposition(assets: AssetScore[], riskFreePct: number, matrix?: RiskMatrix): number {
   const total = assets.reduce((s, a) => s + a.value, 0);
   if (total <= 0) return 0;
-  const w = assets.map((a) => a.value / total);
-  const sig = assets.map((a) => a.volatilityPct / 100);
-  // (Σw)_i y varianza de cartera
-  const sigmaW = assets.map((_, i) => {
-    let s = 0;
-    for (let j = 0; j < assets.length; j++) s += blockCorrelation(assets[i], assets[j]) * sig[j] * w[j];
-    return sig[i] * s;
-  });
-  const varP = w.reduce((s, wi, i) => s + wi * sigmaW[i], 0);
-  const volP = Math.sqrt(Math.max(varP, 0)) * 100;
-  assets.forEach((a, i) => {
-    if (volP > 0) {
-      a.mctrPct = (sigmaW[i] / (volP / 100)) * 100;
-      a.riskContributionPct = ((w[i] * sigmaW[i]) / varP) * 100;
+  const mx =
+    matrix ??
+    buildRiskMatrix(
+      assets.map((a) => ({
+        key: a.symbol, sector: a.sector, industry: a.industry,
+        isCrypto: a.isCrypto, isCash: a.isCash,
+        closes: null, fallbackVolPct: a.volatilityPct, beta: null,
+      }))
+    );
+  const dec = mx.decompose(
+    assets.map((a) => ({
+      key: a.symbol,
+      weight: a.value / total,
+      volPct: matrix && matrix.has(a.symbol) ? matrix.volPct(a.symbol) : a.volatilityPct,
+    }))
+  );
+  assets.forEach((a) => {
+    const m = dec.mctrPct.get(a.symbol);
+    const pct = dec.pctrPct.get(a.symbol);
+    if (m != null && pct != null) {
+      a.mctrPct = m;
+      a.riskContributionPct = pct;
       a.excessPerRisk =
-        a.expectedReturnPct != null && a.mctrPct > 0 ? (a.expectedReturnPct - riskFreePct) / a.mctrPct : null;
+        a.expectedReturnPct != null && m > 0 ? (a.expectedReturnPct - riskFreePct) / m : null;
     }
   });
-  return volP;
+  return dec.portfolioVolPct;
 }
 
 export function portfolioMetrics(assets: AssetScore[], volPct: number): PortfolioMetrics {
@@ -1198,7 +1309,7 @@ export function optimizePortfolio(
 ): OptimizerResult {
   const opts: Required<Omit<OptimizerOptions, 'peersByIndustry' | 'excludeTickers' | 'manualExtractions' | 'extraCashUsd' | 'acceptedSuggestions'>> = {
     sellCommissionPct: options.sellCommissionPct ?? 0.5,
-    riskFreePct: options.riskFreePct ?? 4,
+    riskFreePct: options.riskFreePct ?? RISK_FREE_PCT,
     yearsToCorrection: options.yearsToCorrection ?? 3,
     minTradeUsd: options.minTradeUsd ?? 250,
     maxWeightPct: options.maxWeightPct ?? 12,
@@ -1210,8 +1321,59 @@ export function optimizePortfolio(
   const excluded = new Set((options.excludeTickers ?? []).map((t) => t.toUpperCase()));
   const totalValue = inputs.reduce((s, a) => s + a.value, 0);
 
-  const scored = inputs.map((a) => scoreAsset(a, totalValue, opts));
-  const volBefore = applyRiskDecomposition(scored, opts.riskFreePct);
+  // LA matriz de riesgo del pase (módulo único): posiciones y
+  // pares candidatos, con sus historiales. Todo número de riesgo
+  // de este resultado sale de acá.
+  const riskMatrix = buildRiskMatrix([
+    ...inputs.map(riskSpecForInput),
+    ...Object.values(peersByIndustry)
+      .flat()
+      .map((peer) => ({
+        key: peer.symbol, sector: peer.industry, industry: peer.industry,
+        isCrypto: false, isCash: false,
+        closes: peer.priceHistory ?? null,
+        fallbackVolPct: peer.volatilityPct ?? null, beta: null,
+      })),
+  ]);
+  const scored = inputs.map((a) => scoreAsset(a, totalValue, opts, riskMatrix));
+  const volBefore = applyRiskDecomposition(scored, opts.riskFreePct, riskMatrix);
+  // Segunda pasada del score de confianza (consolidación de
+  // riesgo): con la descomposición computada, el componente de
+  // riesgo de desvío de cada posición suma su aporte al riesgo
+  // total (PCTR) a la volatilidad medida — los mismos campos del
+  // payload que muestran el gráfico de burbujas y la ficha.
+  for (const s of scored) {
+    if (s.isCrypto || s.isCash || s.score == null) continue;
+    const input = inputs.find((i) => i.symbol === s.symbol);
+    if (!input) continue;
+    const conf = confidenceFor(
+      {
+        fvConfidence: input.fvConfidence ?? null,
+        fvComponentCount: input.fvComponentCount ?? null,
+        epsSignDisagreement: input.epsSignDisagreement,
+        fvRangeLow: input.fvRangeLow,
+        fvRangeHigh: input.fvRangeHigh,
+        fvBase: input.fvBase ?? null,
+        fvModelSuspect: input.fvModelSuspect,
+        cashPenaltyPts: s.cashAnchorPenaltyPts,
+      },
+      s.volatilityPct,
+      s.riskContributionPct,
+      s.weightPct
+    );
+    if (conf.score != null) {
+      s.score = conf.score;
+      s.stars = conf.stars;
+      s.scoreBand = conf.band;
+      s.scoreComponents = conf.components;
+      s.scorePessimistic = conf.score;
+      s.destinationEligible = destinationEligibleFor({
+        isCrypto: s.isCrypto, isCash: s.isCash, score: s.score,
+        fvComponentCount: input.fvComponentCount ?? null,
+        fvToPrice: s.fvToPrice, defensive: s.defensive, earningsGate: s.earningsGate,
+      });
+    }
+  }
   const before = portfolioMetrics(scored, volBefore);
   // Vista prudente de la cartera actual (R12): mismos pesos y misma
   // volatilidad; solo cambia el retorno de cada activo por su
@@ -1663,7 +1825,7 @@ export function optimizePortfolio(
     finalAssets.forEach((a) => {
       a.weightPct = totalAfter > 0 ? (a.value / totalAfter) * 100 : 0;
     });
-    const volAfter = applyRiskDecomposition(finalAssets, opts.riskFreePct);
+    const volAfter = applyRiskDecomposition(finalAssets, opts.riskFreePct, riskMatrix);
     const after = portfolioMetrics(finalAssets, volAfter);
     return { allocations, finalAssets, after, cashHeldUsd };
   };
@@ -1871,7 +2033,7 @@ export function buildNarrative(
       const named: Array<{ v: number | null; text: string }> = [
         { v: comps.legs, text: 'las dos estimaciones de su valor justo están lejos entre sí' },
         { v: comps.sources, text: 'las fuentes de sus ganancias futuras y de su precio objetivo discrepan entre sí' },
-        { v: comps.volatility, text: 'su volatilidad hace incierto cualquier sendero' },
+        { v: comps.risk, text: 'su volatilidad y el riesgo que su posición suma a la cartera hacen incierto cualquier sendero' },
       ].filter((c) => c.v != null);
       named.sort((x, y) => (x.v as number) - (y.v as number));
       if (named.length && (named[0].v as number) < 55) return named[0].text;

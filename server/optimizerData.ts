@@ -8,6 +8,8 @@ import {
   computeFairValue,
   optimizePortfolio,
   scoreAsset,
+  RISK_FREE_PCT,
+  type DatedClose,
   type OptimizerAssetInput,
   type OptimizerResult,
   type ScoredPeer,
@@ -97,21 +99,22 @@ async function upcomingEarningsMap(
   return found;
 }
 
-/** Volatilidad anualizada % desde la serie 1Y (retornos mensuales). */
-async function volatilityFromChart(symbol: string): Promise<number | null> {
+/** Historial de cierres fechados (1 año diario) para el módulo
+ *  único de riesgo: la volatilidad y las correlaciones se MIDEN
+ *  en el motor desde esta serie; el servidor ya no calcula
+ *  ninguna volatilidad propia (la vieja mezcla realizada/beta
+ *  quedó consolidada en riskMatrix.ts). */
+async function closesFromChart(symbol: string): Promise<DatedClose[] | null> {
   try {
     const chart = await fetchAssetChart(symbol, '1Y');
-    const closes = (chart.points || []).map((p: any) => (Array.isArray(p) ? p[1] : p?.close)).filter((x: any) => x > 0);
-    if (closes.length < 60) return null;
-    const monthly: number[] = [];
-    for (let i = 21; i < closes.length; i += 21) {
-      monthly.push(Math.log(closes[i] / closes[i - 21]));
-    }
-    if (monthly.length < 5) return null;
-    const mean = monthly.reduce((s, x) => s + x, 0) / monthly.length;
-    const sd = Math.sqrt(monthly.reduce((s, x) => s + (x - mean) ** 2, 0) / (monthly.length - 1));
-    const vol = sd * Math.sqrt(12) * 100;
-    return vol > 3 && vol < 150 ? vol : null;
+    const closes: DatedClose[] = (chart.points || [])
+      .map((p: any) =>
+        Array.isArray(p)
+          ? { t: Number(p[0]), c: Number(p[1]) }
+          : { t: Number(p?.t ?? p?.time ?? 0), c: Number(p?.close) }
+      )
+      .filter((p: DatedClose) => p.c > 0);
+    return closes.length >= 2 ? closes : null;
   } catch {
     return null;
   }
@@ -139,10 +142,10 @@ async function buildAssetInput(
   };
   if (baseInput.isCrypto || isCash) return baseInput;
   try {
-    const [extras, fund, vol] = await Promise.all([
+    const [extras, fund, closes] = await Promise.all([
       fetchAssetExtras(h.symbol, h.lastPrice),
       fetchFundamentals(h.symbol, h.lastPrice),
-      volatilityFromChart(h.symbol),
+      closesFromChart(h.symbol),
     ]);
     // Contexto del sector (R11): medianas de la industria (pares
     // grandes de Finviz) que alimentan el múltiplo justificado del
@@ -275,15 +278,13 @@ async function buildAssetInput(
       earningsBusinessDays: earnings?.businessDays ?? null,
       cyclicalNormalized,
       midCycleEps,
-      volatilityPct: (() => {
-        const realized = vol ?? (finviz?.volatilityMonthPct != null ? finviz.volatilityMonthPct * Math.sqrt(12) : null);
-        const betaImplied = extras.beta != null ? Math.min(extras.beta * 22, 65) : finviz?.beta != null ? Math.min(finviz.beta * 22, 65) : null;
-        if (realized != null && betaImplied != null) {
-          // Blend robusto: la realizada mensual en picos de ciclo exagera.
-          return Math.min(0.6 * Math.min(realized, 70) + 0.4 * betaImplied, 75);
-        }
-        return realized != null ? Math.min(realized, 75) : betaImplied;
-      })(),
+      // Respaldo del módulo de riesgo cuando el historial no
+      // alcanza para MEDIR: el dato mensual de Finviz anualizado.
+      // La volatilidad que usa el sistema es la del módulo
+      // (riskMatrix.ts), que prefiere la medición diaria desde
+      // priceHistory y cae a este respaldo, después al beta.
+      volatilityPct: finviz?.volatilityMonthPct != null ? finviz.volatilityMonthPct * Math.sqrt(12) : null,
+      priceHistory: closes,
       beta: extras.beta ?? finviz?.beta ?? null,
       roicPct: extras.roicPct ?? finviz?.roicPct ?? null,
       // Tasa de reinversión % desde los reportados de EDGAR: (capex −
@@ -366,9 +367,10 @@ async function fetchIndustryPeers(
     const peers: ScoredPeer[] = [];
     for (const t of tickers.slice(0, 5)) {
       const symbol = `NASDAQ:${t}`;
-      const [extras, finviz] = await Promise.all([
+      const [extras, finviz, peerCloses] = await Promise.all([
         fetchAssetExtras(symbol, 0).catch(() => null),
         fetchFinvizFundamentals(t),
+        closesFromChart(symbol),
       ]);
       const price = finviz?.price ?? extras?.finviz?.price ?? null;
       if (!price) continue;
@@ -400,6 +402,7 @@ async function fetchIndustryPeers(
         fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0,
         analystTarget: extras?.targetMean ?? fv.analystTarget ?? null,
         beta: extras?.beta ?? finviz?.beta ?? null,
+        priceHistory: peerCloses,
         roicPct: finviz?.roicPct ?? null,
         grossMarginPct: finviz?.grossMarginPct ?? null,
         operatingMarginPct: finviz?.operatingMarginPct ?? null,
@@ -407,7 +410,7 @@ async function fetchIndustryPeers(
         moatScore: fv.moatScore ?? null,
       };
       const scored = scoreAsset(input, price, {
-        sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
+        sellCommissionPct: 0.5, riskFreePct: RISK_FREE_PCT, yearsToCorrection: 3, minTradeUsd: 250,
         maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
       });
       if (scored.score != null && scored.expectedReturnPct != null) {
@@ -415,6 +418,7 @@ async function fetchIndustryPeers(
           symbol, ticker: t, name: t, industry: industryName, price,
           score: scored.score, expectedReturnPct: scored.expectedReturnPct,
           volatilityPct: scored.volatilityPct,
+          priceHistory: peerCloses,
           fvConfidence: fv.fvConfidence ?? null,
           fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : null,
           fvToPrice: fv.fairValue != null && price > 0 ? fv.fairValue / price : null,

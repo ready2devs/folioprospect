@@ -261,7 +261,13 @@ export const BubbleChart: React.FC<{
   const iw = W - P.l - P.r;
   const ih = H - P.t - P.b;
   const pts = [...beforeAssets, ...afterAssets].filter((a) => !a.isCash && a.expectedReturnPct != null);
-  const xMax = Math.min(85, Math.max(45, ...pts.map((a) => a.volatilityPct)) * 1.12);
+  // Eje X = riesgo MARGINAL de la posición dentro de esta cartera
+  // (MCTR, del módulo único de riesgo): cuánto riesgo le suma
+  // mantenerla acá, no cuánto se mueve sola. El rombo promedio usa
+  // la volatilidad total de la cartera, que ES el promedio
+  // ponderado de los MCTR (identidad de Euler): misma escala.
+  const riskX = (a: AssetScore) => a.mctrPct ?? a.volatilityPct;
+  const xMax = Math.max(45, ...pts.map((a) => riskX(a))) * 1.12;
   const yMax = Math.max(18, ...pts.map((a) => a.expectedReturnPct ?? 0)) * 1.18;
   const yMin = Math.min(-3, ...pts.map((a) => a.expectedReturnPct ?? 0)) * 1.2;
   const X = (v: number) => P.l + (iw * (v - 5)) / (xMax - 5);
@@ -277,7 +283,7 @@ export const BubbleChart: React.FC<{
         return (
           <g key={(ghost ? 'g' : 'n') + a.symbol}>
             <circle
-              cx={X(a.volatilityPct)}
+              cx={X(riskX(a))}
               cy={Y(a.expectedReturnPct!)}
               r={r}
               fill={ghost ? 'none' : c}
@@ -287,10 +293,10 @@ export const BubbleChart: React.FC<{
               strokeWidth={ghost ? 1.2 : 1}
               strokeDasharray={ghost ? '3 3' : undefined}
             >
-              <title>{`${a.ticker} · riesgo ${fmtPct(a.volatilityPct)} · beneficio ${fmtPct(a.expectedReturnPct!)} · peso ${fmtPct(a.weightPct)}${a.score != null ? ` · score ${a.score}` : ''}`}</title>
+              <title>{`${a.ticker} · riesgo marginal ${fmtPct(riskX(a))} · aporta ${a.riskContributionPct != null ? fmtPct(a.riskContributionPct) : '—'} del riesgo total · volatilidad propia ${fmtPct(a.volatilityPct)} · beneficio ${fmtPct(a.expectedReturnPct!)} · peso ${fmtPct(a.weightPct)}${a.score != null ? ` · confianza ${a.score}` : ''}`}</title>
             </circle>
             {r >= 12 && (
-              <text x={X(a.volatilityPct)} y={Y(a.expectedReturnPct!) + 3.5} fill="#E2E8F0" fontSize="9.5" fontWeight="700" textAnchor="middle" opacity={ghost ? 0.55 : 1}>
+              <text x={X(riskX(a))} y={Y(a.expectedReturnPct!) + 3.5} fill="#E2E8F0" fontSize="9.5" fontWeight="700" textAnchor="middle" opacity={ghost ? 0.55 : 1}>
                 {a.ticker}
               </text>
             )}
@@ -321,7 +327,7 @@ export const BubbleChart: React.FC<{
           <h3>
             Riesgo / Beneficio por posición <InfoTip k="burbujas" />
           </h3>
-          <div className="opt-hint">Cada burbuja es un activo · tamaño = peso · color = años para duplicar</div>
+          <div className="opt-hint">Cada burbuja es un activo · tamaño = peso · color = años para duplicar · eje X = cuánto riesgo le suma a tu cartera (pasá el mouse para ver su aporte y su volatilidad propia)</div>
         </div>
         <div className="opt-controls">
           <div className="opt-seg">
@@ -355,7 +361,7 @@ export const BubbleChart: React.FC<{
             <text x={P.l - 7} y={Y(v) + 4} fill="#64748B" fontSize="10" textAnchor="end">{v}%</text>
           </g>
         ))}
-        <text x={P.l + iw / 2} y={H - 1} fill="#94A3B8" fontSize="11" textAnchor="middle" fontWeight="600">Riesgo · volatilidad anual</text>
+        <text x={P.l + iw / 2} y={H - 1} fill="#94A3B8" fontSize="11" textAnchor="middle" fontWeight="600">Riesgo marginal en tu cartera (MCTR)</text>
         <text x={13} y={P.t + ih / 2} fill="#94A3B8" fontSize="11" textAnchor="middle" fontWeight="600" transform={`rotate(-90 13 ${P.t + ih / 2})`}>
           Beneficio · retorno esperado anual
         </text>

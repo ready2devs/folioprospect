@@ -237,7 +237,14 @@ describe('obtener más fondos: manual, efectivo y sugerencias', () => {
     expect(mid?.kind).toBe('parcial');
     expect(mid?.grossUsd).toBeCloseTo(1000, 5);
     const midFinal = r.finalAssets.find((a) => a.ticker === 'MID');
-    expect(midFinal?.value).toBeCloseTo(3000, 5);
+    // Con el score de CONFIANZA (R12.1 + consolidación de riesgo),
+    // MID supera el listón de destinos (su volatilidad medida y su
+    // aporte proporcional al riesgo le dan confianza ≥ 65), así que
+    // parte de lo liberado puede volver a MID como destino: el
+    // invariante del test es venta − recompra del motor, no un
+    // número fijo heredado del score viejo.
+    const midAlloc = r.allocations.find((a) => a.ticker === 'MID');
+    expect(midFinal?.value).toBeCloseTo(3000 + (midAlloc?.amountUsd ?? 0), 5);
   });
 
   it('venta manual por encima del saldo se acota y queda total', () => {

@@ -174,7 +174,7 @@ describe('score de CONFIANZA en la predicción (redefinición 2026-11-03 11:23)'
     // (90×35 + 85×30 + 88×25)/90 = 87,8
     expect(s.score!).toBe(88);
     expect(s.scoreBand).toBe('alta');
-    expect(s.scoreComponents).toEqual({ legs: 90, sources: 85, volatility: 88 });
+    expect(s.scoreComponents).toEqual({ legs: 90, sources: 85, risk: 88 });
   });
 
   it('fuentes en conflicto, patas lejos y vol alta → estimación a revisar', () => {

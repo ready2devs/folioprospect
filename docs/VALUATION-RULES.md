@@ -941,3 +941,24 @@ Sin cambios: tesis deteriorada (nunca usó el score), concentración, cinturón 
 
 Independencia (el score no se mueve si cambia solo el RE; nueve REs en vivo con la misma dispersión dan el mismo score), fixtures por componente (acuerdo → alta; conflicto → a revisar; sospechoso → techo y banda; quemador → −6 exactos), y el test R11 de «sin shrinkage» actualizado: la valuación y el RE NO se reescalan por la etiqueta de confianza (eso sigue prohibido), pero el score de confianza sí la usa como insumo — es su componente 1.
 
+## R12.2 — Consolidación de riesgo: un solo módulo medido (directiva del usuario, 2026-11-03 11:45)
+
+Textual: «Que todo quede consolidado en un único análisis de riesgo, que de hecho debés haberlo tomado para poder puntuar el score… y tiene que estar correlacionado todo.»
+
+**El módulo**: `shared/engine/riskMatrix.ts` es el dueño de TODOS los números de riesgo del Optimizador — volatilidades, correlaciones, volatilidad de cartera y la descomposición de Euler (MCTR/PCTR/exceso por riesgo). De él toman el score de confianza, el gráfico de burbujas, el veredicto riesgo/beneficio, las sugerencias por exceso-por-riesgo y la narrativa de mayores aportantes. Sin segundas definiciones: el servidor ya no calcula volatilidades propias (su vieja mezcla realizada/beta desapareció; solo provee los historiales y los datos de respaldo), y el `risk.ts` vecino queda identificado como otra capa (analítica histórica de performance: XIRR/drawdown) que no alimenta estos números.
+
+**Qué mide** (historial de precios de 1 año, cierres diarios que el servidor ya descargaba para los gráficos):
+- Volatilidad medida por activo: desvío muestral de los retornos logarítmicos diarios × √252.
+- Correlación medida por pares: Pearson sobre los retornos diarios alineados por fecha.
+
+**Qué supone** (solo donde no hay datos):
+- Las correlaciones de bloque (industria 0,65 · sector 0,55 · resto 0,45 · cripto-cripto 0,70 · cripto-resto 0,25) quedan degradadas a **priors**: cada correlación medida se encoge hacia su prior con peso n/(n+60) según los días compartidos n (con 60 días, mitad y mitad; con menos de 20 días de solape, prior puro; sin historia, prior).
+- Volatilidad sin medición posible (< 60 cierres): respaldo externo (Finviz mensual anualizado) → beta × 22% (acotado 8–90) → 60% cripto → 26% default. Caja: volatilidad 0 y correlación 0.
+- **La tasa libre de riesgo (4%) es una constante de este módulo y vive solo ahí** (`RISK_FREE_PCT`); el resto de constantes del módulo (priors, K = 60, mínimos, escalera de respaldo) también vive solo ahí.
+
+**El score de confianza consume el módulo**: su componente de riesgo de desvío (peso 25) sale de la volatilidad MEDIDA y del aporte de la posición a la cartera, relativo a su peso: volScore = 100 − (vol − 12) × 2; pctrScore = 120 − 40 × (PCTR/peso) (aporta la mitad de su peso ⇒ 100; en proporción ⇒ 80; el doble ⇒ 40; el triple ⇒ 0); componente = 0,7 × volScore + 0,3 × pctrScore. (La primera calibración — PCTR absoluto — castigaba el tamaño, no el riesgo: una posición dominante pero proporcional colapsaba su propia confianza; la forma relativa castiga aportar MÁS riesgo del que el tamaño sugiere.) El score se computa en dos pasadas dentro de `optimizePortfolio`: la descomposición de Euler (que necesita la matriz completa) alimenta la segunda. Los pares candidatos, fuera de la cartera, puntúan con la volatilidad sola. **Test de consistencia obligatorio**: la volatilidad y el aporte del payload (los campos que leen el gráfico y la ficha) recomputan exactamente el componente de riesgo del score.
+
+**El gráfico de burbujas**: el eje X pasa a ser el **riesgo marginal de la posición (MCTR)** — cuánto riesgo le suma a ESTA cartera — con el aporte (PCTR) y la volatilidad propia en el tooltip. El rombo de promedio sigue en la misma escala por la identidad de Euler: la volatilidad total de la cartera ES el promedio ponderado de los MCTR. El ⓘ lo dice en simple: «el riesgo de cada burbuja es cuánto riesgo le suma esa posición a tu cartera, no cuánto se mueve sola».
+
+**Cableado**: el payload lleva los historiales en los inputs a propósito — la vista del Optimizador recalcula en el navegador cuando el usuario mueve opciones manuales, y con el mismo historial obtiene la misma matriz (mismo payload, mismos campos, mismos números). Tests: 294/294 (10 nuevos del módulo: medición, shrinkage, respaldo, Euler a mano, y el de consistencia score↔payload).
+
