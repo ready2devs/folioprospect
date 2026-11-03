@@ -88,9 +88,17 @@ async function buildAssetInput(h: OptimizerHoldingLike): Promise<OptimizerAssetI
     ]);
     const fv = computeFairValue(fund);
     const finviz = extras.finviz;
-    const components = [fv.dcfValue, fv.analystTarget, fv.fairValue].filter(
-      (x): x is number => x != null && x > 0
-    );
+    // Escenarios alineados con el FV titular: solo los componentes que la
+    // banda de credibilidad efectivamente promedió (fvComponents). Antes se
+    // usaba el dcfValue crudo aunque hubiera quedado fuera de banda, y un
+    // DCF disparado fijaba el escenario optimista (p. ej. VIST 724, MELI 9.759).
+    const scenarioBase: number[] =
+      fv.fvComponents && fv.fvComponents.length > 0
+        ? [...fv.fvComponents]
+        : fv.fairValue != null
+          ? [fv.fairValue]
+          : [];
+    const components = scenarioBase.filter((x) => x > 0);
     // Crecimiento de ganancias totales (ancla GK): mediana entre crecimiento de
     // ventas (Finviz TTM) y crecimiento de ganancias/ingresos de Yahoo.
     const totalGrowth: number[] = [];

@@ -205,6 +205,9 @@ export interface FairValueResult {
   fairValue: number | null;
   dcfValue: number | null;
   analystTarget: number | null;
+  /** Componentes efectivamente promediados en fairValue tras la banda de
+   *  credibilidad (contra los otros componentes, no contra el precio). */
+  fvComponents?: number[];
   priceToFairValue: number | null;
   status: 'Undervalued' | 'Fairly Valued' | 'Overvalued' | 'N/A';
   upsidePct: number | null;

@@ -28,6 +28,53 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+/**
+ * Banda de credibilidad de un componente de valuación, medida contra los
+ * DEMÁS componentes — nunca contra el precio. Un componente se promedia solo
+ * si no contradice groseramente a las otras valuaciones: debe caer dentro de
+ * [0.25×, 3.5×] del promedio de las demás. Medir la banda contra el precio
+ * hacía que el Fair Value saltara cuando el precio cruzaba un umbral, y en el
+ * sentido perverso (SIMO, 2026-11-02: al caer el precio bajo US$192,58, su
+ * DCF de US$48,14 «entró» al promedio y el FV cayó 29,8% sin ningún cambio
+ * fundamental). Si no hay otros componentes, nada contradice al componente
+ * y se incluye.
+ */
+export function withinCredibilityBand(value: number, others: number[]): boolean {
+  if (others.length === 0) return true;
+  const ref = others.reduce((s, x) => s + x, 0) / others.length;
+  return value > ref * 0.25 && value < ref * 3.5;
+}
+
+export interface ValuationComponents {
+  dcf: number | null;
+  multiples: number | null;
+  target: number | null;
+}
+
+/**
+ * Componentes que efectivamente se promedian en el Fair Value. La decisión
+ * de inclusión de cada componente con banda (DCF y múltiplos) depende solo
+ * de los demás componentes, por lo que el Fair Value es invariante ante
+ * movimientos del precio. El target de analistas no lleva banda (como antes).
+ */
+export function selectFairValueComponents(c: ValuationComponents): number[] {
+  const present = (v: number | null): v is number =>
+    v != null && v > 0 && Number.isFinite(v);
+  const othersFor = (self: 'dcf' | 'multiples'): number[] =>
+    [self === 'dcf' ? c.multiples : c.dcf, c.target].filter(present);
+  const components: number[] = [];
+  if (present(c.dcf) && withinCredibilityBand(c.dcf, othersFor('dcf'))) {
+    components.push(c.dcf);
+  }
+  if (present(c.multiples) && withinCredibilityBand(c.multiples, othersFor('multiples'))) {
+    components.push(c.multiples);
+  }
+  if (present(c.target)) {
+    components.push(c.target);
+  }
+  return components;
+}
+
 export function computeFairValue(input: FundamentalInput): FairValueResult {
   const { symbol, currentPrice } = input;
   const isCrypto =
@@ -74,6 +121,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       fairValue: null,
       dcfValue: null,
       analystTarget: null,
+      fvComponents: [],
       priceToFairValue: null,
       status: 'N/A',
       upsidePct: null,
@@ -147,16 +195,13 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   const analystTarget =
     input.targetMeanPrice && input.targetMeanPrice > 0 ? input.targetMeanPrice : null;
 
-  const components: number[] = [];
-  if (dcfValue && dcfValue > currentPrice * 0.25 && dcfValue < currentPrice * 3.5) {
-    components.push(dcfValue);
-  }
-  if (multipleFairValue && multipleFairValue > currentPrice * 0.25 && multipleFairValue < currentPrice * 3.5) {
-    components.push(multipleFairValue);
-  }
-  if (analystTarget) {
-    components.push(analystTarget);
-  }
+  // Inclusión por banda de credibilidad contra los otros componentes (no
+  // contra el precio): ver withinCredibilityBand / selectFairValueComponents.
+  const components = selectFairValueComponents({
+    dcf: dcfValue,
+    multiples: multipleFairValue,
+    target: analystTarget,
+  });
 
   const fairValue =
     components.length > 0
@@ -188,6 +233,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     fairValue,
     dcfValue,
     analystTarget,
+    fvComponents: components,
     priceToFairValue,
     status,
     upsidePct,
