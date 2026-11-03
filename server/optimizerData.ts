@@ -5,11 +5,9 @@
  * Nunca lanza: cada activo degrada a los componentes que sí se pudieron leer.
  */
 import {
-  aggregateFairValue,
   computeFairValue,
   optimizePortfolio,
   scoreAsset,
-  type FvComponentInput,
   type OptimizerAssetInput,
   type OptimizerResult,
   type ScoredPeer,
@@ -17,6 +15,7 @@ import {
 import { cleanTicker } from '../shared/engine/format.js';
 import { fetchAssetChart, fetchAssetExtras, fetchFundamentals } from './yahoo.js';
 import { fetchFinvizFundamentals } from './finviz.js';
+import { fetchSectorContext, finvizIndustrySlug } from './sectorContext.js';
 import { addDays, fetchNasdaqEarningsDay, todayInNewYork } from './earnings.js';
 
 const UA =
@@ -145,6 +144,19 @@ async function buildAssetInput(
       fetchFundamentals(h.symbol, h.lastPrice),
       volatilityFromChart(h.symbol),
     ]);
+    // Contexto del sector (R11): medianas de la industria (pares
+    // grandes de Finviz) que alimentan el múltiplo justificado del
+    // motor — P/E forward, ROIC y crecimiento mediano del sector.
+    try {
+      const ctx = await fetchSectorContext(ticker);
+      if (ctx) {
+        fund.industryForwardPe = ctx.forwardPe;
+        fund.sectorRoicPct = ctx.roicPct;
+        fund.sectorGrowth5yPct = ctx.growth5yPct;
+      }
+    } catch {
+      /* sin contexto: el motor cae por su escalera documentada */
+    }
     const fv = computeFairValue(fund);
     const finviz = extras.finviz;
     // Escenarios alineados con el FV titular: solo los componentes que la
@@ -170,78 +182,21 @@ async function buildAssetInput(
     const fcfMedianNonPositive =
       fcfHist.length >= 3 ? medianOf(fcfHist) <= 0 : null;
 
-    // Normalización a mitad de ciclo (§6): si el yield forward implícito
-    // (EPS usado ÷ precio — ambos del instrumento cotizado, misma base)
-    // supera 20%, el EPS de pico se presume no permanente. La
-    // normalización es INVARIANTE A LA BASE: escala el EPS forward por
-    // la razón mediana/último año de la MISMA serie reportada de EDGAR
-    // (si el emisor reporta por acción ordinaria y cotiza por ADS, la
-    // razón cancela la base; comparar niveles sería mezclar peras con
-    // manzanas — el caso SIMO). El componente normalizado se reagrega
-    // con la MISMA función del motor de FV. El FV de la ficha no cambia.
-    let fvBaseUsed = fv.fairValue;
-    let fvConfidenceUsed = fv.fvConfidence ?? null;
-    let fvRangeUsed: [number, number] | null = fv.fvRange ?? null;
-    let fvComponentCountUsed: number | null =
+    // SIN normalización a mitad de ciclo (R11): la vieja regla §6
+    // re-escalaba el EPS forward a su mediana histórica cuando el
+    // yield forward superaba 20% — un juicio narrativo codificado
+    // («este pico no es permanente») que contradice la visibilidad
+    // hacia adelante que el propio consenso ya trae (capacidad
+    // vendida años, contratos firmados). Si el consenso forward está
+    // mal, es problema del consenso: el sistema usa el FV del motor
+    // TAL CUAL, el mismo de la ficha del activo.
+    const fvBaseUsed = fv.fairValue;
+    const fvConfidenceUsed = fv.fvConfidence ?? null;
+    const fvRangeUsed: [number, number] | null = fv.fvRange ?? null;
+    const fvComponentCountUsed: number | null =
       fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0;
-    let cyclicalNormalized = false;
-    let midCycleEps: number | null = null;
-    const price = h.lastPrice;
-    const fwdYield =
-      forwardEpsUsed != null && forwardEpsUsed > 0 && price > 0
-        ? forwardEpsUsed / price
-        : null;
-    const epsHist = (fund.epsHistory ?? []).filter(
-      (x): x is number => x != null && Number.isFinite(x)
-    );
-    const cyclicalTrigger = fwdYield != null && fwdYield > 0.2;
-    if (cyclicalTrigger && fv.multiplesValue != null && forwardEpsUsed != null && forwardEpsUsed > 0) {
-      const medAll = epsHist.length >= 3 ? medianOf(epsHist) : null;
-      const latestEps = epsHist.length >= 3 ? epsHist[0] : null;
-      // EPS forward re-escalado a mitad de ciclo (base del instrumento).
-      midCycleEps =
-        medAll != null && medAll > 0 && latestEps != null && latestEps > 0
-          ? forwardEpsUsed * (medAll / latestEps)
-          : null;
-      if (midCycleEps != null && midCycleEps > 0 && midCycleEps < forwardEpsUsed) {
-        const multiple = fv.multiplesValue / forwardEpsUsed;
-        // Calidad por componente alineada con fvComponents (mismo orden
-        // de construcción dcf → múltiplos → target que computeFairValue).
-        const keyOrder: Array<'dcf' | 'multiples' | 'target'> = [];
-        if (fv.dcfValue != null) keyOrder.push('dcf');
-        if (fv.multiplesValue != null) keyOrder.push('multiples');
-        if (fv.analystTarget != null) keyOrder.push('target');
-        const qualityOf = (k: string): number | undefined => {
-          const i = keyOrder.indexOf(k as 'dcf' | 'multiples' | 'target');
-          return i >= 0 ? fv.fvComponentWeights?.[i] : undefined;
-        };
-        const pool: FvComponentInput[] = [];
-        // La pata 'dcf' es el DCF corto sobre ganancias (R10): escala
-        // linealmente con el nivel de EPS (flujos y terminal), así que
-        // la normalización cíclica la re-escala por la misma razón que
-        // a los múltiplos.
-        if (fv.dcfValue != null)
-          pool.push({
-            key: 'dcf',
-            value: fv.dcfValue * (midCycleEps / forwardEpsUsed),
-            quality: qualityOf('dcf'),
-          });
-        pool.push({ key: 'multiples', value: midCycleEps * multiple, quality: qualityOf('multiples') });
-        if (fv.analystTarget != null) pool.push({ key: 'target', value: fv.analystTarget, quality: qualityOf('target') });
-        const agg = aggregateFairValue(pool, {
-          currentPrice: price,
-          flags: [...(fv.fvFlags ?? []), 'cyclicalNormalized'],
-        });
-        if (agg.fairValue != null) {
-          fvBaseUsed = agg.fairValue;
-          fvConfidenceUsed = agg.confidence;
-          fvRangeUsed = agg.range;
-          fvComponentCountUsed = agg.components.length;
-          components = agg.components.map((c) => c.value);
-          cyclicalNormalized = true;
-        }
-      }
-    }
+    const cyclicalNormalized = false;
+    const midCycleEps: number | null = null;
     // Crecimiento de ganancias totales (ancla GK): mediana entre crecimiento de
     // ventas (Finviz TTM) y crecimiento de ganancias/ingresos de Yahoo.
     const totalGrowth: number[] = [];
@@ -269,14 +224,15 @@ async function buildAssetInput(
       analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
       fvConfidence: fvConfidenceUsed,
       fvComponentCount: fvComponentCountUsed,
-      // Piso/techo del rango del FV: el piso gobierna la convergencia
-      // solo si el tripwire modelSuspect disparó (desapilado §13).
+      // Piso/techo del rango del FV: información que acompaña al FV
+      // (desde R11 ningún extremo gobierna la convergencia).
       fvRangeLow: fvRangeUsed?.[0] ?? null,
       fvRangeHigh: fvRangeUsed?.[1] ?? null,
       // Tripwire de plausibilidad del FV (R9): FV > 2× target o > 2,5×
-      // precio. La marca vive en los flags de la agregación.
+      // precio. ETIQUETA informativa; no cambia ningún número (R11).
       fvModelSuspect: (fv.fvFlags ?? []).includes('modelSuspect'),
-      // Desacuerdo de signo entre fuentes del EPS forward (pase D).
+      // Desacuerdo de signo entre fuentes del EPS forward:
+      // trazabilidad; no altera ningún número (R11).
       epsSignDisagreement: fv.epsSignDisagreement ?? false,
       forwardEpsUsed,
       fcfMedianNonPositive,
@@ -341,28 +297,8 @@ async function buildAssetInput(
   }
 }
 
-/** Slug de industria de Finviz (ind_...) desde la página de la acción. */
-const slugCache = new Map<string, { slug: string | null; industryName: string | null; at: number }>();
-async function finvizIndustry(ticker: string): Promise<{ slug: string | null; industryName: string | null }> {
-  const c = slugCache.get(ticker);
-  if (c && Date.now() - c.at < 6 * 3600 * 1000) return c;
-  let out: { slug: string | null; industryName: string | null } = { slug: null, industryName: null };
-  try {
-    const res = await fetch(`https://finviz.com/quote.ashx?t=${encodeURIComponent(ticker)}&p=d`, {
-      headers: { 'user-agent': UA },
-      signal: AbortSignal.timeout(7000),
-    });
-    if (res.ok) {
-      const html = await res.text();
-      const m = html.match(/f=ind_([a-z0-9_]+)/i);
-      out = { slug: m ? m[1] : null, industryName: null };
-    }
-  } catch {
-    /* sin industria: no hay pares para este activo */
-  }
-  slugCache.set(ticker, { ...out, at: Date.now() });
-  return out;
-}
+/** Slug de industria de Finviz (ind_...): vive en sectorContext.ts
+ *  (compartido con el contexto del múltiplo justificado, R11). */
 
 async function fetchIndustryPeers(
   slug: string,
@@ -393,6 +329,18 @@ async function fetchIndustryPeers(
       const price = finviz?.price ?? extras?.finviz?.price ?? null;
       if (!price) continue;
       const fundAtPrice = await fetchFundamentals(symbol, price);
+      // El par se valúa con el contexto de SU industria (la misma que
+      // lo trajo): múltiplo justificado completo, como las posiciones.
+      try {
+        const ctx = await fetchSectorContext(t);
+        if (ctx) {
+          fundAtPrice.industryForwardPe = ctx.forwardPe;
+          fundAtPrice.sectorRoicPct = ctx.roicPct;
+          fundAtPrice.sectorGrowth5yPct = ctx.growth5yPct;
+        }
+      } catch {
+        /* sin contexto: escalera del motor */
+      }
       const fv = computeFairValue(fundAtPrice);
       const input: OptimizerAssetInput = {
         symbol, ticker: t, name: t, sector: industryName, industry: industryName,
@@ -470,14 +418,14 @@ export async function buildOptimizerResult(
   const industries = new Map<string, string>(); // industryName -> slug
   for (const inp of inputs) {
     if (inp.isCrypto || inp.isCash) continue;
-    const { slug } = await finvizIndustry(inp.ticker);
+    const slug = await finvizIndustrySlug(inp.ticker);
     if (slug) industries.set(inp.sector + '|' + slug, slug);
   }
   // La industria del motor es el sector si no hay nombre fino: usamos el slug
   // como clave de industria para agrupar pares y salidas del mismo rubro.
   for (const inp of inputs) {
     if (inp.isCrypto || inp.isCash) continue;
-    const { slug } = await finvizIndustry(inp.ticker);
+    const slug = await finvizIndustrySlug(inp.ticker);
     if (slug) inp.industry = slug.replace(/_/g, ' ');
   }
   for (const [, slug] of industries) {

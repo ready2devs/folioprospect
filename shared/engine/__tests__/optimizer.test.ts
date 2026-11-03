@@ -6,9 +6,6 @@ import {
   yearsToDoubleFor,
   optimizePortfolio,
   scoreAsset,
-  shrunkFairValue,
-  convergenceTargetFor,
-  reConfidenceFor,
   thesisSignalsFor,
   fmtPairPct,
   fmtPairYears,
@@ -64,9 +61,10 @@ describe('Grinold-Kroner', () => {
     const gk = grinoldKroner(
       base({ earningsGrowthTotalPct: 90, forwardPe: 10, industryForwardPe: 40 })
     );
-    // Crecimiento acotado a +60 (protección numérica, no fade);
-    // repricing acotado a +5.
-    expect(gk).toBeCloseTo(65, 5);
+    // Crecimiento acotado a +100 (protección numérica anti-basura,
+    // R11: el tope de +60 ataba en más de un tercio de la cartera y
+    // rankeaba él en vez del ancla); repricing acotado a +5.
+    expect(gk).toBeCloseTo(95, 5);
   });
 
   it('sin crecimiento estimable devuelve null', () => {
@@ -287,29 +285,37 @@ describe('obtener más fondos: manual, efectivo y sugerencias', () => {
   });
 });
 
-describe('shrinkage por confianza (Optimizador profesional §1)', () => {
-  it('encoge la brecha FV−precio según la confianza; sin etiqueta asume Media', () => {
-    expect(shrunkFairValue(100, 200, 'Alta')).toBe(200);
-    expect(shrunkFairValue(100, 200, 'Media')).toBeCloseTo(170);
-    expect(shrunkFairValue(100, 200, 'Baja')).toBeCloseTo(140);
-    expect(shrunkFairValue(100, 200, null)).toBeCloseTo(170);
-    expect(shrunkFairValue(100, null, 'Alta')).toBeNull();
+describe('sin shrinkage por confianza (R11: la confianza es etiqueta, no reescala)', () => {
+  it('el FV efectivo es el FV publicado para Alta, Media, Baja o sin etiqueta', () => {
+    const mk = (fvConfidence: 'Alta' | 'Media' | 'Baja' | null) =>
+      base({
+        price: 100, qty: 10, value: 1000, fvBase: 200, fvConfidence,
+        fvComponentCount: 2, earningsGrowthTotalPct: 10, analystTarget: 150,
+        volatilityPct: 30, roicPct: 15,
+      });
+    for (const c of ['Alta', 'Media', 'Baja', null] as const) {
+      const a = scoreAsset(mk(c), 1000, SCORE_OPTS);
+      expect(a.fvEffective).toBe(200);
+      expect(a.conservativeConvergence).toBe(false);
+    }
   });
 
-  it('una valuación Baja produce menos convergencia, menos RE y menos score que la misma valuación Alta', () => {
+  it('misma valuación con etiqueta Alta o Baja: MISMA convergencia y MISMO RE; el score solo difiere por el ajuste acotado', () => {
     const mk = (fvConfidence: 'Alta' | 'Baja') =>
       base({
         price: 100, qty: 10, value: 1000, fvBase: 200, fvConfidence,
-        fvComponentCount: 3, earningsGrowthTotalPct: 10, analystTarget: 150,
+        fvComponentCount: 2, earningsGrowthTotalPct: 10, analystTarget: 150,
         volatilityPct: 30, roicPct: 15,
       });
     const alta = scoreAsset(mk('Alta'), 1000, SCORE_OPTS);
     const baja = scoreAsset(mk('Baja'), 1000, SCORE_OPTS);
-    expect(alta.fvEffective).toBe(200);
-    expect(baja.fvEffective).toBeCloseTo(140);
-    expect(baja.fvConvergencePct!).toBeLessThan(alta.fvConvergencePct!);
-    expect(baja.expectedReturnPct!).toBeLessThan(alta.expectedReturnPct!);
-    expect(baja.score!).toBeLessThan(alta.score!);
+    expect(baja.fvConvergencePct!).toBeCloseTo(alta.fvConvergencePct!, 6);
+    expect(baja.expectedReturnPct!).toBeCloseTo(alta.expectedReturnPct!, 6);
+    // La confianza solo entra como UNA de las patas del ajuste del
+    // score (±15 pts en total): la diferencia queda muy por debajo
+    // de la banda completa.
+    expect(Math.abs(baja.score! - alta.score!)).toBeLessThanOrEqual(15);
+    expect(baja.scoreVelocity!).toBeCloseTo(alta.scoreVelocity!, 6);
   });
 
   it('FV/precio > 3: sigue valuado y rankeado, pero NO es destino de fondos', () => {

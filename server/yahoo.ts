@@ -1474,6 +1474,9 @@ export async function fetchFundamentals(
           try {
             const finviz = await fetchFinvizFundamentals(symbol);
             input.finvizForwardPe = finviz?.forwardPe ?? null;
+            // ROIC real de Finviz: insumo del múltiplo justificado y
+            // del ancla sustentable (R11). Yahoo no publica ROIC.
+            input.roicPct = finviz?.roicPct ?? null;
             // Segunda fuente de EPS forward: primero el EPS implícito de
             // Finviz (mismo horizonte NTM, proveedor independiente); si no
             // está, el promedio de estimaciones +1y de Yahoo (año fiscal,

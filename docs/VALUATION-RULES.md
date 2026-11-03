@@ -358,6 +358,12 @@ histórica fuera del promedio.)**
 
 ## R10 — Adenda 2026-11-03 (noche): arquitectura simplificada de tres patas y ancla histórica
 
+> **SUPERADA por R11 (más abajo, mismo día).** La arquitectura de
+> tres patas duró unas horas: el usuario detectó que la pata de DCF
+> sobre ganancias contaba el crecimiento dos veces y que la tabla
+> ordenaba por duplicación con scores que no la acompañaban. R10
+> queda como historial; el sistema vigente es R11.
+
 **Decisión del usuario (2026-11-03), que REVIERTE su decisión del
 2-nov («el DCF de FCF histórico déjalo como está»).** Motivo declarado:
 el DCF sobre flujos reportados distorsiona ante cambios de paradigma
@@ -460,3 +466,207 @@ tercera fuente directa, eso escalaba la mayoría (Yahoo 10 + Finviz
 es la primitiva primaria (el EPS forward de Yahoo, del que se
 recomputa todo ratio) y las demás fuentes se expresan en esa base en
 cualquier dirección; sin primitiva primaria rige el criterio legado.
+
+## R11 — Adenda 2026-11-03 (madrugada): el sistema forward simple — dos estimaciones y el múltiplo justificado
+
+**Doctrina del usuario (2026-11-03 04:29, tras cinco horas de
+correcciones al sistema anterior):** «para evaluar una empresa es
+más importante el futuro que el pasado… aplica algo sistémico y que
+no esté sujeto a subjetividades; lo más relevante son las ventas
+futuras, los EPS futuros y cómo hace rendir una empresa esos
+ingresos (el ROIC, ROE o similar)». Y su ejemplo rector: Micron
+tiene su capacidad vendida por los próximos ~2 años — cualquier
+«normalización» del EPS forward que reemplace al consenso por una
+historia de ciclo queda prohibida: si el consenso forward está mal,
+es problema del consenso, no licencia para que el modelo lo
+reemplace. **Método elegido por el usuario (04:40): «múltiplo
+forward justificado, promediado con el consenso»**, fundamentado en
+la investigación guardada en
+`~/workspace/research_notes/valuation-forward-simple-20261103/research.md`.
+
+### El sistema en cinco líneas
+
+1. El valor justo (FV) es el **promedio de dos estimaciones
+   independientes, ambas 100% hacia adelante**: el target de
+   consenso de los analistas y una fórmula propia.
+2. La fórmula es **EPS forward de consenso × múltiplo justificado**:
+   el múltiplo parte del P/E forward del sector y se ajusta por el
+   crecimiento y el ROIC de la empresa contra los de su sector, con
+   la fórmula del múltiplo justificado de Damodaran.
+3. **Sin overrides**: nada normaliza el EPS, nada encoge el FV por
+   confianza, nada converge a pisos, nada penaliza desacuerdos de
+   signo. La confianza, la sospecha del modelo y el PEG son
+   **etiquetas** que no tocan ningún número.
+4. La cadena de reparación multifuente (R0) sigue vigente: ningún
+   activo sin valuación; exclusión solo por imposibilidad
+   matemática (sin EPS futuro positivo no hay fórmula: FV = target).
+5. El DCF sobre ganancias **salió del promedio** (contaba el
+   crecimiento dos veces) y el DCF de FCF histórico sigue fuera,
+   como referencia («valor según la historia reportada»).
+
+### Pata 1 — Target de consenso
+
+Promedio de los targets que publican las fuentes (Yahoo —media o,
+en su defecto, mediana del mismo consenso—, Finviz y TradingView):
+cada fuente entra con la agregación que ella misma publica (FactSet
+agrega por mediana bottom-up; Simply Wall St y Yahoo publican
+promedio a 12 meses) y entre fuentes se promedia, por la doctrina
+del usuario de ampliar la muestra. El componente vive **siempre
+dentro del rango [low, high] de la unión de fuentes** y está
+**exento de la winsorización entre patas en ambas direcciones**: la
+banda anti-basura [0,25×, 3,5×] contra el promedio de las demás
+patas sigue existiendo para la pata de fórmula, pero jamás puede
+levantar el target sobre su máximo de consenso ni hundirlo bajo su
+mínimo (era el defecto que en fase 3 dejó el target de NBIS en
+86,64 contra un consenso de 283,86, y que volvía a aparecer contra
+MELI cuando su fórmula colapsaba).
+
+### Pata 2 — La fórmula: EPS forward × múltiplo justificado
+
+El EPS es el de consenso, reparado entre fuentes (R2), jamás
+reemplazado por un juicio del modelo. El múltiplo se construye con
+esta escalera (la primera que computa, manda):
+
+1. **Sector ajustado**: `M = P/E_sector × clamp(J_empresa / J_sector; 0,6; 1,6)`, donde `J` es el múltiplo justificado de
+   Damodaran en su forma leading (derivación algebraica de dos
+   fórmulas con fuente: el P/E justificado del modelo de Gordon,
+   `P/E = Payout / (ke − g)`, con el payout implicado por el
+   crecimiento sustentable, `Payout = 1 − g/R`, de la identidad
+   `g = b × R`):
+   `J = (1 − g/R) / (ke − g)`, con `R` = ROIC (respaldo: ROE),
+   `ke` = 10% único, y `g` = crecimiento de largo plazo acotado al
+   techo de estado estable de 5% (la fórmula es un objeto de estado
+   estable: con `g` de corto plazo el denominador `ke − g` explota;
+   Damodaran exige además `g` terminal ≤ tasa libre de riesgo).
+   El lado empresa y el lado sector usan la MISMA fórmula y la
+   misma fuente de datos (Finviz): del sector se toman las medianas
+   de los pares grandes de su industria (P/E forward, ROIC y
+   crecimiento a 5 años).
+2. **Sector pelado**: si el ajuste no es computable (falta ROIC o
+   crecimiento de algún lado), manda el P/E forward del sector.
+3. **Justificado por fundamentos propios**: sin sector, `J` de la
+   empresa acotado a [3×, 45×].
+4. **P/E propio recomputado** (precio ÷ EPS reparado).
+5. **Tabla histórica por moat** (26/20/15): último recurso; ninguna
+   fuente relevada la avala como estándar — queda solo para el modo
+   degradado sin ningún dato de mercado ni de fundamentos.
+
+**Regla de comparabilidad del sector (anti-basura, de un solo
+lado):** si el P/E del sector más que **duplica** al P/E forward
+propio, importar ese múltiplo inflaría la fórmula con un régimen
+ajeno al activo (una memoria que cotiza a ~4× dentro del sector
+amplio de semiconductores a ~21×; una madura a ~21× dentro de una
+industria de software a ~52×): el sector se descarta como conjunto
+comparable y la fórmula cae al peldaño 3. Cuando el sector es más
+barato que el activo, su múltiplo entra igual: es la referencia
+conservadora estándar de la valuación relativa y la brecha es
+información, no error. Factor 2: decisión de diseño simple.
+
+**La `g` de la fórmula** es el crecimiento de EPS a 5 años del
+consenso (la fórmula la acota sola al 5% de estado estable). No se
+le aplica el ancla por régimen de Grinold-Kroner: esa ancla madura
+(ROIC × reinversión, con reinversión = (capex − depreciación) /
+ingreso neto) subestima sistemáticamente la reinversión de las
+empresas livianas en activos, cuyo gasto real de crecimiento es el
+I+D que va por resultados (Damodaran: para medir esa reinversión
+hay que capitalizar el I+D; sin ese ajuste, la `g` de un AAPL cae a
+~0,7% y su múltiplo se deprime sin fundamento en los datos
+forward). El ancla por régimen sigue gobernando el crecimiento de
+Grinold-Kroner en la capa de retorno y queda como respaldo de la
+fórmula cuando no hay consenso a 5 años.
+
+### Pesos: pie de igualdad modulado por calidad medible
+
+Target y fórmula pesan **50/50 cuando ambas descansan en datos
+firmes**. La calidad de cada pata es medible, no opinada: target —
+cobertura de analistas y dispersión de su rango (≥5 analistas y
+dispersión ≤ 0,6 ⇒ 1,0; 3–4 ⇒ 0,8; 1–2 o fuente única sin conteo ⇒
+0,45; 2+ fuentes sin conteo ⇒ 0,8); fórmula — factor EPS (≥2
+proveedores directos ⇒ 1,0; 1 ⇒ 0,75; solo derivado ⇒ 0,55) ×
+firmeza del múltiplo (sector ajustado ⇒ 1,0; sector pelado ⇒ 0,85;
+justificado propio ⇒ 0,7; P/E propio ⇒ 0,55; tabla ⇒ 0,45). Si la
+fórmula depende de datos débiles, su peso baja y el target manda.
+La agregación conserva el ratio acotado [0,5×, 2×] del peso
+igualitario ya desplegado.
+
+### PEG: orientador, nunca valuador
+
+Directiva textual del usuario: el PEG «no sirve para valuar en sí,
+sino como orientador». El motor calcula y expone tres PEG (P/E ÷
+crecimiento de largo plazo del consenso): al precio actual, el de
+la fórmula (múltiplo justificado ÷ crecimiento) y el del sector.
+Un PEG de fórmula fuera de [0,5×, 2×] el del sector levanta el flag
+`pegFormulaOutlierVsSector`: marca la estimación para **revisión de
+datos** y no ajusta ningún número (Easton 2004: el PEG es una
+heurística sesgada a la baja, útil para mirar, no para construir
+valor; la regla «PEG ≈ 1» de Lynch es práctica, no fórmula).
+
+### Qué salió del motor con R11 (y por qué)
+
+- **Normalización de EPS de mitad de ciclo** (disparador: yield
+  forward implícito > 20%): juicio narrativo codificado; contradice
+  la visibilidad forward. Eliminada por completo.
+- **Shrinkage del FV por confianza** (Alta ×1,0 / Media ×0,7 / Baja
+  ×0,4) en la capa de retorno: reescalaba el número por una
+  etiqueta. La convergencia usa el FV tal como se publica.
+- **Convergencia al piso del rango bajo `modelSuspect`**: el
+  tripwire queda como flag y etiqueta de confianza, sin tocar el
+  número.
+- **Penalizaciones por desacuerdo de signo del EPS** (exclusión de
+  la pata de ganancias, baja de escalón de confianza en RE, GK sin
+  crecimiento de EPS): la reparación ya resuelve el EPS; el flag
+  queda como información.
+- **Haircut ×0,75 al DCF emergente y haircut de base cíclica del
+  ancla**: castigos sobre la historia; el ancla usa la mediana de
+  3–5 años si es positiva y si no el TTM, pelados.
+- **Tope sectorial R9 y prima de moat sobre el múltiplo**: la tabla
+  por moat dejó de construir el múltiplo; lo construye la fórmula
+  justificada contra el sector.
+- **El clamp de crecimiento de Grinold-Kroner subió de +60 a +100**:
+  ataba en 7 de 19 activos reales (más de un tercio) y rankeaba él
+  en vez del ancla por régimen; a +100 solo corta basura numérica.
+
+### Parámetros y su estado
+
+| Parámetro | Valor | Estado |
+|---|---|---|
+| Fórmula del múltiplo justificado `J = (1 − g/R)/(ke − g)` | Damodaran/CFA | **Con fuente** (derivación algebraica de fórmulas con fuente) |
+| `ke` único | 10% | Decisión de diseño simple (la alternativa CAPM por empresa de Simply Wall St se descartó por simpleza; el promedio histórico de Morningstar, 10,5% en un documento de 2004, no es una tasa vigente) |
+| Techo de `g` en la fórmula | 5% | Criterio de estado estable con fuente en el concepto (Damodaran: `g` terminal ≤ libre de riesgo); el número es decisión de diseño simple |
+| Ajuste sectorial acotado | [0,6×, 1,6×] | Decisión de diseño simple (anti-basura) |
+| Comparabilidad del sector | P/E sector > 2× P/E propio ⇒ no comparable | Decisión de diseño simple (anti-basura) |
+| Justificado absoluto acotado | [3×, 45×] | Decisión de diseño simple |
+| Pesos target/fórmula | 50/50 según calidad medible | Decisión de diseño simple (ninguna valuadora relevada promedia target con fórmula: Morningstar y Simply Wall St dan peso 0 al target dentro de su FV; aquí manda la doctrina del usuario de promediar estimaciones independientes) |
+| Banda entre patas | [0,25×, 3,5×] vs promedio de las demás; target exento | Banda: mecanismo ya desplegado (R1/R9); exención del target: directiva del usuario (el target entra en su rango real, jamás recortado por las otras patas) |
+| Agregación del target | La de cada fuente; promedio entre fuentes | Intra-fuente con fuente (FactSet: mediana bottom-up; SWS/Yahoo: promedio); entre fuentes: decisión de diseño simple |
+| Clamp de crecimiento GK | [−30%, +100%]; clamp de RE [−50%, +80%] | Decisión de diseño simple (anti-basura; el de RE es la corrección del usuario de §15) |
+| PEG outlier | Fuera de [0,5×, 2×] el del sector ⇒ flag | Decisión de diseño simple; el rol de orientador, con fuente (Easton 2004) |
+
+### Fuentes principales (investigación completa en el research.md citado)
+
+- Damodaran, materiales de Stern — P/E justificado desde el modelo
+  de Gordon y determinantes de múltiplos (V/EBIT(1−t) en función de
+  g, reinversión/ROIC y WACC): pages.stern.nyu.edu/~adamodar
+  (session25slides.pdf; valpacket2and3spr19.pdf).
+- FactSet / J.P. Morgan Guide to the Markets — forward P/E =
+  precio ÷ EPS de consenso de los próximos 12 meses, bottom-up.
+- LSEG I/B/E/S — agregación de consenso (media simple; mediana en
+  FactSet).
+- Simply Wall St, modelo público (GitHub: Company-Analysis-Model) —
+  DCF en dos etapas con CAPM y g terminal = promedio del bono a 10
+  años; el target de consenso es un chequeo separado, con peso cero
+  en su FV.
+- Morningstar — FV propio por DCF con fade de RONIC hacia el costo
+  de capital según moat; el target no integra su FV.
+- Easton (2004), «PE Ratios, PEG Ratios, and Estimating the
+  Implied Expected Rate of Return on Equity Capital» (SSRN
+  439764) — el PEG como heurística sesgada.
+
+### Score (puntero)
+
+La composición del score cambió en el mismo pase por directiva del
+usuario (04:34): la capacidad de duplicar es la base del puntaje y
+las demás dimensiones son ajustes acotados a ±15 puntos. Detalle en
+docs/OPTIMIZER-PROFESSIONAL.md §16 y en los textos de metodología
+de la app.
+

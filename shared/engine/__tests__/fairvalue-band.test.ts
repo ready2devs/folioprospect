@@ -12,14 +12,13 @@ import {
 // MU bajo US$715,69). Con el promedio winsorizado la referencia es el
 // promedio de los otros componentes y los componentes se anclan al EPS
 // reparado (no al P/E publicado).
-// Matiz R9 (mismo día): dos cotas deliberadas SÍ son relativas al
-// mercado — el tope sectorial del múltiplo (referencia: el P/E forward
-// del propio activo, o el de la industria si se conoce) y la
-// normalización de la base del DCF por FCF yield. Son funciones
-// CONTINUAS del precio: mueven el FV suavemente, jamás con el salto
-// discreto del artefacto original. La invariancia exacta se mantiene
-// cuando ninguna de las dos cotas está activa (fixture de abajo) y la
-// agregación pura nunca dependió del precio.
+// R11: las cotas relativas al mercado de R9 (tope sectorial del
+// múltiplo, haircut cíclico de la base) SALIERON del motor. El
+// múltiplo de la fórmula sale del sector y de los fundamentos
+// (ROIC/crecimiento), no del precio: con la fórmula activa el FV es
+// directamente INVARIANTE al precio. El único peldaño que toca el
+// precio es el respaldo 'propio' (sin sector ni fundamentos: la pata
+// ES el precio, continua por construcción).
 const C = (key: FvComponentInput['key'], value: number): FvComponentInput => ({
   key,
   value,
@@ -94,18 +93,28 @@ describe('invariancia del FV frente al precio (computeFairValue, EPS anclado)', 
     expect(new Set(fvs).size).toBe(1);
   });
 
-  it('con el tope sectorial activo el FV se mueve CONTINUO, sin el salto del artefacto', () => {
-    // El fixture original cotiza a P/E propio 5,6–14 contra un
-    // múltiplo de tabla de 20: el tope R9 ata y el componente de
-    // múltiplos sigue al precio de forma proporcional y continua. Lo
-    // que no puede volver es el SALTO discreto al cruzar un umbral.
+  it('con la fórmula activa (justificado por fundamentos) el FV es INVARIANTE al precio', () => {
+    // El fixture trae ROE (25%) pero ningún dato de precio entra al
+    // múltiplo justificado: J = (1 − 0/0,25)/0,10 = 10× sobre el EPS
+    // reparado, a cualquier precio. Es la propiedad que reemplaza a
+    // la «continuidad» de R9: ya no hay función del precio que pueda
+    // saltar, porque no hay función del precio.
     const prices = [120, 187.9, 192.58, 250, 300];
     const fvs = prices.map((p) => computeFairValue(anchored(p)).fairValue ?? NaN);
     expect(fvs.every((v) => Number.isFinite(v))).toBe(true);
+    expect(new Set(fvs).size).toBe(1);
+  });
+
+  it('el respaldo «propio» (sin sector ni fundamentos) sigue al precio de forma continua, sin saltos', () => {
+    const bare = (price: number): FundamentalInput => ({
+      ...anchored(price),
+      returnOnEquity: undefined,
+    });
+    const prices = [120, 187.9, 192.58, 250, 300];
+    const fvs = prices.map((p) => computeFairValue(bare(p)).fairValue ?? NaN);
+    expect(fvs.every((v) => Number.isFinite(v))).toBe(true);
     for (let i = 1; i < fvs.length; i++) {
       expect(fvs[i]).toBeGreaterThan(fvs[i - 1]);
-      // Continuidad: entre precios cercanos (187,9 → 192,58, +2,5%) el
-      // FV no puede saltar más que unos pocos puntos porcentuales.
       if (prices[i] / prices[i - 1] < 1.05) {
         expect(fvs[i] / fvs[i - 1]).toBeLessThan(1.1);
       }

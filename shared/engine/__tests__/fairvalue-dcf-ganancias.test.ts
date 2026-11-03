@@ -85,7 +85,7 @@ describe('DCF corto sobre ganancias: sendero explícito', () => {
   });
 });
 
-describe('las tres patas en computeFairValue (R10)', () => {
+describe('las patas en computeFairValue (método elegido: dos patas; el DCF de ganancias salió del promedio)', () => {
   const bankLike = {
     symbol: 'BANK',
     currentPrice: 25,
@@ -106,23 +106,27 @@ describe('las tres patas en computeFairValue (R10)', () => {
     analystCount: 20,
   };
 
-  it('un banco conserva sus TRES patas y el ancla vacía no lo castiga', () => {
+  it('un banco conserva sus DOS patas (fórmula + target) y el ancla vacía no lo castiga', () => {
     const r = computeFairValue(bankLike);
     expect(r.fairValue).not.toBeNull();
-    expect(r.fvComponents).toHaveLength(3);
-    expect(r.dcfValue).not.toBeNull(); // pata 3 = DCF sobre ganancias
-    expect(r.dcfValue!).toBeGreaterThan(0);
+    expect(r.fvComponents).toHaveLength(2);
+    // El DCF sobre ganancias ya no es pata: dcfValue va null y su
+    // salida del promedio queda registrada en las exclusiones.
+    expect(r.dcfValue).toBeNull();
+    const excl = (r.fvExcluded ?? []).find((e) => e.component === 'dcf');
+    expect(excl?.reason).toBe('retiredFromAverage');
     expect(r.historicalAnchorValue).toBeNull();
     const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov).toBeTruthy();
     expect(prov!.usedValue).toBeNull();
-    // El target lidera el promedio con esta cobertura.
+    // Fórmula firme (EPS directo + sector) y target con cobertura:
+    // los pesos quedan en pie de igualdad (pool: [múltiplos, target]).
     const w = r.fvComponentWeights ?? [];
-    expect(w[2]).toBeGreaterThan(w[0]);
-    expect(w[2]).toBeGreaterThan(w[1]);
+    expect(w).toHaveLength(2);
+    expect(w[1]).toBeGreaterThanOrEqual(w[0]);
   });
 
-  it('EPS de consenso ≤ 0: la pata 3 es n/m y el activo se valúa con las patas restantes (R0)', () => {
+  it('EPS de consenso ≤ 0: la fórmula es n/m y el activo se valúa con el target (R0)', () => {
     const r = computeFairValue({
       symbol: 'NEG',
       currentPrice: 110,
@@ -136,14 +140,15 @@ describe('las tres patas en computeFairValue (R10)', () => {
       analystCount: 14,
     });
     expect(r.dcfValue).toBeNull();
-    const excl = (r.fvExcluded ?? []).find((e) => e.component === 'dcf');
+    expect(r.multiplesValue).toBeNull();
+    const excl = (r.fvExcluded ?? []).find((e) => e.component === 'multiples');
     expect(excl?.reason).toBe('notMeaningful');
     // Queda el target, solo: el activo NO queda sin valuación.
     expect(r.fairValue).toBe(290);
     expect(r.fvFlags).toContain('singleComponent');
   });
 
-  it('desacuerdo de signo irresoluble: la pata 3 es n/m pero los múltiplos siguen valuando', () => {
+  it('desacuerdo de signo entre fuentes: la reparación resuelve el EPS y la fórmula sigue valuando (sin penalización)', () => {
     const r = computeFairValue({
       symbol: 'SIGN',
       currentPrice: 100,
@@ -160,9 +165,10 @@ describe('las tres patas en computeFairValue (R10)', () => {
       analystCount: 9,
     });
     expect(r.dcfValue).toBeNull();
-    const excl = (r.fvExcluded ?? []).find((e) => e.component === 'dcf');
-    expect(excl?.reason).toBe('epsSignDisagreement');
-    expect(r.fvComponents).toHaveLength(2); // múltiplos + target
+    // Ninguna exclusión por signo: la cadena de reparación ya resolvió
+    // el EPS (positivo) y AMBAS patas valúan.
+    expect((r.fvExcluded ?? []).some((e) => e.reason === 'epsSignDisagreement')).toBe(false);
+    expect(r.fvComponents).toHaveLength(2); // fórmula + target
     expect(r.fairValue).not.toBeNull();
   });
 

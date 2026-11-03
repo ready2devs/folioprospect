@@ -52,8 +52,11 @@ describe('régimen de crecimiento: el ancla son las ventas', () => {
     expect(parts.growthRegime).toBe('crecimiento');
     expect(parts.growthAnchorPct).toBe(70);
     expect(parts.growthBasePct).toBe(400);
-    expect(parts.growthUsedPct).toBe(60); // el clamp anti-basura de la tasa (+60) ata antes
-    expect(grinoldKroner(a)).toBe(60);
+    // R11: el clamp anti-basura de GK subió a +100 (el de +60 ataba en
+    // 7 de 19 activos reales: rankeaba él, no el ancla) — ahora ata el
+    // ANCLA por régimen: 70.
+    expect(parts.growthUsedPct).toBe(70);
+    expect(grinoldKroner(a)).toBe(70);
   });
 
   it('el ancla manda cuando el consenso de ganancias supera ventas + 10 pp', () => {

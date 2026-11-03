@@ -405,3 +405,65 @@ usuario):
   ventas (o 0). El score expone el crecimiento usado, el ancla y el
   régimen por activo (`gkGrowthPct`, `growthAnchorPct`,
   `growthRegime`) para que el número sea auditable.
+
+## §16 — Sistema forward simple (R11) y score dominado por la duplicación (2026-11-03)
+
+Directivas del usuario que originan este pase: 04:29 — «para
+evaluar una empresa es más importante el futuro que el pasado… los
+métodos de valuación más simples y eficaces, no lo complejices» —
+y 04:34 — «no termino de entender por qué hay empresas arriba en la
+tabla que duplican rápido pero tienen un score de inversión bajo…
+la pata principal del score tiene que ser la capacidad de
+duplicar… es contraintuitivo tener un score bajo y que se
+encuentre arriba en la tabla». El detalle del sistema de valuación
+(dos estimaciones: target + fórmula del múltiplo justificado) está
+en docs/VALUATION-RULES.md R11. Esta adenda registra lo que cambió
+en ESTA capa:
+
+**Sale de la capa de retorno (la prudencia ya no se apila):**
+
+- **Shrinkage del FV por confianza**: eliminado. La convergencia
+  usa el FV tal como el motor de valuación lo publica
+  (`fvEffective = fvBase`); la confianza queda como etiqueta
+  visible y como una pata menor del ajuste del score.
+- **Convergencia al piso del rango bajo `modelSuspect`**: el
+  tripwire queda como flag (`fvModelSuspect`) y puede bajar la
+  etiqueta de confianza vía la dispersión, pero no mueve la
+  convergencia ni ningún otro número.
+- **Penalizaciones por desacuerdo de signo del EPS**
+  (`reConfidenceFor`, rama de GK sin crecimiento de EPS): el flag
+  `epsSignDisagreement` queda expuesto como información; GK y la
+  convergencia computan igual con o sin desacuerdo.
+- **Normalización de EPS de mitad de ciclo** (capa de datos):
+  eliminada por completo — era un juicio narrativo codificado
+  contra la visibilidad forward (caso Micron).
+- **Clamp de crecimiento de Grinold-Kroner**: de +60 a +100. El de
+  +60 ataba en 7 de 19 activos reales y rankeaba en lugar del ancla
+  por régimen (que se mantiene: ventas + 10 pp para crecimiento,
+  ROIC × reinversión para maduras; el ancla es techo, nunca piso).
+
+**Score rediseñado (la duplicación manda):**
+
+- **Base = velocidad**: `velocidad = clamp(((RE + 5) / 40) × 100)`
+  — RE 15% ⇒ 50 puntos; RE 35% ⇒ 100. Es la pata principal
+  (recupera y refuerza el espíritu del diseño original del 30-oct,
+  que tenía 50% de velocidad; el pase «profesional» la había
+  bajado a 30% y las demás patas invertían el orden de la tabla).
+- **Ajuste acotado ±15 puntos**: `ajuste = ((índice − 50) / 50) ×
+  15`, con el índice = mezcla renormalizada de oportunidad
+  (precio vs FV, peso 25), calidad (ROIC y márgenes, 20), confianza
+  de la valuación (Alta 90 / Media 65 / Baja 35, 15) y riesgo
+  (volatilidad y deuda, 10). Propiedad demostrable por tests: una
+  brecha de velocidad mayor a 30 puntos no puede invertirse con
+  ningún ajuste; un activo del tercio más rápido no cae al tercio
+  inferior del score por ajustes.
+- **Trazabilidad**: cada activo expone `scoreVelocity`,
+  `scoreAdjustmentPts` y `scoreAdjustmentDriver` (la dimensión que
+  más movió el ajuste, en lenguaje simple). La evaluación escrita
+  cita el driver cuando |ajuste| ≥ 5 puntos, y explica por sus
+  causas (crecimiento/consenso) todo activo top-3 por duplicación
+  cuyo FV esté por debajo del precio (coherencia FV↔RE visible).
+- Los textos ⓘ de «Años para duplicar» y «Score de inversión» se
+  reescribieron en lenguaje simple con esta mecánica real, y se
+  sumó el texto «Valor justo: cómo se calcula» (las dos
+  estimaciones y el PEG como orientador que no valúa).

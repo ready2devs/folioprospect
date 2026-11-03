@@ -203,10 +203,21 @@ export interface FairValueResult {
   symbol: string;
   currentPrice: number;
   fairValue: number | null;
-  /** Pata 3 de la arquitectura R10: DCF corto sobre ganancias de
-   *  consenso (EPS +1/+2 con desvanecimiento a 5 años, descuento único
-   *  10%, conversión a caja ×0,85, terminal × múltiplo del sector). */
+  /** DCF sobre ganancias: retirado del promedio por el método elegido
+   *  (2026-11-03 04:40, contaba el crecimiento dos veces). El campo se
+   *  conserva por compatibilidad y va siempre en null; el FV se forma
+   *  solo con target y múltiplos (ver fvComponents). */
   dcfValue: number | null;
+  /** PEG como ORIENTADOR (R11): P/E forward recomputado ÷ crecimiento
+   *  de largo plazo del consenso. El PEG orienta y NO valúa: no entra
+   *  en ninguna pata ni ajusta el FV; un PEG de fórmula disparado
+   *  contra el sector solo marca revisión de datos (flag). */
+  pegAtPrice?: number | null;
+  /** PEG implícito de la fórmula: múltiplo justificado ÷ el mismo
+   *  crecimiento de largo plazo. */
+  pegFormula?: number | null;
+  /** PEG del sector: P/E forward del sector ÷ crecimiento del sector. */
+  pegSector?: number | null;
   /** Ancla histórica (R10): DCF de FCF reportado (base mediana de la
    *  serie). Ya NO integra el Fair Value: es la referencia «valor
    *  según historia reportada» y alimenta el escenario pesimista solo

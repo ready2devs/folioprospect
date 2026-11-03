@@ -19,6 +19,7 @@ import {
   fetchLiveFxRates,
 } from './yahoo.js';
 import { fetchArgFxRates } from './argFx.js';
+import { fetchSectorContext } from './sectorContext.js';
 import {
   fetchEarningsForTickers,
   fetchEarningsInfoForTicker,
@@ -664,6 +665,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       fetchFundamentals(matchedKey, quote.price),
       fetchAssetExtras(matchedKey, quote.price),
     ]);
+    // Contexto del sector (R11): el mismo que usa el Optimizador —
+    // medianas de la industria para el múltiplo justificado. Sin
+    // contexto (Finviz caído), el motor cae por su escalera.
+    try {
+      const ctx = await fetchSectorContext(cleanTicker(matchedKey).toUpperCase());
+      if (ctx) {
+        fundInput.industryForwardPe = ctx.forwardPe;
+        fundInput.sectorRoicPct = ctx.roicPct;
+        fundInput.sectorGrowth5yPct = ctx.growth5yPct;
+      }
+    } catch {
+      /* sin contexto: escalera documentada del motor */
+    }
     const fairValue = computeFairValue(fundInput);
 
     // User's current position and transactions for this symbol

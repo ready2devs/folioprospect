@@ -25,6 +25,18 @@ export interface FundamentalInput {
    *  referencia preferida del tope sectorial del múltiplo (R9). Si
    *  falta, el tope usa el P/E forward recomputado del propio activo. */
   industryForwardPe?: number | null;
+  /** ROIC % de la empresa (Finviz, retorno sobre el capital
+   *  invertido): insumo del múltiplo justificado (R11) y del ancla de
+   *  crecimiento sustentable. Sin él, la fórmula usa el ROE. */
+  roicPct?: number | null;
+  /** ROIC mediano % de la industria (mediana de los pares grandes de
+   *  Finviz, misma fuente que la empresa): lado sectorial de la
+   *  fórmula del múltiplo justificado (R11). */
+  sectorRoicPct?: number | null;
+  /** Crecimiento de EPS a 5 años mediano % de la industria (pares de
+   *  Finviz): lado sectorial de la fórmula del múltiplo justificado
+   *  (R11). */
+  sectorGrowth5yPct?: number | null;
   /** Series anuales de EDGAR (USD, más reciente primero): flujo
    *  operativo y capex alineados por cierre fiscal, ingreso neto y
    *  depreciación. Las consume la capa de datos del Optimizador para
@@ -158,6 +170,14 @@ export interface FvComponentInput {
    *  componente anclado en mercado jamás se recorta HACIA ARRIBA por
    *  encima de la estimación más optimista que lo compone (R9). */
   clipCeiling?: number;
+  /** Piso duro del valor final del componente tras la winsorización:
+   *  para el target es el mínimo del consenso de analistas — la
+   *  winsorización tampoco puede arrastrarlo POR DEBAJO de la
+   *  estimación más pesimista que lo compone (R11: el target entra
+   *  siempre dentro de su rango publicado [low, high]; el caso NBIS
+   *  de la fase 3, recortado de 283,86 a 86,64 por dos patas deprimidas,
+   *  es el defecto que esto cierra). */
+  clipFloor?: number;
 }
 
 export interface FvExcludedComponent {
@@ -235,25 +255,210 @@ const MINOR_CONFIDENCE_FLAGS = new Set([
 export const FV_BAND_LOW = 0.25;
 export const FV_BAND_HIGH = 3.5;
 
-/** Castigo al DCF «emergente» (base TTM sin mediana histórica que la
- *  respalde): la base entra recortada 25% y su calidad de ponderación
- *  es el piso del sistema (0,30). Pase correctivo RE (C): el componente
- *  se castiga, no se elimina — R0 sigue vigente. */
-export const EMERGING_DCF_HAIRCUT = 0.75;
-export const EMERGING_DCF_QUALITY = 0.3;
+/* ------------------------------------------------------------------ *
+ * MÚLTIPLO JUSTIFICADO (R11, docs/VALUATION-RULES.md).
+ *
+ * La pata de múltiplos ya no usa una tabla por «moat» ni un tope con el
+ * P/E propio: usa el múltiplo que los fundamentos justifican, con la
+ * fórmula clásica de Damodaran para el P/E justificado (leading):
+ *
+ *     P/E justificado = payout / (ke − g),   con payout = 1 − g/R
+ *
+ * donde R es el retorno sobre el capital (ROIC; si falta, ROE), g el
+ * crecimiento de largo plazo y ke el costo del capital. La fórmula se
+ * evalúa DOS veces con la misma tasa: para la empresa y para su
+ * sector (medianas de la industria). El múltiplo aplicado es el P/E
+ * forward que el mercado paga por el sector, ajustado por el cociente
+ * de ambos justificados:
+ *
+ *     M = P/E del sector × clamp(J_empresa / J_sector, 0,6 – 1,6)
+ *
+ * Así, lo que el sector vale lo pone el mercado (con su ciclo y su
+ * riesgo adentro), y la empresa se mueve dentro de una banda según
+ * rinda y crezca más o menos que su sector. El crecimiento que entra
+ * a la fórmula es el de ESTADO ESTACIONARIO: se acota a +5% — una
+ * perpetuidad no crece por encima de la economía nominal de largo
+ * plazo (disciplina estándar de Damodaran para el crecimiento
+ * terminal) — y eso además mantiene la fórmula bien comportada
+ * cuando g se acerca a ke. El crecimiento cercano de cada empresa
+ * vive en la pata de DCF y en el target, no en este múltiplo.
+ *
+ * Escalera de respaldo (documentada, sin excepciones por activo):
+ *  1. sector + ambos justificados ⇒ sector × ajuste (arriba);
+ *  2. sector sin ajuste computable ⇒ P/E del sector, pelado;
+ *  3. sin sector, justificado propio computable ⇒ ese justificado,
+ *     acotado a [3, 45] como anti-basura numérica;
+ *  4. sin sector ni fundamentos ⇒ el P/E forward recomputado del
+ *     propio activo (el veredicto actual del mercado; la pata aporta
+ *     poca información y la confianza lo refleja);
+ *  5. último recurso histórico: la tabla por moat.
+ * ------------------------------------------------------------------ */
 
-/** Normalización cíclica de la base del DCF (R9): si NO hay serie ≥3
- *  años cuya mediana ya normalice, la base es la foto TTM — y una foto
- *  con FCF yield alto es un pico de ciclo (productoras de commodities
- *  en año de precios altos; el umbral de ciclicidad del sistema es
- *  20%). La base se recorta con un factor CONTINUO 12/yield (yield de
- *  mitad de ciclo ≈ 12%): a yield 20% el factor es 0,60; a 30%, 0,40
- *  (piso: recorte máximo 60%). Sin escalón en ningún umbral — un salto
- *  discreto al cruzar 20% sería el mismo artefacto de umbral que la
- *  banda contra el precio ya eliminó. Extrapolar un FCF de pico por
- *  una década es el error espejo de anular el DCF: se normaliza. */
-export const CYCLICAL_FCF_YIELD_TARGET_PCT = 12;
-export const CYCLICAL_FCF_HAIRCUT_FLOOR = 0.4;
+/** Tasa de descuento única de la fórmula justificada (%): la misma
+ *  del DCF corto sobre ganancias — una sola tasa para todo el motor,
+ *  decisión de diseño por simplicidad (R10/R11). */
+export const JUSTIFIED_DISCOUNT_PCT = 10;
+/** Crecimiento máximo (%) que admite la fórmula del múltiplo
+ *  justificado: es un objeto de estado estacionario, y ninguna
+ *  perpetuidad crece por encima de ~5% nominal de largo plazo. */
+export const JUSTIFIED_STEADY_GROWTH_CAP_PCT = 5;
+/** Banda del ajuste relativo empresa/sector: anti-extremos numérico,
+ *  simétrica en espíritu; ningún fundamento sostiene pagar más de
+ *  ~1,6× el múltiplo del sector ni menos de 0,6× por esta vía. */
+/** Factor máximo de divergencia entre el P/E del sector y el P/E
+ *  forward propio para que el sector se considere un conjunto
+ *  comparable (R11): si difieren en más de este factor, la fórmula
+ *  cae al justificado por fundamentos propios. Decisión de diseño
+ *  simple (anti-basura), de un solo lado: solo descarta al sector
+ *  cuando su múltiplo más que duplica al propio. */
+export const JUSTIFIED_SECTOR_COMPARABILITY_MAX = 2;
+export const JUSTIFIED_ADJUSTMENT_MIN = 0.6;
+export const JUSTIFIED_ADJUSTMENT_MAX = 1.6;
+/** Banda anti-basura del justificado absoluto (escalón 3). */
+export const JUSTIFIED_ABSOLUTE_MIN = 3;
+export const JUSTIFIED_ABSOLUTE_MAX = 45;
+
+/** Régimen de crecimiento (R11): si las ventas de consenso crecen más
+ *  de +12,5% anual, la empresa es «en crecimiento» y su ancla de largo
+ *  plazo son las ventas; si no, es «madura» y manda el crecimiento
+ *  sustentable. Son los MISMOS umbral y margen que usa Grinold-Kroner
+ *  en el Optimizador (GROWTH_REGIME_SALES_PCT /
+ *  GROWTH_LEVERAGE_SLACK_PP): un solo criterio para todo el sistema. */
+export const FV_GROWTH_REGIME_SALES_PCT = 12.5;
+export const FV_GROWTH_LEVERAGE_SLACK_PP = 10;
+
+/** P/E justificado (leading) desde fundamentos: (1 − g/R) / (ke − g).
+ *  Devuelve null cuando la fórmula no aplica: sin retorno sobre el
+ *  capital, retorno ≤ crecimiento (payout ≤ 0: la empresa necesitaría
+ *  más capital del que gana para crecer a esa tasa) o g ≥ ke. Las
+ *  entradas van en % (ROIC 25 = 25%). */
+export function justifiedPeFromFundamentals(
+  capitalReturnPct: number | null | undefined,
+  growthPct: number | null | undefined,
+  discountPct: number = JUSTIFIED_DISCOUNT_PCT
+): number | null {
+  if (capitalReturnPct == null || !(capitalReturnPct > 0) || !(discountPct > 0)) {
+    return null;
+  }
+  const g = clamp(growthPct ?? 0, 0, JUSTIFIED_STEADY_GROWTH_CAP_PCT) / 100;
+  const r = capitalReturnPct / 100;
+  const ke = discountPct / 100;
+  if (r <= g || ke <= g) return null;
+  const payout = 1 - g / r;
+  if (!(payout > 0)) return null;
+  const pe = payout / (ke - g);
+  return Number.isFinite(pe) && pe > 0 ? pe : null;
+}
+
+export type JustifiedMultipleBasis =
+  | 'sectorAjustado'
+  | 'sector'
+  | 'fundamental'
+  | 'propio'
+  | 'tabla';
+
+export interface JustifiedMultipleResult {
+  multiple: number | null;
+  basis: JustifiedMultipleBasis | null;
+  /** Justificado de la empresa y del sector (mismo fórmula y tasa). */
+  companyJustified: number | null;
+  sectorJustified: number | null;
+  /** Cociente acotado efectivamente aplicado sobre el P/E sectorial. */
+  adjustment: number | null;
+  /** Referencia sectorial usada (P/E forward de la industria). */
+  sectorPe: number | null;
+  /** false cuando el sector se descartó por no comparable (su P/E
+   *  difiere del propio en más del factor de comparabilidad). */
+  sectorComparable: boolean;
+}
+
+/** Múltiplo justificado de la pata de múltiplos (R11): ver la
+ *  escalera documentada arriba. Nunca lanza; devuelve null solo si
+ *  no hay NINGUNA referencia (ni sector, ni fundamentos, ni precio). */
+export function justifiedMultiple(args: {
+  /** P/E forward de la industria (mediana de pares), si se conoce. */
+  sectorForwardPe?: number | null;
+  /** Retorno sobre el capital de la empresa (ROIC %; respaldo: ROE %). */
+  capitalReturnPct?: number | null;
+  /** Crecimiento de largo plazo de la empresa, ya anclado (%). */
+  longRunGrowthPct?: number | null;
+  /** Retorno sobre el capital mediano del sector (ROIC %). */
+  sectorCapitalReturnPct?: number | null;
+  /** Crecimiento de largo plazo mediano del sector (%). */
+  sectorLongRunGrowthPct?: number | null;
+  /** P/E forward recomputado del propio activo (respaldo). */
+  ownForwardPe?: number | null;
+  /** Tabla histórica por moat (último recurso). */
+  tableMultiple?: number | null;
+}): JustifiedMultipleResult {
+  const sectorPe =
+    args.sectorForwardPe != null && args.sectorForwardPe > 0
+      ? args.sectorForwardPe
+      : null;
+  const companyJustified = justifiedPeFromFundamentals(
+    args.capitalReturnPct,
+    args.longRunGrowthPct
+  );
+  const sectorJustified = justifiedPeFromFundamentals(
+    args.sectorCapitalReturnPct,
+    args.sectorLongRunGrowthPct
+  );
+  // Regla de comparabilidad del conjunto de pares (R11): si el P/E
+  // del sector más que DUPLICA al P/E forward propio, importar ese
+  // múltiplo inflaría la fórmula con un régimen ajeno al activo (una
+  // memoria que cotiza a 4× dentro de un sector amplio a 21×; una
+  // madura a 21× dentro de una industria de software a 52×) — es un
+  // dato, no un juicio — y la fórmula cae al múltiplo justificado
+  // por los fundamentos propios. La regla es de un solo lado a
+  // propósito: cuando el sector es MÁS BARATO que el activo, su
+  // múltiplo entra igual — es la referencia conservadora estándar
+  // de la valuación relativa, y la brecha es información, no error.
+  const sectorComparable =
+    sectorPe == null ||
+    args.ownForwardPe == null ||
+    !(args.ownForwardPe > 0) ||
+    sectorPe <= JUSTIFIED_SECTOR_COMPARABILITY_MAX * args.ownForwardPe;
+  const out: JustifiedMultipleResult = {
+    multiple: null,
+    basis: null,
+    companyJustified,
+    sectorJustified,
+    adjustment: null,
+    sectorPe,
+    sectorComparable,
+  };
+  if (sectorPe != null && sectorComparable && companyJustified != null && sectorJustified != null) {
+    out.adjustment = clamp(
+      companyJustified / sectorJustified,
+      JUSTIFIED_ADJUSTMENT_MIN,
+      JUSTIFIED_ADJUSTMENT_MAX
+    );
+    out.multiple = sectorPe * out.adjustment;
+    out.basis = 'sectorAjustado';
+    return out;
+  }
+  if (sectorPe != null && sectorComparable) {
+    out.multiple = sectorPe;
+    out.basis = 'sector';
+    return out;
+  }
+  if (companyJustified != null) {
+    out.multiple = clamp(companyJustified, JUSTIFIED_ABSOLUTE_MIN, JUSTIFIED_ABSOLUTE_MAX);
+    out.basis = 'fundamental';
+    return out;
+  }
+  if (args.ownForwardPe != null && args.ownForwardPe > 0) {
+    out.multiple = args.ownForwardPe;
+    out.basis = 'propio';
+    return out;
+  }
+  if (args.tableMultiple != null && args.tableMultiple > 0) {
+    out.multiple = args.tableMultiple;
+    out.basis = 'tabla';
+    return out;
+  }
+  return out;
+}
 
 /**
  * Agregación por PROMEDIO WINSORIZADO:
@@ -360,11 +565,26 @@ export function aggregateFairValue(
     const othersSane = othersAll.filter((o) => !outlierKeys.has(o.key));
     const others = (othersSane.length > 0 ? othersSane : othersAll).map((o) => o.value);
     const ref = meanOf(others);
-    let clipped = clamp(c.value, ref * FV_BAND_LOW, ref * FV_BAND_HIGH);
+    // Exención del target (método elegido, 2026-11-03): el componente
+    // que trae ancla propia de consenso (clipFloor/clipCeiling) NUNCA
+    // es recortado por la banda entre patas — entra en su rango real
+    // [low, high], jamás arrastrado por la otra estimación (era el
+    // defecto que en fase 3 hundió el target de NBIS y que aquí volvía
+    // a aparecer contra MELI). La banda anti-basura sigue aplicando a
+    // la pata de fórmula, usando al target como referencia.
+    let clipped =
+      c.clipCeiling != null || c.clipFloor != null
+        ? c.value
+        : clamp(c.value, ref * FV_BAND_LOW, ref * FV_BAND_HIGH);
     // Techo duro del componente (target: máximo del consenso): la
     // winsorización jamás lo levanta por encima de su propio ancla.
     if (c.clipCeiling != null && c.clipCeiling > 0) {
       clipped = Math.min(clipped, c.clipCeiling);
+    }
+    // Piso duro del componente (target: mínimo del consenso, R11): la
+    // winsorización tampoco lo arrastra por debajo de su propio ancla.
+    if (c.clipFloor != null && c.clipFloor > 0) {
+      clipped = Math.max(clipped, c.clipFloor);
     }
     if (clipped !== c.value) {
       winsorized.push({
@@ -428,22 +648,28 @@ export function aggregateFairValue(
 }
 
 export interface MultiplesEvaluation {
-  /** Componente de múltiplos (EPS reparado × múltiplo acotado por el
-   *  sector), o null solo ante imposibilidad matemática (EPS ≤ 0 o
+  /** Componente de múltiplos (EPS reparado × múltiplo justificado
+   *  R11), o null solo ante imposibilidad matemática (EPS ≤ 0 o
    *  inexistente). */
   value: number | null;
   epsUsed: number | null;
-  /** Múltiplo efectivamente aplicado (tras el tope sectorial R9) y el
-   *  tope calculado, para trazabilidad. */
+  /** Múltiplo efectivamente aplicado (el justificado, R11) y la
+   *  referencia sectorial usada, para trazabilidad. */
   multipleUsed: number | null;
   multipleCap: number | null;
+  /** Cómo se obtuvo el múltiplo (escalera R11) y el despiece de la
+   *  fórmula justificada, para trazabilidad. */
+  multipleBasis: JustifiedMultipleBasis | null;
+  justifiedCompany: number | null;
+  justifiedSector: number | null;
+  multipleAdjustment: number | null;
   flags: string[];
   excluded: FvExcludedComponent | null;
   /** Las fuentes DIRECTAS del EPS forward discrepan en el signo en el
-   *  mismo refresco (consenso ≈ break-even: un input cara o cruz). No
-   *  cambia la etiqueta pública de confianza (el flag NO está en
-   *  MINOR_CONFIDENCE_FLAGS); lo consume la capa de retorno esperado
-   *  del Optimizador como castigo propio (pase correctivo RE, D). */
+   *  mismo refresco (consenso ≈ break-even: un input cara o cruz). Es
+   *  un dato de trazabilidad: desde R11 no castiga ninguna pata ni
+   *  ningún número — la cadena de reparación ya resolvió el EPS, y si
+   *  el consenso está partido, eso es un hecho del consenso. */
   signDisagreement: boolean;
   provenance: {
     originalEps: number | null;
@@ -525,15 +751,21 @@ export function evaluateMultiplesComponent(args: {
   reportedEpsLatest?: number | null;
   earningsGrowth?: number | null;
   revenueGrowth?: number | null;
+  /** Tabla histórica por moat: ÚLTIMO recurso del múltiplo (R11). */
   moatMultiple: number;
-  /** Prima de calidad sobre la referencia sectorial según el moat
-   *  (Wide 1,5 · Narrow 1,25 · None 1,0): cuánto más que el sector puede
-   *  valer una franquicia superior. La fija quien llama (R9). */
-  moatPremium?: number;
-  /** P/E forward de la industria/pares si se conoce: referencia
-   *  preferida del tope. Sin él, el tope usa el P/E forward recomputado
-   *  del propio activo (el veredicto del mercado sobre ese papel). */
+  /** P/E forward de la industria/pares si se conoce: base del
+   *  múltiplo justificado (R11). */
   industryForwardPe?: number | null;
+  /** Retorno sobre el capital de la empresa en % (ROIC; respaldo
+   *  ROE): lado empresa de la fórmula justificada (R11). */
+  capitalReturnPct?: number | null;
+  /** Crecimiento de largo plazo de la empresa en %, ya anclado por
+   *  régimen (ventas / sustentable): lado empresa de la fórmula. */
+  longRunGrowthPct?: number | null;
+  /** Retorno sobre el capital mediano del sector en % (ROIC). */
+  sectorCapitalReturnPct?: number | null;
+  /** Crecimiento de largo plazo mediano del sector en %. */
+  sectorLongRunGrowthPct?: number | null;
   /** EPS forecast del próximo año fiscal según TradingView: fuente
    *  directa adicional (grupo propio; independencia parcial). */
   forwardEpsTv?: number | null;
@@ -647,10 +879,9 @@ export function evaluateMultiplesComponent(args: {
   // Desacuerdo de SIGNO entre fuentes directas en el mismo refresco:
   // el consenso está en break-even y el signo del EPS es cara o cruz
   // según qué fuente responda último. Se registra como flag de
-  // trazabilidad y como campo propio; la valuación pública no cambia
-  // (no integra MINOR_CONFIDENCE_FLAGS), pero la capa de RE del
-  // Optimizador baja un escalón la confianza que usa y deja de creerle
-  // crecimiento de EPS a Grinold-Kroner (pase correctivo RE, D).
+  // trazabilidad y como campo propio; desde R11 no altera ningún
+  // número (ni la valuación pública ni la capa de RE): es un hecho
+  // del consenso, visible en la procedencia.
   const directValues = candidates.filter((c) => c.direct).map((c) => c.value);
   const signDisagreement =
     directValues.some((v) => v > 0) && directValues.some((v) => v < 0);
@@ -662,6 +893,10 @@ export function evaluateMultiplesComponent(args: {
       epsUsed: null,
       multipleUsed: null,
       multipleCap: null,
+      multipleBasis: null,
+      justifiedCompany: null,
+      justifiedSector: null,
+      multipleAdjustment: null,
       flags,
       excluded: null,
       signDisagreement,
@@ -764,6 +999,10 @@ export function evaluateMultiplesComponent(args: {
       epsUsed,
       multipleUsed: null,
       multipleCap: null,
+      multipleBasis: null,
+      justifiedCompany: null,
+      justifiedSector: null,
+      multipleAdjustment: null,
       flags,
       excluded: { component: 'multiples', reason: 'notMeaningful', value: null },
       signDisagreement,
@@ -787,38 +1026,37 @@ export function evaluateMultiplesComponent(args: {
     flags.push('extremePeReferenceOnly');
   }
 
-  // TOPE SECTORIAL del múltiplo (R9): la tabla por moat es ciega al
-  // sector — le aplicaba 26× a una petrolera E&P que el mercado paga
-  // 5–7×. El múltiplo aplicado queda acotado por la referencia del
-  // sector: el P/E forward de la industria si se conoce; si no, el P/E
-  // forward recomputado del propio activo (precio ÷ EPS reparado).
-  // Sobre esa referencia se admite una prima por moat (franquicia
-  // superior vale más que el sector) y una prima por crecimiento
-  // documentada en el propio cálculo: el crecimiento de ganancias por
-  // encima de 10% anual suma hasta +40% de múltiplo. El tope solo
-  // puede bajar el múltiplo de tabla, nunca subirlo.
+  // MÚLTIPLO JUSTIFICADO (R11): reemplaza al tope sectorial de R9 y a
+  // la tabla por moat como mecanismo principal. El múltiplo sale de
+  // los fundamentos hacia adelante (ver justifiedMultiple): el P/E
+  // que el mercado paga por el sector, ajustado por cuánto más (o
+  // menos) rinde y crece esta empresa que su sector según la fórmula
+  // del P/E justificado de Damodaran. Sin historia sobre el ciclo,
+  // sin primas narrativas: si el consenso forward está mal, es
+  // problema del consenso, no de una corrección del modelo.
   const ownPe = price > 0 ? price / epsUsed : null;
-  const baseRef =
-    args.industryForwardPe != null && args.industryForwardPe > 0
-      ? args.industryForwardPe
-      : ownPe;
-  let multipleUsed = args.moatMultiple;
-  let multipleCap: number | null = null;
-  if (baseRef != null && baseRef > 0) {
-    const gForCap = args.earningsGrowth ?? args.revenueGrowth ?? null;
-    const growthPremium = gForCap != null ? clamp(gForCap - 0.1, 0, 0.4) : 0;
-    multipleCap = baseRef * (args.moatPremium ?? 1) * (1 + growthPremium);
-    if (multipleCap < multipleUsed) {
-      multipleUsed = multipleCap;
-      flags.push('sectorCappedMultiple');
-    }
-  }
+  const jm = justifiedMultiple({
+    sectorForwardPe: args.industryForwardPe ?? null,
+    capitalReturnPct: args.capitalReturnPct ?? null,
+    longRunGrowthPct: args.longRunGrowthPct ?? null,
+    sectorCapitalReturnPct: args.sectorCapitalReturnPct ?? null,
+    sectorLongRunGrowthPct: args.sectorLongRunGrowthPct ?? null,
+    ownForwardPe: ownPe,
+    tableMultiple: args.moatMultiple,
+  });
+  const multipleUsed = jm.multiple ?? args.moatMultiple;
+  if (jm.basis != null) flags.push(`multipleBasis:${jm.basis}`);
+  if (!jm.sectorComparable && jm.sectorPe != null) flags.push('sectorNotComparable');
 
   return {
     value: epsUsed * multipleUsed,
     epsUsed,
     multipleUsed,
-    multipleCap,
+    multipleCap: jm.sectorPe,
+    multipleBasis: jm.basis,
+    justifiedCompany: jm.companyJustified,
+    justifiedSector: jm.sectorJustified,
+    multipleAdjustment: jm.adjustment,
     flags,
     excluded: null,
     signDisagreement,
@@ -838,11 +1076,16 @@ export const EARNINGS_DCF_DISCOUNT_PCT = 10;
  *  aplica a los flujos proyectados Y a la base del valor terminal,
  *  para que la pata sea internamente consistente. */
 export const EARNINGS_CASH_CONVERSION = 0.85;
-/** Topes sanos del crecimiento de la pata de ganancias (R10): el
- *  crecimiento del año +2 se acota a [−30%, +60%]; el de largo plazo
- *  (consenso a 5 años) a [−10%, +35%]; el terminal a [−5%, +6%]. */
+/** Bandas mecánicas del crecimiento de la pata de ganancias: el año
+ *  +2 se acota a [−30%, +100%] — solo anti-basura numérica (R11: sin
+ *  topes-opinión sobre las estimaciones; el ancla de régimen y el
+ *  chequeo de ventas son los frenos con fundamento) —; el de largo
+ *  plazo a [−10%, +35%] y el terminal a [−5%, +6%], bandas de estado
+ *  estacionario de la práctica estándar (ninguna empresa sostiene
+ *  >35% de CAGR de ganancias una década, y el crecimiento terminal
+ *  vive cerca del crecimiento nominal de la economía). */
 export const EARNINGS_G1_MIN = -0.3;
-export const EARNINGS_G1_MAX = 0.6;
+export const EARNINGS_G1_MAX = 1.0;
 export const EARNINGS_G5_MIN = -0.1;
 export const EARNINGS_G5_MAX = 0.35;
 export const EARNINGS_GTERM_MIN = -0.05;
@@ -898,7 +1141,14 @@ export function evaluateEarningsDcf(args: {
   /** Crecimiento de ingresos de consenso (contraste): si existe, el
    *  crecimiento de ganancias usado no lo supera por más de 15 pp. */
   revenueGrowthCheck?: number | null;
-  /** Múltiplo del sector ya acotado (el de la pata de múltiplos). */
+  /** Ancla de largo plazo por régimen (R11, decimal): techo del g5 —
+   *  en crecimiento, las ventas de consenso + apalancamiento; en
+   *  maduras, el crecimiento sustentable ROIC × reinversión. Es la
+   *  MISMA ancla que usa Grinold-Kroner en el Optimizador: un solo
+   *  criterio de cordura para todo el sistema. */
+  growthAnchor?: number | null;
+  /** Múltiplo justificado (R11): el MISMO de la pata de múltiplos,
+   *  sin prima extra — el crecimiento se cuenta una sola vez. */
   sectorMultiple: number;
 }): EarningsDcfEvaluation {
   const flags: string[] = [];
@@ -926,6 +1176,17 @@ export function evaluateEarningsDcf(args: {
     if (g1 > cap || g5 > cap) flags.push('earningsDcfRevenueCapped');
     g1 = Math.min(g1, cap);
     g5 = Math.min(g5, cap);
+  }
+
+  // Ancla de largo plazo por régimen (R11): el g5 — la tasa a la que
+  // el sendero se desvanece — no supera lo que el negocio puede
+  // sostener: sus ventas (crecimiento) o su ROIC × reinversión
+  // (madura). Solo acota el LARGO plazo; el año +2 entra a valor
+  // facial del consenso.
+  const anchor = fromPct(args.growthAnchor);
+  if (anchor != null && g5 > anchor) {
+    flags.push('earningsDcfGrowthAnchored');
+    g5 = anchor;
   }
 
   g1 = clamp(g1, EARNINGS_G1_MIN, EARNINGS_G1_MAX);
@@ -1001,12 +1262,15 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
 
   const fcfYieldPct = fcfBase && mktCap && mktCap > 0 ? (fcfBase / mktCap) * 100 : null;
 
-  // Base del DCF normalizada: con ≥3 años de FCF anual reportado, la base
-  // es la MEDIANA de los últimos 3–5 años — nunca un año valle ni un año
-  // pico. Sin serie suficiente, rige la misma regla uniforme de fallback:
-  // la base actual (TTM). La mediana ≤ 0 anula el componente (imposibilidad
-  // matemática: no hay flujo positivo que descontar). El fcfYieldPct de
-  // arriba sigue siendo la foto TTM.
+  // Base del ANCLA HISTÓRICA (desde R10 es solo una referencia
+  // informativa, fuera del promedio): regla única y simple (R11) —
+  // con ≥3 años de FCF anual reportado, la base es la MEDIANA de los
+  // últimos 3–5 años (la mediana es higiene de datos estándar: ni un
+  // año valle ni un año pico); si la mediana no es positiva o no hay
+  // serie, la base es el FCF TTM tal cual viene; si tampoco hay TTM
+  // positivo, no hay ancla. Sin haircuts ni castigos: el ancla es un
+  // número de referencia, no una pata, y no deforma nada. El
+  // fcfYieldPct de arriba sigue siendo la foto TTM.
   const fvFlags: string[] = [];
   let dcfBase = fcfBase;
   let dcfBaseSource = 'ttm';
@@ -1028,52 +1292,15 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
           : input.fcfHistorySource === 'yahoo'
             ? 'yahooFcfHistoryMedian'
             : 'fcfHistoryMedian';
-    } else if (
-      fcfBase != null &&
-      fcfBase > 0 &&
-      (input.revenueGrowth ?? input.earningsGrowth ?? 0) > 0.15
-    ) {
-      // Regla de «emergente»: la mediana histórica ≤ 0 describe el pasado
-      // de una empresa que ya genera caja hoy (TTM > 0) y crece fuerte
-      // (ingresos > +15%): anular el DCF la dejaría valuada por un solo
-      // componente. Se computa sobre la base TTM con flag y confianza
-      // reducida. R0: más información, no menos. Si el TTM también es
-      // ≤ 0 o no hay crecimiento que lo explique, sí es imposibilidad y
-      // el componente queda null.
-      // CASTIGO (pase correctivo RE, C): ese FCF TTM puede estar
-      // inflado por prepagos de clientes mientras el capex explota —
-      // es una foto, no una base normalizada. La base entra con haircut
-      // de incertidumbre (×0,75, ver EMERGING_DCF_HAIRCUT) y su calidad
-      // de ponderación baja al piso del sistema (0,30): se castiga el
-      // componente, no se elimina.
-      dcfBase = fcfBase * EMERGING_DCF_HAIRCUT;
-      dcfBaseSource = 'ttmEmerging';
-      fvFlags.push('ttmBaseEmerging');
+    } else if (fcfBase != null && fcfBase > 0) {
+      // Mediana histórica ≤ 0 pero la empresa genera caja hoy: el
+      // ancla usa el TTM, sin castigo (la vieja «regla de emergente»
+      // con haircut ×0,75 salió en R11: el ancla no deforma patas).
+      dcfBase = fcfBase;
+      dcfBaseSource = 'ttm';
     } else {
       dcfBase = null;
       dcfPreExcluded = { component: 'dcf', reason: 'medianFcfNonPositive', value: null };
-    }
-  }
-  // Normalización cíclica de la base (R9): sin serie ≥3 años no hay
-  // mediana que normalice, y la base TTM entra con haircut progresivo
-  // según su yield (pico de ciclo ⇒ recorte hacia el yield de mitad de
-  // ciclo). Con serie, la mediana ya hizo este trabajo y no se recorta
-  // dos veces.
-  if (
-    fcfSeries.length < 3 &&
-    dcfBase != null &&
-    dcfBase > 0 &&
-    fcfYieldPct != null &&
-    fcfYieldPct > CYCLICAL_FCF_YIELD_TARGET_PCT
-  ) {
-    const factor = clamp(
-      CYCLICAL_FCF_YIELD_TARGET_PCT / fcfYieldPct,
-      CYCLICAL_FCF_HAIRCUT_FLOOR,
-      1
-    );
-    if (factor < 1) {
-      dcfBase = dcfBase * factor;
-      fvFlags.push('cyclicalBaseHaircut');
     }
   }
   const epsSeries = (input.epsHistory ?? [])
@@ -1147,14 +1374,14 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   const moat: 'Wide' | 'Narrow' | 'None' =
     moatScore >= 74 ? 'Wide' : moatScore >= 52 ? 'Narrow' : 'None';
 
-  // ANCLA HISTÓRICA (R10): el DCF de FCF reportado (2 etapas, 10 años,
-  //  sobre la base normalizada) se sigue computando EXACTAMENTE igual,
-  //  pero ya no es una pata del promedio: es la referencia «valor según
-  //  historia reportada» — escenario pesimista y contrapeso — expuesta
-  //  en la procedencia como componente 'anchor'. La arquitectura
-  //  anterior lo distorsionaba todo ante cambios de paradigma (una
-  //  empresa en inflexión quedaba condenada por su historia, y una en
-  //  pico de ciclo, coronada por ella).
+  // ANCLA HISTÓRICA (R10, base simplificada en R11): el DCF de FCF
+  //  reportado (2 etapas, 10 años, sobre la base mediana/TTM sin
+  //  haircuts) no es una pata del promedio: es la referencia «valor
+  //  según historia reportada» — escenario pesimista y contrapeso —
+  //  expuesta en la procedencia como componente 'anchor'. La
+  //  arquitectura anterior lo distorsionaba todo ante cambios de
+  //  paradigma (una empresa en inflexión quedaba condenada por su
+  //  historia, y una en pico de ciclo, coronada por ella).
   let anchorValue: number | null = null;
   if (dcfBase && input.sharesOutstanding && input.sharesOutstanding > 0) {
     const fcfPerShare = dcfBase / input.sharesOutstanding;
@@ -1182,32 +1409,10 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   }
   const anchorExcluded = dcfPreExcluded;
 
-  // Componente de múltiplos: EPS forward reparado entre fuentes × múltiplo
-  // de moat. El P/E publicado jamás entra como input directo.
-  const targetMultiple = moat === 'Wide' ? 26 : moat === 'Narrow' ? 20 : 15;
-  const mult = evaluateMultiplesComponent({
-    currentPrice,
-    publishedForwardPe: input.forwardPE ?? null,
-    altPublishedForwardPe: input.finvizForwardPe ?? null,
-    forwardEps: input.forwardEps ?? null,
-    forwardEpsAlt: input.forwardEpsAlt ?? null,
-    forwardEpsAltSource: input.forwardEpsAltSource ?? null,
-    trailingEps: input.trailingEps ?? null,
-    reportedEpsLatest: epsSeries.length > 0 ? epsSeries[0] : null,
-    earningsGrowth: input.earningsGrowth ?? null,
-    revenueGrowth: input.revenueGrowth ?? null,
-    moatMultiple: targetMultiple,
-    // Tope sectorial (R9): prima sobre la referencia según el moat.
-    moatPremium: moat === 'Wide' ? 1.5 : moat === 'Narrow' ? 1.25 : 1,
-    industryForwardPe: input.industryForwardPe ?? null,
-    forwardEpsTv: input.tvEpsForecastNextFy ?? null,
-  });
-  fvFlags.push(...mult.flags);
-
-  // Pata 3 (R10): DCF corto sobre ganancias de consenso, con el mismo
-  // EPS reparado y el mismo múltiplo sectorial de la pata 2. N/m solo
-  // ante imposibilidad (R-C): EPS ≤ 0 o desacuerdo de signo irresoluble
-  // entre fuentes — un sendero que arranca en break-even no proyecta.
+  // Crecimiento de INGRESOS de consenso (hacia adelante): promedio de
+  // las fuentes que lo estiman (tendencia de Yahoo; TradingView contra
+  // su propio TTM). Alimenta el chequeo de la pata 3 y el ancla de
+  // régimen de abajo.
   const revenueChecks: number[] = [];
   if (input.trendRevenueGrowth != null && Number.isFinite(input.trendRevenueGrowth)) {
     revenueChecks.push(input.trendRevenueGrowth);
@@ -1223,42 +1428,137 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     revenueChecks.length > 0
       ? revenueChecks.reduce((a, b) => a + b, 0) / revenueChecks.length
       : null;
-  let earningsDcf: EarningsDcfEvaluation | null = null;
-  let earningsDcfExcluded: FvExcludedComponent | null = null;
-  if (mult.epsUsed != null && mult.epsUsed > 0 && mult.multipleUsed != null) {
-    if (mult.signDisagreement) {
-      earningsDcfExcluded = {
-        component: 'dcf',
-        reason: 'epsSignDisagreement',
-        value: null,
-      };
-      fvFlags.push('earningsDcfSignDisagreement');
-    } else {
-      earningsDcf = evaluateEarningsDcf({
-        epsYear1: mult.epsUsed,
-        growthNextYear:
-          input.epsTrendGrowthNextYear ??
-          (input.finvizEpsNextYearPct != null ? input.finvizEpsNextYearPct / 100 : null),
-        growth5y:
-          input.epsTrendGrowth5y ??
-          (input.finvizEpsNext5YPct != null ? input.finvizEpsNext5YPct / 100 : null),
-        growthFallback: input.earningsGrowth ?? input.revenueGrowth ?? null,
-        revenueGrowthCheck,
-        sectorMultiple: mult.multipleUsed,
-      });
-      fvFlags.push(...earningsDcf.flags);
-      if (earningsDcf.value == null) {
-        earningsDcfExcluded = {
-          component: 'dcf',
-          reason: 'earningsPathCollapsed',
-          value: null,
-        };
-      }
-    }
-  } else {
-    earningsDcfExcluded = { component: 'dcf', reason: 'notMeaningful', value: null };
+
+  // ANCLA DE CRECIMIENTO DE LARGO PLAZO POR RÉGIMEN (R11): la misma
+  // regla que usa Grinold-Kroner en el Optimizador, con los insumos
+  // hacia adelante que esta capa conoce:
+  //  - Empresa en crecimiento (ventas de consenso creciendo más de
+  //    +12,5%): el techo del crecimiento de ganancias de largo plazo
+  //    es ventas + 10 pp de apalancamiento operativo.
+  //  - Empresa madura: el techo es su crecimiento sustentable,
+  //    g = ROIC × tasa de reinversión, con la reinversión calculada de
+  //    los reportados de EDGAR ((capex − depreciación) / ingreso
+  //    neto del último año fiscal, acotada a [0%, 90%]).
+  // El ancla es TECHO, nunca piso: si el consenso a 5 años implica
+  // menos, manda el consenso. El retorno sobre el capital es el ROIC
+  // real (Finviz) y, si falta, el ROE — nunca un proxy narrativo.
+  const capitalReturnPct = input.roicPct ?? roePct;
+  const niLatest = input.netIncomeHistory?.[0] ?? null;
+  const daLatest = input.depreciationHistory?.[0] ?? null;
+  const cxLatest = input.capexHistory?.[0] ?? null;
+  const reinvestmentRatePct =
+    niLatest != null && niLatest > 0 && daLatest != null && cxLatest != null
+      ? clamp(((cxLatest - daLatest) / niLatest) * 100, 0, 90)
+      : null;
+  const forwardSalesPct = revenueGrowthCheck != null ? revenueGrowthCheck * 100 : null;
+  let growthAnchorPct: number | null = null;
+  if (forwardSalesPct != null && forwardSalesPct > FV_GROWTH_REGIME_SALES_PCT) {
+    growthAnchorPct = forwardSalesPct + FV_GROWTH_LEVERAGE_SLACK_PP;
+  } else if (capitalReturnPct != null && reinvestmentRatePct != null) {
+    growthAnchorPct = (capitalReturnPct * reinvestmentRatePct) / 100;
   }
-  const dcfValue = earningsDcf?.value ?? null;
+  // Crecimiento de largo plazo usado por el sistema: el consenso a 5
+  // años, acotado por el ancla si la hay; sin consenso, el ancla sola.
+  const consensusG5Pct =
+    input.epsTrendGrowth5y != null
+      ? input.epsTrendGrowth5y * 100
+      : input.finvizEpsNext5YPct ?? null;
+  const longRunGrowthPct =
+    consensusG5Pct != null
+      ? growthAnchorPct != null
+        ? Math.min(consensusG5Pct, growthAnchorPct)
+        : consensusG5Pct
+      : growthAnchorPct;
+  // La g de la FÓRMULA del múltiplo justificado es el crecimiento del
+  // consenso a 5 años, sin el ancla por régimen: la fórmula ya lo
+  // acota a su techo de estado estable (5%), y el ancla madura
+  // (ROIC × reinversión con reinversión = (capex − depreciación) /
+  // ingreso neto) subestima sistemáticamente la reinversión de las
+  // empresas livianas en activos, cuyo gasto real de crecimiento es
+  // el I+D que va por resultados (Damodaran: hay que capitalizar el
+  // I+D para medir esa reinversión; sin ese ajuste, el ancla aplasta
+  // la g de un AAPL a ~0,7% y deprime su múltiplo sin fundamento en
+  // los datos forward). El ancla por régimen sigue gobernando el
+  // crecimiento de Grinold-Kroner en el Optimizador y queda como
+  // respaldo de la fórmula cuando no hay consenso a 5 años.
+  const multipleGrowthPct = consensusG5Pct ?? growthAnchorPct;
+
+  // Componente de múltiplos: EPS forward reparado entre fuentes ×
+  // múltiplo JUSTIFICADO (R11). El P/E publicado jamás entra como
+  // input directo; la tabla por moat queda como último recurso.
+  const targetMultiple = moat === 'Wide' ? 26 : moat === 'Narrow' ? 20 : 15;
+  const mult = evaluateMultiplesComponent({
+    currentPrice,
+    publishedForwardPe: input.forwardPE ?? null,
+    altPublishedForwardPe: input.finvizForwardPe ?? null,
+    forwardEps: input.forwardEps ?? null,
+    forwardEpsAlt: input.forwardEpsAlt ?? null,
+    forwardEpsAltSource: input.forwardEpsAltSource ?? null,
+    trailingEps: input.trailingEps ?? null,
+    reportedEpsLatest: epsSeries.length > 0 ? epsSeries[0] : null,
+    earningsGrowth: input.earningsGrowth ?? null,
+    revenueGrowth: input.revenueGrowth ?? null,
+    moatMultiple: targetMultiple,
+    industryForwardPe: input.industryForwardPe ?? null,
+    capitalReturnPct,
+    longRunGrowthPct: multipleGrowthPct,
+    sectorCapitalReturnPct: input.sectorRoicPct ?? null,
+    sectorLongRunGrowthPct: input.sectorGrowth5yPct ?? null,
+    forwardEpsTv: input.tvEpsForecastNextFy ?? null,
+  });
+  fvFlags.push(...mult.flags);
+
+  // MÉTODO ELEGIDO (decisión del usuario, 2026-11-03 04:40): el FV es
+  // el promedio de DOS estimaciones independientes, ambas hacia
+  // adelante — el target de consenso y la fórmula (EPS forward ×
+  // múltiplo justificado). El DCF sobre ganancias SALE del promedio:
+  // era la pata que contaba el crecimiento dos veces (crecía el EPS
+  // por 5 años Y aplicaba múltiplo terminal con prima). La función
+  // evaluateEarningsDcf se conserva como utilidad documentada (sus
+  // tests fijan su matemática), pero ya no alimenta el FV.
+  const earningsDcfExcluded: FvExcludedComponent = {
+    component: 'dcf',
+    reason: 'retiredFromAverage',
+    value: null,
+  };
+  const dcfValue: number | null = null;
+
+  // PEG — ORIENTADOR, NUNCA VALUADOR (directiva textual del usuario:
+  // «el PEG orienta, no sirve para valuar en sí»). Se calculan el PEG
+  // al precio actual (P/E forward recomputado ÷ crecimiento de largo
+  // plazo del consenso), el PEG implícito de la fórmula (múltiplo
+  // justificado ÷ el mismo crecimiento) y el PEG del sector (P/E del
+  // sector ÷ crecimiento del sector). Un PEG de fórmula disparado
+  // contra el sector (>2× o <0,5×) marca la estimación para REVISIÓN
+  // DE DATOS con un flag: no ajusta ningún número por sí solo
+  // (Easton 2004: el PEG es una heurística sesgada, útil para mirar,
+  // no para construir valor).
+  const pegGrowthPct = multipleGrowthPct;
+  const ownForwardPeUsed =
+    mult.epsUsed != null && mult.epsUsed > 0 ? currentPrice / mult.epsUsed : null;
+  const pegAtPrice =
+    ownForwardPeUsed != null && pegGrowthPct != null && pegGrowthPct > 0
+      ? Math.round((ownForwardPeUsed / pegGrowthPct) * 100) / 100
+      : null;
+  const pegFormula =
+    mult.multipleUsed != null && pegGrowthPct != null && pegGrowthPct > 0
+      ? Math.round((mult.multipleUsed / pegGrowthPct) * 100) / 100
+      : null;
+  const pegSector =
+    input.industryForwardPe != null &&
+    input.industryForwardPe > 0 &&
+    input.sectorGrowth5yPct != null &&
+    input.sectorGrowth5yPct > 0
+      ? Math.round((input.industryForwardPe / input.sectorGrowth5yPct) * 100) / 100
+      : null;
+  if (
+    pegFormula != null &&
+    pegSector != null &&
+    pegSector > 0 &&
+    (pegFormula > 2 * pegSector || pegFormula < 0.5 * pegSector)
+  ) {
+    fvFlags.push('pegFormulaOutlierVsSector');
+  }
 
   // Componente target: promedio de las fuentes de target disponibles
   // (Yahoo — promedio o, en su defecto, mediana del mismo consenso — y
@@ -1314,33 +1614,20 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   // borde de la banda, nunca se borra; con 1 componente el FV es ese
   // componente. El fallback precio × 1,05 no existe: el FV jamás se
   // fabrica desde el precio.
-  // PONDERACIÓN (arquitectura simplificada R10, directiva del usuario
-  // 2026-11-03): referencia central target ~45% / múltiplos ~30% /
-  // DCF-sobre-ganancias ~25%, modulada por la calidad medible:
+  // PONDERACIÓN (método elegido, 2026-11-03 04:40): DOS estimaciones
+  // en pie de igualdad — target y fórmula 50/50 cuando ambas descansan
+  // en datos firmes — moduladas por la calidad medible de cada una:
   //   target: ≥5 analistas y dispersión (high−low)/media ≤ 0,6 → 1,0
   //           (dispersión alta → 0,85); 3–4 analistas → 0,8;
   //           1–2 analistas o cobertura desconocida de fuente única →
-  //           0,45 (nunca dominante); 2+ fuentes sin conteo → 0,8.
-  //           Sigue siendo el mayor con cobertura razonable: es el
-  //           promedio de muchas estimaciones independientes (ley de
-  //           los grandes números).
-  //   múltiplos: EPS directo de ≥2 proveedores → 0,67; de 1 → 0,55;
-  //           solo derivado → 0,45.
-  //   DCF-ganancias: crecimiento año +2 y a 5 años ambos de consenso
-  //           → 0,56; uno por respaldo → 0,48; ninguno → 0,40.
-  // La directiva intermedia «el DCF de historia pesa más que los
-  // múltiplos como contrapeso» queda SUSTITUIDA por esta arquitectura:
-  // el rol de contrapeso conservador lo cumple ahora el ANCLA
-  // HISTÓRICA fuera del promedio (escenario pesimista), y dentro del
-  // promedio manda el consenso hacia adelante.
-  const earningsDcfQuality =
-    earningsDcf == null
-      ? 0.4
-      : earningsDcf.growthTier === 'consensus'
-        ? 0.56
-        : earningsDcf.growthTier === 'partial'
-          ? 0.48
-          : 0.4;
+  //           0,45; 2+ fuentes sin conteo → 0,8.
+  //   fórmula: factor EPS (≥2 proveedores directos → 1,0; 1 → 0,75;
+  //           solo derivado → 0,55) × firmeza del múltiplo (sector
+  //           ajustado por la fórmula justificada → 1,0; sector pelado
+  //           → 0,85; justificado sin sector → 0,7; P/E propio → 0,55;
+  //           tabla heredada → 0,45). Si la fórmula depende de datos
+  //           débiles (pocas fuentes de EPS o ROIC no computable, que
+  //           impide el ajuste), su peso baja y el target manda.
   const multGroups = new Set(
     mult.provenance.sources.map((s) =>
       s.startsWith('finviz')
@@ -1357,7 +1644,18 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   const multDirectGroups = (['yahoo', 'finviz', 'tradingview'] as const).filter((g) =>
     multGroups.has(g)
   ).length;
-  const multiplesQuality = multDirectGroups >= 2 ? 0.67 : multDirectGroups === 1 ? 0.55 : 0.45;
+  const multEpsFactor = multDirectGroups >= 2 ? 1 : multDirectGroups === 1 ? 0.75 : 0.55;
+  const multBasisFirmness =
+    mult.multipleBasis === 'sectorAjustado'
+      ? 1
+      : mult.multipleBasis === 'sector'
+        ? 0.85
+        : mult.multipleBasis === 'fundamental'
+          ? 0.7
+          : mult.multipleBasis === 'propio'
+            ? 0.55
+            : 0.45;
+  const multiplesQuality = clamp(multEpsFactor * multBasisFirmness, 0.3, 1);
   const targetDispersion =
     analystTarget != null && analystTarget > 0 && consensusHigh != null && consensusLow != null
       ? (consensusHigh - consensusLow) / analystTarget
@@ -1377,16 +1675,17 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
             : 0.45;
 
   const pool: FvComponentInput[] = [];
-  if (dcfValue != null) pool.push({ key: 'dcf', value: dcfValue, quality: earningsDcfQuality });
   if (mult.value != null) pool.push({ key: 'multiples', value: mult.value, quality: multiplesQuality });
   if (analystTarget != null)
     pool.push({
       key: 'target',
       value: analystTarget,
       quality: targetQuality,
-      // Techo duro: ni la winsorización lo levanta sobre el máximo del
-      // consenso (R9; con dos proveedores, la unión de rangos).
+      // Techo y piso duros (R9 + R11): la winsorización no lo mueve
+      // fuera del rango publicado del consenso [low, high] en ninguna
+      // dirección (con dos proveedores, la unión de rangos).
       clipCeiling: consensusHigh ?? undefined,
+      clipFloor: consensusLow ?? undefined,
     });
   const agg = aggregateFairValue(pool, {
     currentPrice,
@@ -1398,16 +1697,14 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
 
   const fvProvenance: FvProvenance[] = [
     {
-      // Pata 3 (R10): DCF corto sobre ganancias — la «base» trazable es
-      // el EPS de consenso del año 1 y el valor usado, el de la pata.
+      // DCF sobre ganancias: RETIRADO del promedio por el método
+      // elegido (2026-11-03 04:40) — contaba el crecimiento dos veces.
+      // La entrada queda en la procedencia como registro histórico.
       component: 'dcf',
       originalValue: mult.provenance.usedEps,
-      usedValue: dcfValue,
-      sources: earningsDcf != null ? ['consensusEpsPath'] : [],
-      flags:
-        earningsDcf != null
-          ? earningsDcf.flags
-          : [earningsDcfExcluded?.reason ?? 'notMeaningful'],
+      usedValue: null,
+      sources: [],
+      flags: ['retiredFromAverage'],
     },
     {
       // Ancla histórica (R10): DCF de FCF reportado, fuera del
@@ -1421,7 +1718,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
         ...(fvFlags.includes('normalizedBase') ? ['normalizedBase'] : []),
         ...(troughAdjusted ? ['troughAdjusted'] : []),
         ...(dcfBaseSource === 'edgarAnnualCashflow' ? ['derivedFromFilings'] : []),
-        ...(dcfBaseSource === 'ttmEmerging' ? ['ttmBaseEmerging'] : []),
+        ...(dcfBaseSource === 'ttm' && fcfSeries.length >= 3 ? ['anchorTtmBase'] : []),
         ...(anchorExcluded?.reason === 'medianFcfNonPositive'
           ? ['medianFcfNonPositive']
           : []),
@@ -1482,6 +1779,9 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     currentPrice,
     fairValue,
     dcfValue,
+    pegAtPrice,
+    pegFormula,
+    pegSector,
     historicalAnchorValue: anchorValue,
     analystTarget,
     fvComponents: agg.components.map((c) => c.value),

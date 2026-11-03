@@ -169,13 +169,14 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
   const analyst = extras?.targetMean ?? fairValue?.analystTarget ?? null;
   const anchor = fairValue?.historicalAnchorValue ?? null;
 
-  // Escenarios desde la dispersión de las TRES PATAS vigentes del motor
-  // (DCF sobre ganancias / múltiplos / target — fvComponents): pesimista
-  // = la pata más baja, optimista = la más alta, base = FV del motor.
+  // Escenarios desde la dispersión de las DOS PATAS vigentes del motor
+  // (fórmula de múltiplo justificado / target de consenso —
+  // fvComponents): pesimista = la pata más baja, optimista = la más
+  // alta, base = FV del motor.
   // El ANCLA HISTÓRICA (DCF de FCF reportado) solo puede bajar el
   // pesimista si no es un outlier contra las patas (dentro de 1,8× de
   // su mediana): la historia de una empresa en inflexión (ancla ~52
-  // contra patas ~350) no condena el escenario por sí sola (R10).
+  // contra patas ~350) no condena el escenario por sí sola.
   // Fallback para payloads sin componentes: los métodos clásicos.
   const legs = (fairValue?.fvComponents ?? []).filter(
     (v): v is number => v != null && Number.isFinite(v) && v > price * 0.2 && v < price * 4
@@ -355,7 +356,7 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
     verdictDetail:
       'Veredicto calculado con la regla de la ficha: compra fuerte si hasta el escenario pesimista deja más de +20% de upside; comprar de a poco si el upside al base es de +30% o más pero el pesimista no deja colchón; mantener si el upside base es chico (entre −10% y +30%); vender si el precio ya supera al valor justo base.',
     seedNote:
-      'Precarga automática: precio y múltiplos en vivo; Fair Value y escenarios desde el motor (tres patas: target de analistas, múltiplos sobre ganancias futuras y DCF corto sobre ganancias; el DCF histórico solo acota el pesimista). Todo es editable: el juicio del analista manda.',
+      'Precarga automática: precio y múltiplos en vivo; Fair Value y escenarios desde el motor (dos estimaciones hacia adelante: el target de consenso de analistas y la fórmula de ganancias futuras por el múltiplo justificado; el valor según la historia reportada solo acota el pesimista). Todo es editable: el juicio del analista manda.',
   };
 }
 

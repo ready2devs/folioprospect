@@ -9,7 +9,7 @@ import { computeFairValue, evaluateMultiplesComponent } from '../fairvalue.js';
  * desacuerdo de signo entre fuentes directas del EPS forward.
  * Fixtures sintéticos derivados de las reglas.
  */
-describe('DCF emergente castigado (C)', () => {
+describe('ancla con base TTM (ex «DCF emergente»): sin castigo (R11)', () => {
   const baseInput = {
     symbol: 'TEST',
     currentPrice: 100,
@@ -20,22 +20,23 @@ describe('DCF emergente castigado (C)', () => {
     totalDebt: 0,
   };
 
-  it('la base TTM del DCF emergente entra con haircut ×0,75 (procedencia lo muestra)', () => {
+  it('la base TTM entra PELADA (el haircut ×0,75 salió del motor; la procedencia lo muestra)', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
       fcfHistory: [100, -50, -200], // mediana −50 ≤ 0, TTM +100, ingresos +30%
       targetMeanPrice: 120,
     });
-    expect(r.fvFlags).toContain('ttmBaseEmerging');
-    // R10: el DCF emergente vive en el ANCLA histórica (fuera del FV).
+    expect(r.fvFlags).not.toContain('ttmBaseEmerging');
+    // El DCF de historia vive en el ANCLA histórica (fuera del FV).
     expect(r.historicalAnchorValue).not.toBeNull();
     const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
     expect(prov?.originalValue).toBe(100);
-    expect(prov?.usedValue).toBeCloseTo(75, 6);
+    expect(prov?.usedValue).toBeCloseTo(100, 6);
+    expect(prov?.flags).toContain('anchorTtmBase');
   });
 
-  it('el DCF emergente vale exactamente 75% del mismo DCF con base plena (sin caja neta)', () => {
+  it('el ancla con base TTM vale EXACTAMENTE lo mismo que con base plena (sin caja neta)', () => {
     const emerging = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
@@ -50,10 +51,10 @@ describe('DCF emergente castigado (C)', () => {
       targetMeanPrice: 120,
     });
     expect(fullBase.historicalAnchorValue).not.toBeNull();
-    expect(emerging.historicalAnchorValue!).toBeCloseTo(0.75 * fullBase.historicalAnchorValue!, 4);
+    expect(emerging.historicalAnchorValue!).toBeCloseTo(fullBase.historicalAnchorValue!, 4);
   });
 
-  it('el DCF emergente ya no pondera: vive en el ancla, fuera del promedio (R10)', () => {
+  it('el ancla no pondera: vive fuera del promedio, que se forma con las DOS patas vigentes', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
@@ -63,14 +64,14 @@ describe('DCF emergente castigado (C)', () => {
       forwardEpsAltSource: 'finviz' as const,
       targetMeanPrice: 120,
     });
-    // El ancla emergente existe como referencia…
+    // El ancla existe como referencia…
     expect(r.historicalAnchorValue).not.toBeNull();
     const prov = r.fvProvenance?.find((p) => p.component === 'anchor');
-    expect(prov?.flags).toContain('ttmBaseEmerging');
-    expect(prov?.usedValue).toBeCloseTo(75, 6);
-    // …pero el FV se forma SOLO con las tres patas vigentes (el pool
-    // tiene 3 componentes y ninguno es el valor del ancla).
-    expect(r.fvComponents).toHaveLength(3);
+    expect(prov?.flags).toContain('anchorTtmBase');
+    expect(prov?.usedValue).toBeCloseTo(100, 6);
+    // …pero el FV se forma SOLO con fórmula y target (2 componentes,
+    // ninguno es el valor del ancla).
+    expect(r.fvComponents).toHaveLength(2);
     expect(r.fvComponents).not.toContain(r.historicalAnchorValue);
     const w = r.fvComponentWeights ?? [];
     expect(w.reduce((s, x) => s + x, 0)).toBeCloseTo(1, 6);

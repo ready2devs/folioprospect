@@ -14,28 +14,27 @@
  *   3. Consenso de analistas a 1 año (20%): upside al target promedio, acotado.
  * Pesos renormalizados si falta un componente; jamás se rellena un dato.
  *
- * De RE salen: años para duplicar = ln2/ln(1+RE) y el Score de inversión 0–100
- * (30% velocidad, 25% oportunidad Precio/FV, 20% calidad, 15% confianza de
- * la valuación, 10% riesgo — docs/OPTIMIZER-PROFESSIONAL.md). La
- * convergencia no usa el FV crudo sino el FV ENCogido hacia el precio según
- * la confianza de la valuación (Alta ×1, Media ×0,7, Baja ×0,4 de la
- * brecha): una valuación frágil no puede liderar el ranking ni recibir
- * fondos como si fuera sólida.
+ * De RE salen: años para duplicar = ln2/ln(1+RE) y el Score de inversión
+ * 0–100. El score lo DOMINA la capacidad de duplicar (directiva del
+ * usuario 2026-11-03): la velocidad derivada del RE es la base (0–100)
+ * y las demás dimensiones (oportunidad precio/FV, calidad, confianza
+ * de la valuación, riesgo) entran como un AJUSTE acotado de ±15
+ * puntos — pueden premiar o castigar dentro de esa banda, pero no
+ * invertir el titular: la tabla ordena por duplicación y el score no
+ * puede contradecirla groseramente.
  *
- * Pase correctivo de la capa de RE (2026-11-03, docs §12) y su
- * recalibración por desapilado (docs §13): la primera versión cobraba
- * la prudencia dos y tres veces (FV encogido + convergencia al piso
- * para todo Baja + topes angostos) y hundía el RE de cartera a 8,3%.
- * Con los FV anclados en la realidad (adenda R9 de valuación: target
- * líder acotado a su consenso, DCF contrapeso, múltiplo con tope
- * sectorial), la prudencia vive UNA SOLA VEZ: (A) la convergencia usa
- * el FV encogido por confianza, y el PISO del rango solo gobierna
- * cuando el tripwire `modelSuspect` de la valuación disparó; (B) el RE
- * final tiene tope por confianza en una sola capa (Alta +35% · Media
- * +30% · Baja +25%); (D) si las fuentes del EPS forward discrepan en
- * el signo, la confianza que usa ESTA capa baja un escalón más y
- * Grinold-Kroner no puede usar crecimiento de EPS. El FV titular no
- * cambia por esta capa (R0): cambia la estimación de retorno derivada.
+ * Sistema forward (R11, docs/VALUATION-RULES.md): esta capa NO
+ * corrige ni descuenta ninguna estimación. La convergencia usa el
+ * Fair Value TAL CUAL lo publica el motor de valuación (sin encoger
+ * por confianza, sin bajar al piso del rango por tripwires): la
+ * confianza es una ETIQUETA que acompaña al número (y un ajuste menor
+ * dentro del score), nunca un reescalado. Sin topes sobre las
+ * estimaciones (consenso y convergencia a valor facial); los únicos
+ * clamps que quedan son anti-basura numérica documentados: el RE
+ * final a [−50%, +80%] y la tasa de crecimiento de GK a [−30%, +100%].
+ * El crecimiento de GK conserva su ancla por régimen (ventas en
+ * crecimiento, ROIC × reinversión en maduras — la doctrina del
+ * usuario), que es un techo con fundamento económico, no un descuento.
  * A nivel cartera el RE es GEOMÉTRICO: se
  * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
  * matriz de correlaciones por bloques (aproximación documentada) y
@@ -94,8 +93,10 @@ export interface OptimizerAssetInput {
   moatScore?: number | null;
   locked?: boolean;
   defensive?: boolean;
-  /** Confianza de la valuación propia (fairvalue.ts): gobierna el
-   *  shrinkage del FV que alimenta convergencia y oportunidad. */
+  /** Confianza de la valuación propia (fairvalue.ts): ETIQUETA que
+   *  acompaña al FV. Desde R11 no reescala ningún número; solo entra
+   *  como una dimensión menor del ajuste acotado del score y en el
+   *  listón de destino (≥2 componentes, FV/precio). */
   fvConfidence?: 'Alta' | 'Media' | 'Baja' | null;
   /** Cantidad de componentes válidos detrás del FV (1–3). Un FV de un
    *  solo componente no compite de igual a igual como destino. */
@@ -113,26 +114,26 @@ export interface OptimizerAssetInput {
    *  propone ni compra ni venta: la decisión se difiere al balance. */
   nextEarningsDate?: string | null;
   earningsBusinessDays?: number | null;
-  /** El EPS que alimentó múltiplos/crecimiento fue normalizado a mitad
-   *  de ciclo (dispersión histórica alta o yield forward > 20%). */
+  /** Campo histórico: la normalización de EPS a mitad de ciclo SALIÓ
+   *  en R11 (era un juicio narrativo codificado que contradecía la
+   *  visibilidad forward — p. ej. capacidad vendida por años). La
+   *  capa de datos ya no la calcula: siempre false. Se conserva el
+   *  campo por compatibilidad de la API. */
   cyclicalNormalized?: boolean;
-  /** EPS de mitad de ciclo usado en la normalización (trazabilidad). */
+  /** Campo histórico (ver cyclicalNormalized): siempre null. */
   midCycleEps?: number | null;
-  /** Rango [piso, techo] de los componentes del FV (motor de valuación,
-   *  valores crudos). Su piso solo gobierna la convergencia cuando el
-   *  tripwire `modelSuspect` de la valuación disparó (desapilado 2026-11-03,
-   *  §13 del doc profesional): la prudencia vive una sola vez, en el FV. */
+  /** Rango [piso, techo] de los componentes del FV (motor de
+   *  valuación, valores crudos): información que acompaña al FV.
+   *  Desde R11 ningún extremo del rango gobierna la convergencia. */
   fvRangeLow?: number | null;
   fvRangeHigh?: number | null;
   /** El motor de valuación marcó el FV como sospechoso (FV > 2× el
-   *  target de consenso o > 2,5× el precio, R9): solo entonces la
-   *  convergencia del RE apunta al piso del rango en vez del FV
-   *  encogido por confianza. */
+   *  target de consenso o > 2,5× el precio, R9): ETIQUETA informativa;
+   *  desde R11 no cambia la convergencia ni ningún número. */
   fvModelSuspect?: boolean;
   /** Las fuentes directas del EPS forward discrepan en el signo en el
-   *  mismo refresco (consenso ≈ break-even): la confianza de la capa de
-   *  RE baja un escalón adicional y GK pierde el crecimiento de EPS
-   *  (pase correctivo D). No altera la etiqueta pública de la ficha. */
+   *  mismo refresco (consenso ≈ break-even): trazabilidad; desde R11
+   *  no altera ningún número de esta capa. */
   epsSignDisagreement?: boolean;
 }
 
@@ -211,9 +212,23 @@ export interface AssetScore {
   confidence: 'alta' | 'media' | 'baja';
   /** FV crudo del motor de valuación (sin shrinkage). */
   fvRaw: number | null;
-  /** FV efectivamente usado por convergencia y score: encogido hacia el
-   *  precio según la confianza de la valuación. */
+  /** FV usado por convergencia y score: desde R11 es el MISMO FV del
+   *  motor, tal cual — sin encoger por confianza ni bajar a ningún
+   *  piso. Se conserva el campo por compatibilidad de la API. */
   fvEffective: number | null;
+  /** Base del score: la velocidad (capacidad de duplicar derivada del
+   *  RE), 0–100. Es la pata dominante del puntaje (directiva
+   *  2026-11-03). */
+  scoreVelocity: number | null;
+  /** Ajuste acotado del score (±15 pts máx): lo que las demás
+   *  dimensiones (oportunidad, calidad, confianza, riesgo) suman o
+   *  restan sobre la velocidad. */
+  scoreAdjustmentPts: number | null;
+  /** Motivo principal del ajuste, en lenguaje simple, cuando el
+   *  ajuste es llamativo (|ajuste| ≥ 5 pts): la evaluación escrita lo
+   *  cita para que ninguna diferencia score↔duplicación quede sin
+   *  explicación. */
+  scoreAdjustmentDriver: string | null;
   fvConfidence: 'Alta' | 'Media' | 'Baja' | null;
   fvComponentCount: number | null;
   fvToPrice: number | null;
@@ -226,13 +241,15 @@ export interface AssetScore {
   earningsGate: { date: string; businessDays: number } | null;
   cyclicalNormalized: boolean;
   dilutionPct: number | null;
-  /** La convergencia usó el destino conservador (piso del rango, o
-   *  respaldo k=0,25 sin rango) porque el FV está marcado sospechoso
-   *  por el tripwire de plausibilidad (desapilado §13). */
+  /** Campo histórico (desapilado §13): desde R11 la convergencia
+   *  siempre usa el FV tal cual, así que este flag queda en false; se
+   *  conserva por compatibilidad de la API. */
   conservativeConvergence: boolean;
-  /** El FV trae la marca `modelSuspect` del motor de valuación (R9). */
+  /** El FV trae la marca `modelSuspect` del motor de valuación (R9):
+   *  es una ETIQUETA informativa (el número no cambia por ella). */
   modelSuspect: boolean;
-  /** Desacuerdo de signo entre fuentes del EPS forward (pase D). */
+  /** Desacuerdo de signo entre fuentes del EPS forward: dato de
+   *  trazabilidad; desde R11 no altera ningún número. */
   epsSignDisagreement: boolean;
 }
 
@@ -429,34 +446,34 @@ export interface GrinoldKronerParts {
   growthBasePct: number | null;
 }
 
+/** Banda anti-basura de la TASA de crecimiento que entra a GK: no es
+ *  una opinión sobre ninguna empresa — existe para que un input
+ *  corrupto no imprima un crecimiento de 3 dígitos en pantalla. Se
+ *  subió de +60 a +100 en R11 porque ataba en 7 de 19 activos reales
+ *  (más de un tercio): a ese nivel dejaba de ser anti-basura y pasaba
+ *  a ser un tope encubierto sobre estimaciones legítimas. */
+export const GK_GROWTH_CLAMP_PCT = { min: -30, max: 100 } as const;
+
 /** Grinold-Kroner por activo, con el despiece del crecimiento.
  *  `total` es null si no hay crecimiento estimable. */
 export function grinoldKronerParts(a: OptimizerAssetInput): GrinoldKronerParts {
   let baseGrowth: number | null = null;
-  if (a.epsSignDisagreement) {
-    // Pase correctivo D: si las fuentes del EPS discrepan en el SIGNO,
-    // ninguna tasa de crecimiento de ganancias derivada de ese EPS es
-    // creíble (el input es cara o cruz). GK solo puede apoyarse en el
-    // crecimiento de INGRESOS; sin ese dato, el subcomponente de
-    // crecimiento vale 0 — no se fabrica crecimiento desde un EPS en
-    // disputa, pero el resto de GK (dividendos, recompra, repricing)
-    // sigue computando.
-    baseGrowth = a.salesGrowthPct ?? 0;
+  // Estimación de crecimiento de ganancias: ganancias totales si
+  // está (anti doble conteo con el buyback); si no, la mediana del
+  // crecimiento de EPS de consenso (próximo año / 5 años). Desde R11
+  // no hay trato especial por desacuerdo de signo entre fuentes: la
+  // cadena de valuación ya resolvió el EPS, y el ancla por régimen
+  // de abajo es el único techo.
+  if (a.earningsGrowthTotalPct != null) {
+    baseGrowth = a.earningsGrowthTotalPct;
   } else {
-    // Estimación de crecimiento de ganancias: ganancias totales si
-    // está (anti doble conteo con el buyback); si no, la mediana del
-    // crecimiento de EPS de consenso (próximo año / 5 años).
-    if (a.earningsGrowthTotalPct != null) {
-      baseGrowth = a.earningsGrowthTotalPct;
-    } else {
-      const eps: number[] = [];
-      if (a.epsNextYearPct != null) eps.push(a.epsNextYearPct);
-      if (a.epsNext5YPct != null) eps.push(a.epsNext5YPct);
-      if (eps.length > 0) baseGrowth = median(eps);
-    }
-    // Sin estimación de ganancias, el crecimiento de ventas es el proxy.
-    if (baseGrowth == null) baseGrowth = a.salesGrowthPct ?? null;
+    const eps: number[] = [];
+    if (a.epsNextYearPct != null) eps.push(a.epsNextYearPct);
+    if (a.epsNext5YPct != null) eps.push(a.epsNext5YPct);
+    if (eps.length > 0) baseGrowth = median(eps);
   }
+  // Sin estimación de ganancias, el crecimiento de ventas es el proxy.
+  if (baseGrowth == null) baseGrowth = a.salesGrowthPct ?? null;
   if (baseGrowth == null) {
     return { total: null, growthUsedPct: null, growthAnchorPct: null, growthRegime: null, growthBasePct: null };
   }
@@ -464,14 +481,12 @@ export function grinoldKronerParts(a: OptimizerAssetInput): GrinoldKronerParts {
   // económico según el régimen — reemplaza al fade mecánico anterior
   // (conservar el 45% del exceso sobre 6%), que era un descuento
   // sistemático sobre la estimación sin orden del usuario. El clamp
-  // residual [−30, +60] es protección anti-basura numérica sobre la
-  // TASA (un input corrupto no imprime crecimientos de 3 dígitos),
-  // no una opinión sobre ninguna empresa.
+  // residual [−30, +100] es la protección anti-basura de arriba.
   const anchor = growthAnchorFor(a);
   const gRaw = clamp(
     anchor != null ? Math.min(baseGrowth, anchor.anchorPct) : baseGrowth,
-    -30,
-    60
+    GK_GROWTH_CLAMP_PCT.min,
+    GK_GROWTH_CLAMP_PCT.max
   );
   const div = a.dividendYieldPct ?? 0;
   const buyback = a.dilutionPct != null ? -a.dilutionPct : 0;
@@ -495,87 +510,27 @@ export function grinoldKroner(a: OptimizerAssetInput): number | null {
 
 export function fvConvergencePct(a: OptimizerAssetInput, years: number): number | null {
   if (a.fvBase == null || !(a.fvBase > 0) || !(a.price > 0) || years <= 0) return null;
-  // SIN tope (corrección del usuario 2026-11-03): el clamp [−25, +35]
-  // era una calibración del asistente del 30-oct, sin orden del
-  // usuario; la brecha contra el FV encogido entra a valor facial —
-  // la prudencia ya vive en el FV y en su encogido por confianza.
+  // SIN tope ni encogido (correcciones del usuario 2026-11-03 y R11):
+  // la brecha contra el Fair Value entra a valor facial, sobre el FV
+  // tal cual lo publica el motor de valuación.
   return (Math.pow(a.fvBase / a.price, 1 / years) - 1) * 100;
 }
 
-/** Factor de shrinkage del FV según la confianza de la valuación: la
- *  brecha FV−precio se reconoce entera solo si la valuación es sólida. */
-export const FV_CONFIDENCE_SHRINK: Record<'Alta' | 'Media' | 'Baja', number> = {
-  Alta: 1,
-  Media: 0.7,
-  Baja: 0.4,
-};
-
-/** FV encogido hacia el precio: precio + (FV − precio) × k(confianza).
- *  Sin etiqueta de confianza se asume Media (0,7). El FV crudo sigue
- *  existiendo y rankeando: lo que cambia es cuánto retorno se le cree. */
-export function shrunkFairValue(
-  price: number,
-  fvBase: number | null | undefined,
-  confidence: 'Alta' | 'Media' | 'Baja' | null | undefined
-): number | null {
-  if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
-  const k = confidence != null ? FV_CONFIDENCE_SHRINK[confidence] : 0.7;
-  return price + (fvBase - price) * k;
-}
-
 export type ValuationConfidence = 'Alta' | 'Media' | 'Baja';
-
-/** Confianza que usa la CAPA DE RETORNO (no la etiqueta pública de la
- *  valuación): la de la valuación, menos un escalón si las fuentes del
- *  EPS forward discrepan en el signo en el mismo refresco (pase D). Un
- *  input cara o cruz no sostiene la misma convergencia ni el mismo tope
- *  que un consenso estable, aunque la ficha siga diciendo lo mismo. */
-export function reConfidenceFor(a: OptimizerAssetInput): ValuationConfidence {
-  const baseConf: ValuationConfidence = a.fvConfidence ?? 'Media';
-  if (!a.epsSignDisagreement) return baseConf;
-  return baseConf === 'Alta' ? 'Media' : 'Baja';
-}
 
 /** Clamp final del retorno esperado: ÚNICA cota que queda en la capa
  *  de RE y es protección anti-basura numérica, no una opinión. Los
  *  topes por confianza (+35/+30/+25 del pase B/§13) y los de las patas
  *  (consenso −20/+35, convergencia −25/+35, calibraciones del
  *  asistente del 30-oct nunca ordenadas por el usuario) fueron
- *  RETIRADOS por la corrección del usuario 2026-11-03: la prudencia
- *  vive una sola vez, en el FV (target líder + ancla histórica +
- *  encogido por confianza al converger); la capa de RE no vuelve a
- *  desconfiar del mismo número. Este clamp [−50%, +80%] no ata en
- *  ningún caso real observado (el RE legítimo más alto de la cartera
- *  ronda +35%): existe para que un input corrupto no imprima un
- *  retorno de tres dígitos en pantalla. */
+ *  RETIRADOS por la corrección del usuario 2026-11-03, y en R11 se
+ *  retiró también el último reescalado que quedaba: el encogido del
+ *  FV por confianza al converger (y su versión tripwire, bajar al
+ *  piso del rango). La convergencia usa el FV tal cual lo publica el
+ *  motor: la confianza es una etiqueta que acompaña al número, no un
+ *  factor que lo reescribe. Este clamp [−50%, +80%] existe solo para
+ *  que un input corrupto no imprima un retorno de tres dígitos. */
 export const RE_SANITY_CLAMP_PCT = { min: -50, max: 80 } as const;
-
-/** Destino al que converge el componente de convergencia del RE
- *  (desapilado §13 — la prudencia vive una sola vez, dentro del FV):
- *  - Regla general: el FV encogido por confianza (Alta k=1,0; Media
- *    k=0,7; Baja k=0,4), como en el diseño profesional original.
- *  - SOLO si el tripwire `modelSuspect` de la valuación disparó
- *    (FV > 2× target o > 2,5× precio): el MENOR entre ese encogido y el
- *    PISO del rango de valuación — ahí sí el número puntual demostró
- *    ser increíble y se converge al escenario conservador que el
- *    propio motor publicó como rango. Sin rango, respaldo k=0,25.
- *  `conservative` marca cuándo gobernó el tripwire. */
-export function convergenceTargetFor(
-  price: number,
-  fvBase: number | null | undefined,
-  reConf: ValuationConfidence,
-  fvRangeLow: number | null | undefined,
-  modelSuspect?: boolean
-): { target: number; conservative: boolean } | null {
-  if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
-  const shrunk = shrunkFairValue(price, fvBase, reConf);
-  if (shrunk == null) return null;
-  if (!modelSuspect) return { target: shrunk, conservative: false };
-  if (fvRangeLow != null && fvRangeLow > 0) {
-    return { target: Math.min(shrunk, fvRangeLow), conservative: true };
-  }
-  return { target: price + (fvBase - price) * 0.25, conservative: true };
-}
 
 /** Ventana de examen: balance a ≤ 5 días hábiles ⇒ decisión diferida. */
 export const EARNINGS_GATE_BUSINESS_DAYS = 5;
@@ -618,8 +573,17 @@ export function thesisSignalsFor(a: OptimizerAssetInput): ThesisSignalCode[] {
   return out;
 }
 
-/** Score mínimo (ya ajustado por confianza) para recibir fondos. */
+/** Score mínimo para recibir fondos. */
 export const DESTINATION_MIN_SCORE = 65;
+
+/** Banda del ajuste del score (puntos): las dimensiones distintas de
+ *  la velocidad mueven el puntaje como máximo ±15. Es la garantía
+ *  estructural de que el score no contradice el orden por
+ *  duplicación que muestra la tabla (directiva 2026-11-03). */
+export const SCORE_ADJUSTMENT_BAND_PTS = 15;
+/** Ajuste a partir del cual el motivo se considera llamativo y la
+ *  evaluación escrita lo cita con su driver. */
+export const SCORE_ADJUSTMENT_NOTABLE_PTS = 5;
 
 export function consensusPct(a: OptimizerAssetInput): number | null {
   if (a.analystTarget == null || !(a.analystTarget > 0) || !(a.price > 0)) return null;
@@ -666,36 +630,26 @@ export function scoreAsset(
   let stars: number | null = null;
   let gordon: number | null = null;
 
-  const fvEffective = isCrypto || isCash ? null : shrunkFairValue(a.price, a.fvBase, a.fvConfidence);
+  // FV usado por convergencia y score: el del motor, TAL CUAL (R11:
+  // sin encoger por confianza, sin pisos por tripwire).
+  const fvEffective = isCrypto || isCash ? null : (a.fvBase ?? null);
   const gate = isCrypto || isCash ? null : earningsGateFor(a);
   const thesisSignals = thesisSignalsFor(a);
-  // Confianza de la capa de RE: puede ser un escalón menor que la
-  // pública si el EPS forward es cara o cruz entre fuentes (pase D).
-  const reConf: ValuationConfidence = reConfidenceFor(a);
-  let conservativeConvergence = false;
+  const conservativeConvergence = false;
 
   let gkParts: GrinoldKronerParts | null = null;
+  let scoreVelocity: number | null = null;
+  let scoreAdjustmentPts: number | null = null;
+  let scoreAdjustmentDriver: string | null = null;
   if (isCrypto || isCash) {
     re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
   } else {
     gkParts = grinoldKronerParts(a);
     gk = gkParts.total;
-    // La convergencia cree la brecha solo en proporción a la confianza
-    // de la valuación (shrinkage): el FV crudo queda para la ficha.
-    // Solo con el FV marcado sospechoso (tripwire R9) el destino baja
-    // al piso del rango (desapilado §13).
-    const convTarget = convergenceTargetFor(
-      a.price,
-      a.fvBase,
-      reConf,
-      a.fvRangeLow,
-      a.fvModelSuspect ?? false
-    );
-    conservativeConvergence = convTarget?.conservative ?? false;
-    fv =
-      convTarget != null
-        ? fvConvergencePct({ ...a, fvBase: convTarget.target }, opts.yearsToCorrection)
-        : null;
+    // Convergencia al FV publicado, a valor facial: la brecha entre
+    // precio y valor justo se convierte en retorno anual en el
+    // horizonte de corrección, sin descuentos de esta capa.
+    fv = fvConvergencePct(a, opts.yearsToCorrection);
     cons = consensusPct(a);
     const parts: Array<[number | null, number]> = [
       [gk, 0.45],
@@ -720,35 +674,60 @@ export function scoreAsset(
         : null);
     if (gAnchor != null) gordon = (a.dividendYieldPct ?? 0) + clamp(gAnchor, 0, 5.5);
 
-    // Score 0–100 sin doble conteo (docs/OPTIMIZER-PROFESSIONAL.md §7):
-    // la velocidad (el RE con otro nombre) pesa 30% como máximo; el resto
-    // es información ortogonal: oportunidad contra el FV encogido,
-    // calidad del negocio, CONFIANZA de la valuación y riesgo.
-    // Velocidad sobre el rango completo del RE acotado (−5..35):
-    // un RE de 15% da 50; hacen falta ~25% para 75 y 35% para 100.
-    const velocity = re != null ? clamp(((re + 5) / 40) * 100, 0, 100) : null;
+    // SCORE DOMINADO POR LA CAPACIDAD DE DUPLICAR (directiva del
+    // usuario 2026-11-03, mismo día): la base es la velocidad — el
+    // retorno esperado convertido a escala 0–100 (RE −5% → 0; 15% →
+    // 50; 35% → 100) — y las demás dimensiones entran como un AJUSTE
+    // ACOTADO de ±15 puntos: oportunidad precio/FV (25/70 del
+    // ajuste), calidad del negocio (20/70), confianza de la
+    // valuación (15/70) y riesgo (10/70). El ajuste puede premiar o
+    // castigar dentro de su banda, pero no puede invertir el
+    // titular: dos activos cuya velocidad difiera en más de 30
+    // puntos jamás se cruzan en el score, y nadie del tercio más
+    // rápido termina en el tercio inferior por el ajuste. (El diseño
+    // «profesional» anterior — velocidad al 30% — invertía el orden
+    // que la tabla muestra y era contraintuitivo: score bajo arriba
+    // en la tabla.)
+    scoreVelocity = re != null ? clamp(((re + 5) / 40) * 100, 0, 100) : null;
     let opportunity = a.opportunityScore ?? null;
     if (opportunity == null && fvEffective != null && fvEffective > 0 && a.price > 0) {
       opportunity = scoreFor(a.price / fvEffective, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
     }
     const quality = qualityScore(a);
-    // La confianza que puntúa el score es la de la capa de RE (con el
-    // escalón menos por desacuerdo de signo, si lo hay): el score no
-    // puede creerle más a una valuación que el propio retorno esperado.
     const valuationConfidenceScore =
-      reConf === 'Alta' ? 90 : reConf === 'Media' ? 65 : 35;
+      a.fvConfidence === 'Alta' ? 90 : a.fvConfidence === 'Media' ? 65 : a.fvConfidence === 'Baja' ? 35 : null;
     const riskScore = clamp(100 - Math.max(0, vol - 15) * 1.6 - Math.max(0, (a.debtToEquity ?? 0) - 1) * 8, 0, 100);
-    const comps: Array<[number | null, number]> = [
-      [velocity, 0.3],
-      [opportunity, 0.25],
-      [quality, 0.2],
-      [valuationConfidenceScore, 0.15],
-      [riskScore, 0.1],
+    const adjDims: Array<{ value: number | null; weight: number; driver: string }> = [
+      { value: opportunity, weight: 25, driver: 'su precio contra el valor justo' },
+      { value: quality, weight: 20, driver: 'su calidad (rentabilidad del capital y márgenes)' },
+      { value: valuationConfidenceScore, weight: 15, driver: 'la confianza de su valuación' },
+      { value: riskScore, weight: 10, driver: 'su riesgo (volatilidad y deuda)' },
     ];
-    const av = comps.filter(([v]) => v != null) as Array<[number, number]>;
-    if (av.length >= 2 && re != null) {
-      const tw = av.reduce((s, [, w]) => s + w, 0);
-      score = Math.round(av.reduce((s, [v, w]) => s + v * w, 0) / tw);
+    const adjAvail = adjDims.filter((d) => d.value != null);
+    if (scoreVelocity != null) {
+      let adjustment = 0;
+      if (adjAvail.length > 0) {
+        const tw = adjAvail.reduce((s, d) => s + d.weight, 0);
+        const index = adjAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
+        adjustment = ((index - 50) / 50) * SCORE_ADJUSTMENT_BAND_PTS;
+        // Driver: la dimensión que más empujó el ajuste (su desvío
+        // del centro, ponderado). Solo se nombra si el ajuste es
+        // llamativo: la evaluación escrita lo cita.
+        let bestDriver: string | null = null;
+        let bestPush = 0;
+        for (const d of adjAvail) {
+          const push = ((d.value as number) - 50) * (d.weight / tw);
+          if (Math.abs(push) > Math.abs(bestPush)) {
+            bestPush = push;
+            bestDriver = d.driver;
+          }
+        }
+        if (Math.abs(adjustment) >= SCORE_ADJUSTMENT_NOTABLE_PTS) {
+          scoreAdjustmentDriver = bestDriver;
+        }
+      }
+      scoreAdjustmentPts = Math.round(adjustment * 10) / 10;
+      score = Math.round(clamp(scoreVelocity + adjustment, 0, 100));
       stars = clamp(Math.round(score / 20), 1, 5);
     }
   }
@@ -799,6 +778,9 @@ export function scoreAsset(
     confidence: isCrypto || isCash ? 'baja' : components >= 3 ? 'alta' : components === 2 ? 'media' : 'baja',
     fvRaw: a.fvBase ?? null,
     fvEffective,
+    scoreVelocity,
+    scoreAdjustmentPts,
+    scoreAdjustmentDriver,
     fvConfidence: a.fvConfidence ?? null,
     fvComponentCount: a.fvComponentCount ?? null,
     fvToPrice,
@@ -1306,6 +1288,7 @@ export function optimizePortfolio(
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
+        scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
       });
     }
     const finalAssets = [...finalMap.values()].sort(
@@ -1329,6 +1312,7 @@ export function optimizePortfolio(
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
+        scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
       });
     }
     finalAssets.forEach((a) => {
@@ -1377,7 +1361,7 @@ export function optimizePortfolio(
   );
   const cashNote =
     cashHeldUsd >= opts.minTradeUsd
-      ? 'Sin destino que supere el listón (score ajustado por confianza, valor justo de al menos dos métodos y sin examen de balance próximo): el resto queda en efectivo a la espera de mejores precios o de los exámenes.'
+      ? 'Sin destino que supere el listón (score de al menos 65, valor justo de al menos dos métodos y sin examen de balance próximo): el resto queda en efectivo a la espera de mejores precios o de los exámenes.'
       : null;
 
   // ---------- Veredicto riesgo/beneficio ----------
@@ -1473,7 +1457,7 @@ export function buildNarrative(
 
   // 1) Situación y núcleo
   out.push(
-    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. Tu mejor oportunidad según el score (ya ajustado por la confianza de cada valuación) es ${best?.ticker} (${best?.score}/100) y la más débil, ${worst?.ticker} (${worst?.score}/100).`
+    `Tu cartera vale ${fmtUsd(before.totalValue)} en ${before.positions} posiciones y, con los precios y fundamentos de hoy, rinde un estimado de ${fmtPct1(before.expectedReturnGeoPct)} anual: duplicaría en unos ${fmtY(before.yearsToDouble)} años. Las tres posiciones más grandes (${top.map((a) => `${a.ticker} ${fmtPct1(a.weightPct)}`).join(', ')}) concentran el ${fmtPct1(before.top3WeightPct)} del total${coreTouched ? '' : ' y ninguna tiene motivo de salida: el núcleo se mantiene intacto'}. Tu mejor oportunidad según el score (que manda la capacidad de duplicar, con ajustes acotados por calidad, precio, confianza y riesgo) es ${best?.ticker} (${best?.score}/100) y la más débil, ${worst?.ticker} (${worst?.score}/100).`
   );
 
   // 2) Concentración sectorial
@@ -1495,6 +1479,53 @@ export function buildNarrative(
   if (topRisk.length) {
     out.push(
       `En riesgo, la volatilidad estimada es ${fmtPct1(before.volatilityPct)} anual. No la aportan las posiciones más grandes sino las más volátiles: ${topRisk.map((a) => `${a.ticker} explica el ${fmtPct1(a.riskContributionPct ?? 0)} del riesgo total`).join(' y ')}. Por eso la optimización valida cada movimiento contra el riesgo total (descomposición de Euler): un cambio solo se propone si no lo empeora.`
+    );
+  }
+
+  // 3b) Coherencia precio ↔ retorno (R11): un activo entre los que
+  // más rápido duplican cuyo valor justo está POR DEBAJO del precio
+  // no está arriba «por barato»: está arriba porque el modelo le cree
+  // al crecimiento y al consenso. Eso se dice explícito, con las
+  // causas, para que la tabla nunca se lea al revés.
+  const byDoubling = [...stocks]
+    .filter((a) => a.yearsToDouble != null)
+    .sort((x, y) => (x.yearsToDouble ?? Infinity) - (y.yearsToDouble ?? Infinity))
+    .slice(0, 3);
+  const incoherent = byDoubling.filter(
+    (a) => a.fvRaw != null && a.fvRaw > 0 && a.price > a.fvRaw
+  );
+  for (const a of incoherent) {
+    const causes: string[] = [];
+    if (a.gkGrowthPct != null && a.gkGrowthPct > 0) {
+      causes.push(`el crecimiento estimado de sus ganancias (${fmtPct1(a.gkGrowthPct)} anual)`);
+    }
+    if (a.consensusPct != null && a.consensusPct > 0) {
+      causes.push(`el consenso de analistas, que espera una suba de ${fmtPct1(a.consensusPct)} a un año`);
+    }
+    out.push(
+      `Ojo con ${a.ticker}: está entre los que más rápido duplican (${fmtY(a.yearsToDouble)} años) aunque su valor justo (${fmtUsd(a.fvRaw as number)}) está por debajo del precio (${fmtUsd(a.price)}). No está arriba por barato: el ranking le cree a ${causes.length ? causes.join(' y a ') : 'su crecimiento estimado'}. Si eso no se cumple, el puesto no se sostiene — es la posición más exigente de la tabla, no la más segura.`
+    );
+  }
+
+  // 3c) Ajustes de score llamativos: el score lo domina la capacidad
+  // de duplicar; cuando el ajuste acotado (±15 pts) mueve mucho a un
+  // activo visible, la nota nombra el motivo (directiva 2026-11-03:
+  // ninguna diferencia score↔duplicación sin explicación).
+  const notableAdj = [...stocks]
+    .filter(
+      (a) =>
+        a.scoreAdjustmentPts != null &&
+        Math.abs(a.scoreAdjustmentPts) >= SCORE_ADJUSTMENT_NOTABLE_PTS &&
+        a.scoreAdjustmentDriver != null &&
+        a.score != null &&
+        a.scoreVelocity != null
+    )
+    .sort((x, y) => Math.abs(y.scoreAdjustmentPts ?? 0) - Math.abs(x.scoreAdjustmentPts ?? 0))
+    .slice(0, 2);
+  for (const a of notableAdj) {
+    const pts = a.scoreAdjustmentPts as number;
+    out.push(
+      `El score de ${a.ticker} (${a.score}/100) ${pts < 0 ? 'queda' : 'sube'} ${fmtPct1(Math.abs(pts)).replace('%', '')} puntos ${pts < 0 ? 'por debajo' : 'por encima'} de lo que marca su sola capacidad de duplicar, por ${a.scoreAdjustmentDriver}. El ajuste está acotado (±${SCORE_ADJUSTMENT_BAND_PTS} puntos): premia o castiga, pero no cambia el titular — la tabla se ordena por años para duplicar y el score acompaña ese orden.`
     );
   }
 
@@ -1552,7 +1583,7 @@ export function buildNarrative(
         `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, score ${a.score ?? '—'})`
     );
     out.push(
-      `El dinero liberado va a los destinos que superan el listón — score ajustado por confianza, valor justo sostenido por al menos dos métodos y sin balance en puerta: ${parts.join(' · ')}.`
+      `El dinero liberado va a los destinos que superan el listón — score de al menos 65, valor justo sostenido por al menos dos métodos y sin balance en puerta: ${parts.join(' · ')}.`
     );
   }
   if (cashHeldUsd >= 250) {
