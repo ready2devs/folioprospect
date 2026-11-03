@@ -541,7 +541,13 @@ esta escalera (la primera que computa, manda):
    El lado empresa y el lado sector usan la MISMA fórmula y la
    misma fuente de datos (Finviz): del sector se toman las medianas
    de los pares grandes de su industria (P/E forward, ROIC y
-   crecimiento a 5 años).
+   crecimiento a 5 años). Descubrimiento de pares: el screener de
+   Finviz; si esa página no responde en el hosting (observado en
+   producción: Finviz no la sirve a las IP del hosting aunque sí
+   sirve las fichas individuales), el scanner de TradingView
+   descubre los pares (industria y capitalización) y las medianas
+   se siguen calculando con las fichas de Finviz — cambia quién
+   nombra a los pares, no la base de medición.
 2. **Sector pelado**: si el ajuste no es computable (falta ROIC o
    crecimiento de algún lado), manda el P/E forward del sector.
 3. **Justificado por fundamentos propios**: sin sector, `J` de la

@@ -306,18 +306,28 @@ async function fetchIndustryPeers(
   excludeTickers: Set<string>
 ): Promise<ScoredPeer[]> {
   try {
+    // Finviz rediseñó el screener (misma corrección que sectorContext):
+    // URL /screener/stocks con f=industry_<slug> y tickers en un JSON
+    // embebido en orden de capitalización.
     const res = await fetch(
-      `https://finviz.com/screener.ashx?v=111&f=ind_${slug}&o=-marketcap`,
+      `https://finviz.com/screener/stocks?v=111&f=industry_${slug}&o=-marketcap`,
       { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return [];
     const html = await res.text();
     const tickers: string[] = [];
-    const re = /quote\.ashx\?t=([A-Z0-9.\-]{1,12})/g;
+    const re = /"ticker":"([A-Z0-9.\-]{1,12})"/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) && tickers.length < 14) {
       const t = m[1].toUpperCase();
       if (!tickers.includes(t) && !excludeTickers.has(t)) tickers.push(t);
+    }
+    if (tickers.length < 2) {
+      const reLink = /\/quote\?t=([A-Z0-9.\-]{1,12})/g;
+      while ((m = reLink.exec(html)) && tickers.length < 14) {
+        const t = m[1].toUpperCase();
+        if (!tickers.includes(t) && !excludeTickers.has(t)) tickers.push(t);
+      }
     }
     const peers: ScoredPeer[] = [];
     for (const t of tickers.slice(0, 5)) {
