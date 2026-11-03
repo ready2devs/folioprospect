@@ -26,6 +26,7 @@ import {
   normalizeTradingViewSymbol,
   findCatalogEntry,
   searchLocalCatalog,
+  planLedgerSync,
   type OptimizerResult,
 } from '@shared/engine';
 
@@ -41,6 +42,8 @@ export interface OptimizerResponse {
 
 export interface PortfolioEvaluationResponse {
   portfolio: Portfolio;
+  /** Ids borrados en el servidor (tombstones): la copia local debe purgarlos. */
+  deletedIds?: string[];
   quotes?: Record<string, QuoteData>;
   kpis: PortfolioKPIs;
   holdings: ComputedHolding[];
@@ -665,6 +668,49 @@ function ensureLocalLedgerInitialized(portfolio?: Portfolio): PersistedLedgerSta
   return initial;
 }
 
+/** Sube al servidor una operación que solo existe en la copia local
+ *  (sincronización del ledger). Devuelve false si no se pudo subir. */
+async function uploadTradeForSync(
+  portfolioId: string,
+  t: Trade,
+  customMeta: Record<string, AssetMeta>
+): Promise<boolean> {
+  try {
+    const meta = customMeta[t.symbol];
+    const cat = meta ? null : findCatalogEntry(t.symbol);
+    const r = await fetch(`/api/portfolios/${encodeURIComponent(portfolioId)}/trades`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...t,
+        name: meta?.name || cat?.name,
+        sector: meta?.sector || cat?.sector,
+        assetType: meta?.assetType || cat?.type,
+      }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function uploadEntryForSync(
+  portfolioId: string,
+  kind: 'cash' | 'dividends' | 'illiquid',
+  item: unknown
+): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/portfolios/${encodeURIComponent(portfolioId)}/${kind}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function parseCsvTransactionsClient(csvText: string): Trade[] {
   const lines = String(csvText || '')
     .split(/\r?\n/)
@@ -770,12 +816,15 @@ export const api = {
     benchmark = 'SP:SPX',
     mode: 'live' | 'tv_snapshot' = 'live'
   ): Promise<PortfolioEvaluationResponse> {
-    const r = await fetch(
-      `/api/portfolios/${encodeURIComponent(id)}/evaluate?benchmark=${encodeURIComponent(
-        benchmark
-      )}&mode=${mode}`
-    );
-    const serverEval: PortfolioEvaluationResponse = await r.json();
+    const fetchEval = async (): Promise<PortfolioEvaluationResponse> => {
+      const r = await fetch(
+        `/api/portfolios/${encodeURIComponent(id)}/evaluate?benchmark=${encodeURIComponent(
+          benchmark
+        )}&mode=${mode}`
+      );
+      return (await r.json()) as PortfolioEvaluationResponse;
+    };
+    const serverEval: PortfolioEvaluationResponse = await fetchEval();
     const persisted = loadPersistedLedger();
 
     // Collect ALL symbols that need pricing (server + persisted trades)
@@ -803,23 +852,63 @@ export const api = {
       return patchCryptoInEvaluation(serverEval, liveCrypto);
     }
 
-    // Check if serverless instance cold-started and lost user mutations
-    if (persisted.isCustomized) {
-      const serverTradeCount = serverEval.portfolio?.trades?.length ?? 0;
-      const serverCashCount = serverEval.portfolio?.cash?.length ?? 0;
-      const serverDivCount = serverEval.portfolio?.dividends?.length ?? 0;
-      const serverIlliqCount = serverEval.portfolio?.illiquid?.length ?? 0;
+    // Convergencia con el servidor (fuente de verdad): la copia local nunca
+    // más pisa a la del servidor. Lo que el cliente tenga y el servidor no
+    // (operaciones cargadas sin conexión) se sube; lo borrado en otro
+    // dispositivo se purga vía tombstones; y la copia local se reemplaza por
+    // el estado del servidor. Solo si alguna subida falla se muestra, por
+    // esta vez, la vista local (para no esconder operaciones pendientes);
+    // la próxima carga reintenta la sincronización.
+    const plan = planLedgerSync(
+      {
+        trades: serverEval.portfolio.trades || [],
+        cash: serverEval.portfolio.cash || [],
+        dividends: serverEval.portfolio.dividends || [],
+        illiquid: serverEval.portfolio.illiquid || [],
+      },
+      persisted,
+      new Set<string>(serverEval.deletedIds || [])
+    );
+    let uploadsOk = true;
+    for (const t of plan.uploadTrades) {
+      uploadsOk = (await uploadTradeForSync(id, t, persisted.customMeta)) && uploadsOk;
+    }
+    for (const c of plan.uploadCash) {
+      uploadsOk = (await uploadEntryForSync(id, 'cash', c)) && uploadsOk;
+    }
+    for (const d of plan.uploadDividends) {
+      uploadsOk = (await uploadEntryForSync(id, 'dividends', d)) && uploadsOk;
+    }
+    for (const a of plan.uploadIlliquid) {
+      uploadsOk = (await uploadEntryForSync(id, 'illiquid', a)) && uploadsOk;
+    }
 
-      const isDesynced =
-        serverTradeCount !== persisted.trades.length ||
-        serverCashCount !== persisted.cash.length ||
-        serverDivCount !== persisted.dividends.length ||
-        serverIlliqCount !== persisted.illiquid.length;
-
-      if (isDesynced) {
-        const recomputed = recomputeEvaluationWithPersistedLedger(serverEval, persisted, liveCrypto);
-        return patchCryptoInEvaluation(recomputed, liveCrypto);
+    if (uploadsOk) {
+      let finalEval = serverEval;
+      if (plan.hasUploads) {
+        try {
+          finalEval = await fetchEval();
+        } catch {
+          finalEval = serverEval;
+        }
       }
+      savePersistedLedger({
+        version: 1,
+        updatedAt: Date.now(),
+        isCustomized: false,
+        portfolioId: finalEval.portfolio.id,
+        trades: finalEval.portfolio.trades || [],
+        cash: finalEval.portfolio.cash || [],
+        dividends: finalEval.portfolio.dividends || [],
+        illiquid: finalEval.portfolio.illiquid || [],
+        customMeta: persisted.customMeta,
+      });
+      return patchCryptoInEvaluation(finalEval, liveCrypto);
+    }
+
+    if (persisted.isCustomized) {
+      const recomputed = recomputeEvaluationWithPersistedLedger(serverEval, persisted, liveCrypto);
+      return patchCryptoInEvaluation(recomputed, liveCrypto);
     }
 
     return patchCryptoInEvaluation(serverEval, liveCrypto);

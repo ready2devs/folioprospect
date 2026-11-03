@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AssetMeta, Portfolio, Trade } from '../shared/engine/types.js';
+import type { AssetMeta, NwSettings, Portfolio, Trade } from '../shared/engine/types.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SEED_DIR = path.join(DATA_DIR, 'seed');
@@ -72,6 +72,60 @@ export interface DatabaseSchema {
   portfolios: Portfolio[];
   assetMeta: Record<string, AssetMeta>;
   updatedAt: string;
+  /** Ids borrados en algún dispositivo (id → timestamp): impiden que una
+   *  copia local vieja resuba una operación ya eliminada. */
+  tombstones: Record<string, number>;
+  /** Ajustes de patrimonio neto (Reserva, cash de broker, overrides de FX)
+   *  sincronizados entre dispositivos; gana la modificación más reciente. */
+  nwSettings: { data: NwSettings; updatedAt: number } | null;
+}
+
+/** Completa los campos que una base persistida anterior a esta versión no
+ *  tiene, sin tocar el resto. */
+export function normalizeDatabase(db: DatabaseSchema): DatabaseSchema {
+  if (!db.tombstones || typeof db.tombstones !== 'object') db.tombstones = {};
+  if (db.nwSettings === undefined) db.nwSettings = null;
+  return db;
+}
+
+const NW_NUM_FIELDS = [
+  'brokerCashUsd',
+  'cashReserveUsd',
+  'sellCommPct',
+  'mepBuyCommPct',
+  'mepSellCommPct',
+] as const;
+const NW_NULLABLE_NUM_FIELDS = ['cclOverride', 'mepOverride', 'cclBaseOverride', 'fxDiffOverride'] as const;
+
+/** Valida y normaliza un NwSettings recibido por la API. Devuelve null si el
+ *  cuerpo no es un objeto utilizable. */
+export function sanitizeNwSettings(raw: any): NwSettings | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const num = (v: any, fallback: number): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const out: NwSettings = {
+    brokerCashUsd: 0,
+    cashReserveUsd: 0,
+    includeCryptoInCcl: false,
+    cclOverride: null,
+    mepOverride: null,
+    cclBaseOverride: null,
+    sellCommPct: 0.5,
+    mepBuyCommPct: 0.5,
+    mepSellCommPct: 0.5,
+    fxDiffOverride: null,
+  };
+  for (const f of NW_NUM_FIELDS) out[f] = num(raw[f], out[f]);
+  for (const f of NW_NULLABLE_NUM_FIELDS) {
+    out[f] = raw[f] === null || raw[f] === undefined ? null : num(raw[f], NaN);
+    if (out[f] !== null && !Number.isFinite(out[f] as number)) out[f] = null;
+  }
+  out.includeCryptoInCcl = Boolean(raw.includeCryptoInCcl);
+  if (typeof raw.fxFormulaExpr === 'string') out.fxFormulaExpr = raw.fxFormulaExpr;
+  if (raw.labelStyle === 'clean' || raw.labelStyle === 'tv') out.labelStyle = raw.labelStyle;
+  return out;
 }
 
 export function loadSeedExtract(): any {
@@ -95,16 +149,16 @@ export function loadTvReference(): any {
 }
 
 export function initDatabase(): DatabaseSchema {
-  if (hydratedDb) return hydratedDb;
+  if (hydratedDb) return normalizeDatabase(hydratedDb);
   const vercelTmp = path.join('/tmp', 'folioprospect-db.json');
   if (fs.existsSync(vercelTmp)) {
     try {
-      return JSON.parse(fs.readFileSync(vercelTmp, 'utf8'));
+      return normalizeDatabase(JSON.parse(fs.readFileSync(vercelTmp, 'utf8')));
     } catch {}
   }
   if (fs.existsSync(DB_PATH)) {
     try {
-      return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+      return normalizeDatabase(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
     } catch {
       // recreate if corrupted
     }
@@ -143,6 +197,8 @@ export function initDatabase(): DatabaseSchema {
     portfolios: [defaultPortfolio],
     assetMeta: meta,
     updatedAt: new Date().toISOString(),
+    tombstones: {},
+    nwSettings: null,
   };
   saveDatabase(db);
   return db;

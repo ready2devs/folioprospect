@@ -75,6 +75,32 @@ function saveNwSettings(settings: NwSettings): void {
   }
 }
 
+// Sincronización de los ajustes NW entre dispositivos: el servidor guarda la
+// última versión (con su updatedAt) y cada cliente conserva la suya en
+// localStorage como caché. La marca de tiempo vive en una clave aparte para
+// no cambiar el formato histórico de `fp.nwSettings.v1`.
+const NW_META_KEY = 'fp.nwSettings.v1.meta';
+
+function loadNwUpdatedAt(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(NW_META_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Number(parsed?.updatedAt) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveNwUpdatedAt(updatedAt: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(NW_META_KEY, JSON.stringify({ updatedAt }));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function scrollTopOnMobile(): void {
   if (typeof window !== 'undefined' && window.innerWidth <= 1023) {
     try {
@@ -139,6 +165,8 @@ export interface AppState {
   setNetOrGrossMode: (m: 'net' | 'gross') => void;
   setNwSettings: (patch: Partial<NwSettings>) => void;
   resetNwSettings: () => void;
+  hydrateNwSettings: () => Promise<void>;
+  syncNwSettingsToServer: (data: NwSettings, updatedAt: number) => Promise<void>;
   setSearchOpen: (open: boolean) => void;
   openAddModal: (tab?: AddModalTab, cashTarget?: CashModalTarget, symbol?: string) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
@@ -314,12 +342,65 @@ export const useAppStore = create<AppState>((set, get) => ({
   setNwSettings: (patch) => {
     const next: NwSettings = { ...get().nwSettings, ...patch };
     saveNwSettings(next);
+    const ts = Date.now();
+    saveNwUpdatedAt(ts);
     set({ nwSettings: next });
+    void get().syncNwSettingsToServer(next, ts);
   },
   resetNwSettings: () => {
     const next: NwSettings = { ...DEFAULT_NW_SETTINGS };
     saveNwSettings(next);
+    const ts = Date.now();
+    saveNwUpdatedAt(ts);
     set({ nwSettings: next });
+    void get().syncNwSettingsToServer(next, ts);
+  },
+  syncNwSettingsToServer: async (data, updatedAt) => {
+    try {
+      const r = await fetch('/api/settings/nw', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, updatedAt }),
+      });
+      if (!r.ok) return;
+      const stored = await r.json();
+      // Si otro dispositivo guardó algo más nuevo, el servidor lo conserva
+      // y este cliente lo adopta.
+      if (stored?.data && Number(stored.updatedAt) > updatedAt) {
+        const adopted: NwSettings = { ...DEFAULT_NW_SETTINGS, ...stored.data };
+        saveNwSettings(adopted);
+        saveNwUpdatedAt(Number(stored.updatedAt));
+        set({ nwSettings: adopted });
+      }
+    } catch {
+      // Sin conexión: queda local; la próxima hidratación reintenta.
+    }
+  },
+  hydrateNwSettings: async () => {
+    try {
+      const r = await fetch('/api/settings/nw');
+      if (!r.ok) return;
+      const stored = await r.json();
+      const localTs = loadNwUpdatedAt();
+      if (!stored) {
+        // Servidor vacío: primera sincronización, sube lo local.
+        const ts = localTs || Date.now();
+        if (!localTs) saveNwUpdatedAt(ts);
+        void get().syncNwSettingsToServer(get().nwSettings, ts);
+        return;
+      }
+      const serverTs = Number(stored.updatedAt) || 0;
+      if (serverTs > localTs && stored.data) {
+        const adopted: NwSettings = { ...DEFAULT_NW_SETTINGS, ...stored.data };
+        saveNwSettings(adopted);
+        saveNwUpdatedAt(serverTs);
+        set({ nwSettings: adopted });
+      } else if (localTs > serverTs) {
+        void get().syncNwSettingsToServer(get().nwSettings, localTs);
+      }
+    } catch {
+      // Sin conexión: se sigue con la caché local.
+    }
   },
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   openAddModal: (tab = 'trade', cashTarget = 'ledger', symbol) =>

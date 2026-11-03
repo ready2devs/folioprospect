@@ -47,6 +47,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     refreshAll();
+    void useAppStore.getState().hydrateNwSettings();
   }, []);
 
   // Poll live quotes every 15 seconds when in live mode

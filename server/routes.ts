@@ -8,6 +8,7 @@ import {
   loadSeedCalendar,
   loadTvReference,
   loadSeedExtract,
+  sanitizeNwSettings,
 } from './db.js';
 import {
   fetchQuotesWithSparklines,
@@ -115,6 +116,23 @@ export async function registerRoutes(app: Express): Promise<void> {
         illiquidCount: p.illiquid.length,
       }))
     );
+  });
+
+  // Ajustes de patrimonio neto compartidos entre dispositivos (Reserva,
+  // cash de broker, overrides de FX). Gana la modificación más reciente
+  // (updatedAt); el cliente los cachea en localStorage y se hidrata de acá.
+  app.get('/api/settings/nw', (_req: Request, res: Response) => {
+    res.json(db.nwSettings ?? null);
+  });
+
+  app.put('/api/settings/nw', (req: Request, res: Response) => {
+    const clean = sanitizeNwSettings(req.body?.data);
+    const ts = Number(req.body?.updatedAt) || 0;
+    if (clean && (!db.nwSettings || ts >= db.nwSettings.updatedAt)) {
+      db.nwSettings = { data: clean, updatedAt: ts };
+      saveDatabase(db);
+    }
+    res.json(db.nwSettings ?? null);
   });
 
   // Full portfolio evaluation (Left Panel + State 2 TradingView Dashboard + 10/20Y Prospectiva)
@@ -251,6 +269,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     res.json({
       portfolio,
+      deletedIds: Object.keys(db.tombstones || {}),
       quotes: quotesMap,
       kpis: ledger.kpis,
       holdings: ledger.holdings,
@@ -332,6 +351,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     const added: Trade[] = [];
     for (const raw of items) {
+      // Un id marcado como borrado (tombstone) no resucita: lo subió una
+      // copia local vieja que todavía no convergió.
+      if (raw.id != null && db.tombstones?.[String(raw.id)]) continue;
       const sym = String(raw.symbol || 'NASDAQ:NVDA').toUpperCase();
       const fullSym = sym.includes(':') ? sym : `NASDAQ:${sym}`;
       const tx: Trade = {
@@ -364,6 +386,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const { txId } = req.params;
     portfolio.trades = portfolio.trades.filter((t) => String(t.id) !== String(txId));
+    db.tombstones[String(txId)] = Date.now();
     saveDatabase(db);
     res.json({ ok: true, totalTrades: portfolio.trades.length });
   });
@@ -390,6 +413,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     portfolio.cash = portfolio.cash.filter((c) => c.id !== req.params.cashId);
+    db.tombstones[String(req.params.cashId)] = Date.now();
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -437,6 +461,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     portfolio.illiquid = portfolio.illiquid.filter((a) => a.id !== req.params.assetId);
+    db.tombstones[String(req.params.assetId)] = Date.now();
     saveDatabase(db);
     res.json({ ok: true });
   });
