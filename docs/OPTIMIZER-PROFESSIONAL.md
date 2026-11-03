@@ -471,7 +471,7 @@ en ESTA capa:
 ## §17 — R12: escala honesta, vista prudente, frontera suave y ancla de caja real (2026-11-03)
 
 Pase aprobado por el usuario el 2026-11-03 (respaldo
-`respaldo-pre-vista-prudente-regimen-2026-11-03`; tests 276/276).
+`respaldo-pre-vista-prudente-regimen-2026-11-03`; tests 284/284).
 Reglas completas en docs/VALUATION-RULES.md R12; acá, lo que
 cambia en la capa del Optimizador:
 

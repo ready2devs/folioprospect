@@ -681,7 +681,7 @@ de la app.
 Pase aprobado por el usuario el 2026-11-03 (10:58, con agregados
 del mismo día: ancla de caja 11:06, ventana TTM 11:07, ubicaciones
 UI 11:13 y visibilidad de `modelSuspect` 11:14). Respaldo previo:
-`respaldo-pre-vista-prudente-regimen-2026-11-03`. Tests: 276/276.
+`respaldo-pre-vista-prudente-regimen-2026-11-03`. Tests: 284/284.
 Ninguna regla de este pase cambia el valor justo; dos son de
 presentación (escala y vista), una corrige la capa de retorno
 (frontera de regímenes) y una agrega un reparo acotado al score
