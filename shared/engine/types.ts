@@ -245,6 +245,13 @@ export interface FairValueResult {
   /** Flags disparados por las reglas de valuación (reparación,
    *  normalización, winsorización, valle cíclico). */
   fvFlags?: string[];
+  /** Las fuentes directas del EPS forward discrepan en el SIGNO en el
+   *  mismo refresco (consenso ≈ break-even, p. ej. −4,88 vs +1,83): el
+   *  input es cara o cruz. No cambia la etiqueta pública de confianza;
+   *  la capa de retorno esperado del Optimizador lo castiga bajando un
+   *  escalón la confianza que usa y anulando el crecimiento de EPS de
+   *  Grinold-Kroner (pase correctivo RE, D). */
+  epsSignDisagreement?: boolean;
   /** Peso efectivo de cada componente en el Fair Value (alineado con
    *  fvComponents): ponderación por calidad medible del dato con ratio
    *  acotado [0,5×, 2×] el peso igualitario. */

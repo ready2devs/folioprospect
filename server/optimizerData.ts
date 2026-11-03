@@ -181,6 +181,7 @@ async function buildAssetInput(
     // con la MISMA función del motor de FV. El FV de la ficha no cambia.
     let fvBaseUsed = fv.fairValue;
     let fvConfidenceUsed = fv.fvConfidence ?? null;
+    let fvRangeUsed: [number, number] | null = fv.fvRange ?? null;
     let fvComponentCountUsed: number | null =
       fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0;
     let cyclicalNormalized = false;
@@ -225,6 +226,7 @@ async function buildAssetInput(
         if (agg.fairValue != null) {
           fvBaseUsed = agg.fairValue;
           fvConfidenceUsed = agg.confidence;
+          fvRangeUsed = agg.range;
           fvComponentCountUsed = agg.components.length;
           components = agg.components.map((c) => c.value);
           cyclicalNormalized = true;
@@ -258,6 +260,12 @@ async function buildAssetInput(
       analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
       fvConfidence: fvConfidenceUsed,
       fvComponentCount: fvComponentCountUsed,
+      // Piso del rango del FV: destino conservador de la convergencia
+      // cuando la confianza es Baja (pase correctivo RE, A).
+      fvRangeLow: fvRangeUsed?.[0] ?? null,
+      fvRangeHigh: fvRangeUsed?.[1] ?? null,
+      // Desacuerdo de signo entre fuentes del EPS forward (pase D).
+      epsSignDisagreement: fv.epsSignDisagreement ?? false,
       forwardEpsUsed,
       fcfMedianNonPositive,
       revenueGrowthPct: fund.revenueGrowth != null ? fund.revenueGrowth * 100 : null,

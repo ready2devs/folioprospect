@@ -243,7 +243,8 @@ nada por ticker):
   peso de cada componente es ∝ su calidad, acotado a [0,5×, 2×] el peso
   igualitario y renormalizado. Calidad del DCF: serie EDGAR de 5 años =
   1 · 3–4 años = 0,85 · TTM = 0,6 · TTM desde filings = 0,55 · base
-  emergente = 0,45. Calidad de múltiplos: EPS confirmado por ≥2
+  emergente = 0,30 (piso del sistema desde el pase correctivo RE:
+  antes 0,45). Calidad de múltiplos: EPS confirmado por ≥2
   proveedores independientes = 1 · una fuente directa = 0,75 · solo
   derivado = 0,55. Calidad del target: 2 fuentes = 1 · 1 fuente = 0,8.
   Sin información de calidad, los pesos son los igualitarios históricos.
@@ -256,7 +257,11 @@ nada por ticker):
   y confianza reducida, en vez de quedar null. La mediana histórica de
   una empresa que ya genera caja describe su pasado, no su imposibilidad
   de ser valuada por flujo. Si el TTM también es ≤ 0, o no hay
-  crecimiento que lo explique, rige la nulidad de R5.
+  crecimiento que lo explique, rige la nulidad de R5. **Castigo (pase
+  correctivo RE, 2026-11-03):** esa base TTM puede estar inflada por
+  prepagos de clientes con el capex en expansión, así que entra con
+  haircut ×0,75 y calidad 0,30 (el piso): el componente se castiga, no
+  se elimina.
 - **Jerarquía única de fuente para la serie de FCF.** EDGAR manda
   siempre que tenga ≥3 años (o al menos tantos como Yahoo); Yahoo solo
   entra si la serie auditada no alcanza. La regla anterior («gana la

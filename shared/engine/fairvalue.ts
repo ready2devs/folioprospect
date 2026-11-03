@@ -162,6 +162,13 @@ const MINOR_CONFIDENCE_FLAGS = new Set([
 export const FV_BAND_LOW = 0.25;
 export const FV_BAND_HIGH = 3.5;
 
+/** Castigo al DCF «emergente» (base TTM sin mediana histórica que la
+ *  respalde): la base entra recortada 25% y su calidad de ponderación
+ *  es el piso del sistema (0,30). Pase correctivo RE (C): el componente
+ *  se castiga, no se elimina — R0 sigue vigente. */
+export const EMERGING_DCF_HAIRCUT = 0.75;
+export const EMERGING_DCF_QUALITY = 0.3;
+
 /**
  * Agregación por PROMEDIO WINSORIZADO:
  * - Cada componente válido se recorta a la banda [0,25×, 3,5×] de la
@@ -289,6 +296,12 @@ export interface MultiplesEvaluation {
   epsUsed: number | null;
   flags: string[];
   excluded: FvExcludedComponent | null;
+  /** Las fuentes DIRECTAS del EPS forward discrepan en el signo en el
+   *  mismo refresco (consenso ≈ break-even: un input cara o cruz). No
+   *  cambia la etiqueta pública de confianza (el flag NO está en
+   *  MINOR_CONFIDENCE_FLAGS); lo consume la capa de retorno esperado
+   *  del Optimizador como castigo propio (pase correctivo RE, D). */
+  signDisagreement: boolean;
   provenance: {
     originalEps: number | null;
     usedEps: number | null;
@@ -462,8 +475,27 @@ export function evaluateMultiplesComponent(args: {
     sources: [...new Set(candidates.map((c) => c.source))],
   });
 
+  // Desacuerdo de SIGNO entre fuentes directas en el mismo refresco:
+  // el consenso está en break-even y el signo del EPS es cara o cruz
+  // según qué fuente responda último. Se registra como flag de
+  // trazabilidad y como campo propio; la valuación pública no cambia
+  // (no integra MINOR_CONFIDENCE_FLAGS), pero la capa de RE del
+  // Optimizador baja un escalón la confianza que usa y deja de creerle
+  // crecimiento de EPS a Grinold-Kroner (pase correctivo RE, D).
+  const directValues = candidates.filter((c) => c.direct).map((c) => c.value);
+  const signDisagreement =
+    directValues.some((v) => v > 0) && directValues.some((v) => v < 0);
+  if (signDisagreement) flags.push('signDisagreement');
+
   if (candidates.length === 0) {
-    return { value: null, epsUsed: null, flags, excluded: null, provenance: provenance(null) };
+    return {
+      value: null,
+      epsUsed: null,
+      flags,
+      excluded: null,
+      signDisagreement,
+      provenance: provenance(null),
+    };
   }
 
   // Chequeo de consistencia ratio publicado vs recomputado (informativo).
@@ -542,6 +574,7 @@ export function evaluateMultiplesComponent(args: {
       epsUsed,
       flags,
       excluded: { component: 'multiples', reason: 'notMeaningful', value: null },
+      signDisagreement,
       provenance: provenance(epsUsed),
     };
   }
@@ -567,6 +600,7 @@ export function evaluateMultiplesComponent(args: {
     epsUsed,
     flags,
     excluded: null,
+    signDisagreement,
     provenance: provenance(epsUsed),
   };
 }
@@ -646,10 +680,16 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       // de una empresa que ya genera caja hoy (TTM > 0) y crece fuerte
       // (ingresos > +15%): anular el DCF la dejaría valuada por un solo
       // componente. Se computa sobre la base TTM con flag y confianza
-      // reducida (calidad 0,45 en la ponderación). R0: más información,
-      // no menos. Si el TTM también es ≤ 0 o no hay crecimiento que lo
-      // explique, sí es imposibilidad y el componente queda null.
-      dcfBase = fcfBase;
+      // reducida. R0: más información, no menos. Si el TTM también es
+      // ≤ 0 o no hay crecimiento que lo explique, sí es imposibilidad y
+      // el componente queda null.
+      // CASTIGO (pase correctivo RE, C): ese FCF TTM puede estar
+      // inflado por prepagos de clientes mientras el capex explota —
+      // es una foto, no una base normalizada. La base entra con haircut
+      // de incertidumbre (×0,75, ver EMERGING_DCF_HAIRCUT) y su calidad
+      // de ponderación baja al piso del sistema (0,30): se castiga el
+      // componente, no se elimina.
+      dcfBase = fcfBase * EMERGING_DCF_HAIRCUT;
       dcfBaseSource = 'ttmEmerging';
       fvFlags.push('ttmBaseEmerging');
     } else {
@@ -688,6 +728,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
       fvWinsorized: [],
       fvProvenance: [],
       fvFlags: [],
+      epsSignDisagreement: false,
       fvNullReason: null,
       priceToFairValue: null,
       status: 'N/A',
@@ -796,7 +837,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   //  derivado; target con 2 fuentes > 1.
   const dcfQuality =
     dcfBaseSource === 'ttmEmerging'
-      ? 0.45
+      ? EMERGING_DCF_QUALITY
       : dcfBaseSource === 'edgarAnnualCashflow'
         ? 0.55
         : dcfBaseSource === 'ttm'
@@ -895,6 +936,7 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     fvWinsorized: agg.winsorized,
     fvProvenance,
     fvFlags: agg.flags,
+    epsSignDisagreement: mult.signDisagreement,
     fvNullReason: agg.nullReason,
     priceToFairValue,
     status,

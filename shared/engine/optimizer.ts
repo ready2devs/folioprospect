@@ -20,7 +20,19 @@
  * convergencia no usa el FV crudo sino el FV ENCogido hacia el precio según
  * la confianza de la valuación (Alta ×1, Media ×0,7, Baja ×0,4 de la
  * brecha): una valuación frágil no puede liderar el ranking ni recibir
- * fondos como si fuera sólida. A nivel cartera el RE es GEOMÉTRICO: se
+ * fondos como si fuera sólida.
+ *
+ * Pase correctivo de la capa de RE (2026-11-03, docs §12): el shrinkage
+ * lineal no alcanzaba para brechas extremas de confianza Baja — VIST
+ * conservaba +139% de brecha encogida y NBIS el RE más alto de la
+ * cartera con valuaciones Baja. Ahora: (A) con confianza Baja la
+ * convergencia apunta al PISO del rango de valuación (no a un % del
+ * número puntual); (B) el RE final tiene tope por confianza
+ * (Alta +35% · Media +28% · Baja +18%); (D) si las fuentes del EPS
+ * forward discrepan en el signo, la confianza que usa ESTA capa baja un
+ * escalón más y Grinold-Kroner no puede usar crecimiento de EPS. El FV
+ * titular no cambia (R0): cambia la estimación de retorno que se deriva.
+ * A nivel cartera el RE es GEOMÉTRICO: se
  * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
  * matriz de correlaciones por bloques (aproximación documentada) y
  * descomposición de Euler: MCTR y PCTR por activo, que ordenan desempates
@@ -94,6 +106,17 @@ export interface OptimizerAssetInput {
   cyclicalNormalized?: boolean;
   /** EPS de mitad de ciclo usado en la normalización (trazabilidad). */
   midCycleEps?: number | null;
+  /** Rango [piso, techo] de los componentes del FV (motor de valuación,
+   *  valores crudos). Con confianza Baja la convergencia apunta al piso:
+   *  un profesional no anualiza un % del número puntual de una valuación
+   *  frágil, converge a su escenario conservador (pase correctivo A). */
+  fvRangeLow?: number | null;
+  fvRangeHigh?: number | null;
+  /** Las fuentes directas del EPS forward discrepan en el signo en el
+   *  mismo refresco (consenso ≈ break-even): la confianza de la capa de
+   *  RE baja un escalón adicional y GK pierde el crecimiento de EPS
+   *  (pase correctivo D). No altera la etiqueta pública de la ficha. */
+  epsSignDisagreement?: boolean;
 }
 
 export interface ScoredPeer {
@@ -180,6 +203,11 @@ export interface AssetScore {
   earningsGate: { date: string; businessDays: number } | null;
   cyclicalNormalized: boolean;
   dilutionPct: number | null;
+  /** La convergencia usó el destino conservador de confianza Baja
+   *  (piso del rango, o respaldo k=0,25 sin rango): pase correctivo A. */
+  conservativeConvergence: boolean;
+  /** Desacuerdo de signo entre fuentes del EPS forward (pase D). */
+  epsSignDisagreement: boolean;
 }
 
 /** Señales medibles de deterioro de tesis (ninguna depende del ticker). */
@@ -311,16 +339,28 @@ export const yearsToDoubleFor = (rPct: number | null): number | null =>
 /** Grinold-Kroner por activo. Devuelve null si no hay crecimiento estimable. */
 export function grinoldKroner(a: OptimizerAssetInput): number | null {
   const growthCandidates: number[] = [];
-  // Ancla preferida: ganancias totales (anti doble conteo con el buyback).
-  if (a.earningsGrowthTotalPct != null) growthCandidates.push(a.earningsGrowthTotalPct);
-  if (a.salesGrowthPct != null) growthCandidates.push(a.salesGrowthPct);
-  if (growthCandidates.length === 0) {
-    // Sin ancla de totales: EPS amortiguado (mediana próximo año / 5 años).
-    const eps: number[] = [];
-    if (a.epsNextYearPct != null) eps.push(a.epsNextYearPct);
-    if (a.epsNext5YPct != null) eps.push(a.epsNext5YPct);
-    if (eps.length === 0) return null;
-    growthCandidates.push(median(eps));
+  if (a.epsSignDisagreement) {
+    // Pase correctivo D: si las fuentes del EPS discrepan en el SIGNO,
+    // ninguna tasa de crecimiento de ganancias derivada de ese EPS es
+    // creíble (el input es cara o cruz). GK solo puede apoyarse en el
+    // crecimiento de INGRESOS; sin ese dato, el subcomponente de
+    // crecimiento vale 0 — no se fabrica crecimiento desde un EPS en
+    // disputa, pero el resto de GK (dividendos, recompra, repricing)
+    // sigue computando.
+    if (a.salesGrowthPct != null) growthCandidates.push(a.salesGrowthPct);
+    if (growthCandidates.length === 0) growthCandidates.push(0);
+  } else {
+    // Ancla preferida: ganancias totales (anti doble conteo con el buyback).
+    if (a.earningsGrowthTotalPct != null) growthCandidates.push(a.earningsGrowthTotalPct);
+    if (a.salesGrowthPct != null) growthCandidates.push(a.salesGrowthPct);
+    if (growthCandidates.length === 0) {
+      // Sin ancla de totales: EPS amortiguado (mediana próximo año / 5 años).
+      const eps: number[] = [];
+      if (a.epsNextYearPct != null) eps.push(a.epsNextYearPct);
+      if (a.epsNext5YPct != null) eps.push(a.epsNext5YPct);
+      if (eps.length === 0) return null;
+      growthCandidates.push(median(eps));
+    }
   }
   const gRaw = clamp(median(growthCandidates), -10, 30);
   // Fade institucional: el crecimiento spot (trimestral/TTM en picos de ciclo)
@@ -361,6 +401,57 @@ export function shrunkFairValue(
   if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
   const k = confidence != null ? FV_CONFIDENCE_SHRINK[confidence] : 0.7;
   return price + (fvBase - price) * k;
+}
+
+export type ValuationConfidence = 'Alta' | 'Media' | 'Baja';
+
+/** Confianza que usa la CAPA DE RETORNO (no la etiqueta pública de la
+ *  valuación): la de la valuación, menos un escalón si las fuentes del
+ *  EPS forward discrepan en el signo en el mismo refresco (pase D). Un
+ *  input cara o cruz no sostiene la misma convergencia ni el mismo tope
+ *  que un consenso estable, aunque la ficha siga diciendo lo mismo. */
+export function reConfidenceFor(a: OptimizerAssetInput): ValuationConfidence {
+  const baseConf: ValuationConfidence = a.fvConfidence ?? 'Media';
+  if (!a.epsSignDisagreement) return baseConf;
+  return baseConf === 'Alta' ? 'Media' : 'Baja';
+}
+
+/** Tope del retorno esperado final según la confianza de la capa de RE
+ *  (pase correctivo B). Calibración profesional: el conservadurismo
+ *  crece con la incertidumbre de la valuación — ningún RE de confianza
+ *  Baja supera +18% anual, por alto que sea el blend crudo; el +35% de
+ *  Alta es el techo histórico del motor. */
+export const RE_CONFIDENCE_CAP_PCT: Record<ValuationConfidence, number> = {
+  Alta: 35,
+  Media: 28,
+  Baja: 18,
+};
+
+/** Destino al que converge el componente de convergencia del RE
+ *  (pase correctivo A):
+ *  - Alta: el FV encogido actual (k=1,0 — el FV pelado).
+ *  - Media: el FV encogido (k=0,7).
+ *  - Baja: el MENOR entre el FV encogido (k=0,4) y el PISO del rango de
+ *    valuación: ante una valuación frágil no se anualiza un % del
+ *    número puntual, se converge al escenario conservador que el propio
+ *    motor publicó como rango. Sin rango disponible, respaldo k=0,25.
+ *  `conservative` marca cuándo gobernó la regla de Baja. */
+export function convergenceTargetFor(
+  price: number,
+  fvBase: number | null | undefined,
+  reConf: ValuationConfidence,
+  fvRangeLow: number | null | undefined
+): { target: number; conservative: boolean } | null {
+  if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
+  if (reConf !== 'Baja') {
+    const t = shrunkFairValue(price, fvBase, reConf);
+    return t != null ? { target: t, conservative: false } : null;
+  }
+  const shrunk = price + (fvBase - price) * FV_CONFIDENCE_SHRINK.Baja;
+  if (fvRangeLow != null && fvRangeLow > 0) {
+    return { target: Math.min(shrunk, fvRangeLow), conservative: true };
+  }
+  return { target: price + (fvBase - price) * 0.25, conservative: true };
 }
 
 /** Ventana de examen: balance a ≤ 5 días hábiles ⇒ decisión diferida. */
@@ -451,17 +542,25 @@ export function scoreAsset(
   const fvEffective = isCrypto || isCash ? null : shrunkFairValue(a.price, a.fvBase, a.fvConfidence);
   const gate = isCrypto || isCash ? null : earningsGateFor(a);
   const thesisSignals = thesisSignalsFor(a);
+  // Confianza de la capa de RE: puede ser un escalón menor que la
+  // pública si el EPS forward es cara o cruz entre fuentes (pase D).
+  const reConf: ValuationConfidence = reConfidenceFor(a);
+  let conservativeConvergence = false;
 
   if (isCrypto || isCash) {
     re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
   } else {
     gk = grinoldKroner(a);
     // La convergencia cree la brecha solo en proporción a la confianza
-    // de la valuación (shrinkage): el FV crudo queda para la ficha.
-    fv = fvConvergencePct(
-      fvEffective != null ? { ...a, fvBase: fvEffective } : a,
-      opts.yearsToCorrection
-    );
+    // de la valuación (shrinkage): el FV crudo queda para la ficha. Con
+    // confianza de capa RE = Baja, el destino deja de ser un % del
+    // número puntual y pasa a ser el piso del rango (pase correctivo A).
+    const convTarget = convergenceTargetFor(a.price, a.fvBase, reConf, a.fvRangeLow);
+    conservativeConvergence = convTarget?.conservative ?? false;
+    fv =
+      convTarget != null
+        ? fvConvergencePct({ ...a, fvBase: convTarget.target }, opts.yearsToCorrection)
+        : null;
     cons = consensusPct(a);
     const parts: Array<[number | null, number]> = [
       [gk, 0.45],
@@ -471,7 +570,13 @@ export function scoreAsset(
     const avail = parts.filter(([v]) => v != null) as Array<[number, number]>;
     if (avail.length) {
       const tw = avail.reduce((s, [, w]) => s + w, 0);
-      re = clamp(avail.reduce((s, [v, w]) => s + v * w, 0) / tw, -15, 35);
+      // Tope por confianza (pase correctivo B): el blend crudo de un
+      // nombre Baja no se publica por encima de +18% anual.
+      re = clamp(
+        avail.reduce((s, [v, w]) => s + v * w, 0) / tw,
+        -15,
+        RE_CONFIDENCE_CAP_PCT[reConf]
+      );
     }
     const gAnchor =
       a.earningsGrowthTotalPct ?? a.salesGrowthPct ??
@@ -492,8 +597,11 @@ export function scoreAsset(
       opportunity = scoreFor(a.price / fvEffective, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
     }
     const quality = qualityScore(a);
+    // La confianza que puntúa el score es la de la capa de RE (con el
+    // escalón menos por desacuerdo de signo, si lo hay): el score no
+    // puede creerle más a una valuación que el propio retorno esperado.
     const valuationConfidenceScore =
-      a.fvConfidence === 'Alta' ? 90 : a.fvConfidence === 'Media' ? 65 : a.fvConfidence === 'Baja' ? 35 : 55;
+      reConf === 'Alta' ? 90 : reConf === 'Media' ? 65 : 35;
     const riskScore = clamp(100 - Math.max(0, vol - 15) * 1.6 - Math.max(0, (a.debtToEquity ?? 0) - 1) * 8, 0, 100);
     const comps: Array<[number | null, number]> = [
       [velocity, 0.3],
@@ -561,6 +669,8 @@ export function scoreAsset(
     earningsGate: gate,
     cyclicalNormalized: !!a.cyclicalNormalized,
     dilutionPct: a.dilutionPct ?? null,
+    conservativeConvergence,
+    epsSignDisagreement: !!a.epsSignDisagreement,
   };
 }
 
@@ -1055,6 +1165,7 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+        conservativeConvergence: false, epsSignDisagreement: false,
       });
     }
     const finalAssets = [...finalMap.values()].sort(
@@ -1076,6 +1187,7 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
+        conservativeConvergence: false, epsSignDisagreement: false,
       });
     }
     finalAssets.forEach((a) => {

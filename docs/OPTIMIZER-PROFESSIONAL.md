@@ -1,6 +1,8 @@
 # Optimizador profesional — cómo propone ahora la sección Optimizador
 
 **Fecha:** 2026-11-03 · **Respaldo previo:** `respaldo-pre-optimizador-profesional-2026-11-03` (→ 5010f79e)
+**Pase correctivo de la capa de RE:** §12 (2026-11-03, respaldo
+`respaldo-pre-re-conservador-2026-11-03` → a5b8d10).
 **Relación con otros docs:** la valuación sigue gobernada por
 `docs/VALUATION-RULES.md` (R0–R8); este documento gobierna cómo el
 Optimizador *consume* esas valuaciones y cómo decide movimientos.
@@ -145,6 +147,72 @@ del usuario); (5) destinos con su motivo y caja deliberada con monto y
 motivo; (6) exámenes próximos con fechas y vigilancias abiertas; (7)
 veredicto y disclaimer. Ninguna afirmación se escribe sin un dato del
 motor detrás.
+
+## §12 — Pase correctivo de la capa de retorno esperado (2026-11-03)
+
+**Diagnóstico (captura del usuario, 2026-11-03 03:19).** Con el pase
+profesional ya en producción, la columna 1 (ordenada por tiempo a
+duplicar) quedó encabezada por NBIS (RE 24,9%, duplica en 3,1 años) y
+VIST (RE 22,9%, 3,4 años): justamente las dos valuaciones de confianza
+Baja menos confiables de la cartera. El score sí se comportaba (TSM 81
+primero; NBIS 59), pero el RE puntual de los nombres Baja seguía siendo
+falsa precisión. Cuatro defectos, todos de la capa de RE — el FV
+titular no se toca (R0):
+
+1. **El shrinkage lineal era insuficiente para brechas extremas.**
+   VIST, con FV a 4,5× el precio, conservaba +139% de brecha tras el
+   encogido ×0,4: un % de un número increíble sigue siendo increíble.
+2. **La regla de DCF emergente (§10) regalaba base.** El DCF de NBIS
+   se computaba sobre un FCF TTM positivo por prepagos de clientes con
+   el capex explotando, a calidad 0,45: ese componente inflaba su FV y
+   su convergencia.
+3. **Los tres componentes del RE no son independientes en
+   hipercrecimiento** (GK, convergencia y consenso comparten el mismo
+   optimismo de crecimiento). Sin rehacer la arquitectura, la
+   mitigación profesional es acotar el resultado por confianza.
+4. **El EPS forward de NBIS cambia de signo entre refrescos**
+   (−4,88 / +1,83 según qué fuente responda): un input cara o cruz no
+   puede sostener el RE más alto de la cartera.
+
+**Las correcciones (reglas generales, ningún ticker):**
+
+- **A · Convergencia conservadora por confianza** (`convergenceTargetFor`).
+  El destino del componente de convergencia es: Alta → FV encogido
+  (k=1,0); Media → FV encogido (k=0,7); **Baja → el menor entre el FV
+  encogido (k=0,4) y el piso del rango `fvRange`** que el motor de
+  valuación ya publica (respaldo sin rango: k=0,25). Un profesional,
+  ante confianza Baja, no anualiza un % del número puntual: converge
+  al escenario conservador del propio rango. Para VIST eso es converger
+  a ~97 (su piso) y no a 160 (su encogido): +46% total en vez de +139%.
+  El activo expone `conservativeConvergence` cuando gobierna esta regla.
+- **B · Tope de RE por confianza** (`RE_CONFIDENCE_CAP_PCT`). El RE
+  final se acota a Alta +35% (el techo histórico), Media +28%, **Baja
+  +18%**. Calibración: conservadurismo creciente con la incertidumbre;
+  +18% sigue siendo un retorno accionarial alto — lo que se elimina es
+  la cola imposible (25–35%) sostenida por valuaciones frágiles.
+- **C · Castigo al DCF emergente** (en el motor de FV). Si el
+  componente DCF lleva `ttmBaseEmerging`, su base TTM se multiplica por
+  **0,75** (`EMERGING_DCF_HAIRCUT`) y su calidad de ponderación baja de
+  0,45 al **piso del sistema, 0,30** (`EMERGING_DCF_QUALITY`). Se
+  castiga, no se elimina: R0 sigue vigente y NBIS conserva su DCF, más
+  chico. La procedencia lo muestra (valor usado = 75% del original).
+- **D · Desacuerdo de signo en el EPS** (`signDisagreement` en la
+  cadena de reparación del motor de FV). Si las fuentes **directas**
+  del EPS forward discrepan en el signo en el mismo refresco, el motor
+  de valuación lo registra (flag + `epsSignDisagreement`) **sin bajar
+  la etiqueta pública** — no integra los flags que degradan la
+  confianza del FV — y la capa de RE reacciona: (i) la confianza que
+  usa el RE baja un escalón adicional (`reConfidenceFor`: gobierna el
+  destino de convergencia de A, el tope de B y el subpuntaje de
+  confianza del score); (ii) Grinold-Kroner no puede usar crecimiento
+  de EPS ni de ganancias totales: solo crecimiento de **ingresos**; si
+  no hay, el subcomponente vale 0 (GK sigue computando dividendos,
+  recompra y repricing).
+
+**Efecto buscado y criterio de aceptación:** con A–D, NBIS y VIST
+salen de los dos primeros puestos por duplicación por efecto de las
+reglas, sin tocar sus FV titulares (salvo el achique del DCF emergente
+de C, que es un parámetro del FV documentado arriba).
 
 ## Juicios documentados NO codificables (brechas honestas)
 
