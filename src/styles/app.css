@@ -1229,6 +1229,12 @@ html, body, #root {
 .opt-dup small{display:block;font-weight:600;color:var(--text-secondary);font-size:9px;letter-spacing:.4px}
 .opt-flags{display:flex;gap:10px;margin-top:7px;font-size:10px;color:var(--text-secondary)}
 .opt-flags span{display:inline-flex;align-items:center;gap:3px}
+.opt-viewbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 2px}
+.opt-viewbar-l{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text-secondary);display:inline-flex;align-items:center;gap:5px;text-transform:uppercase}
+.opt-viewbar-hint{font-size:11px;color:var(--text-muted)}
+.opt-seg{display:flex;background:#0A0F1A;border:1px solid var(--border-subtle);border-radius:9px;overflow:hidden}
+.opt-seg button{padding:6px 14px;font-size:11.5px;font-weight:700;color:var(--text-secondary);background:none;border:none;cursor:pointer}
+.opt-seg button.on{background:var(--pos-primary);color:#04120C}
 .opt-chip{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;margin-top:7px}
 .opt-chip.red{background:#2A1218;color:#FCA5A5}
 .opt-chip.amber{background:#2A1E0C;color:#FCD34D}

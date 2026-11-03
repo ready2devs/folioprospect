@@ -71,10 +71,16 @@ describe('régimen de crecimiento: el ancla son las ventas', () => {
     expect(parts.growthUsedPct).toBe(18);
   });
 
-  it('justo en el umbral (+12,5% de ventas) todavía no es régimen de crecimiento', () => {
+  it('justo en el umbral (+12,5% de ventas) la frontera R12 mezcla ambas anclas al 50%', () => {
+    // R12 (defecto SIMO): el umbral dejó de ser un interruptor. En el
+    // centro de la banda (±5 pp sobre 12,5%) el ancla es el PROMEDIO
+    // del ancla de crecimiento (12,5 + 10 = 22,5) y la sustentable
+    // (ROIC 10 × reinversión 20 = 2): (22,5 + 2) / 2 = 12,25. Sin
+    // dato forward, la serie que clasifica es el trailing (basis).
     const anchor = growthAnchorFor(base({ salesGrowthPct: 12.5, roicPct: 10, reinvestmentRatePct: 20 }));
-    expect(anchor?.regime).toBe('madura');
-    expect(anchor?.anchorPct).toBeCloseTo(2, 6);
+    expect(anchor?.basis).toBe('trailing');
+    expect(anchor?.blendPct).toBe(50);
+    expect(anchor?.anchorPct).toBeCloseTo(12.25, 6);
   });
 });
 

@@ -467,3 +467,90 @@ en ESTA capa:
   reescribieron en lenguaje simple con esta mecánica real, y se
   sumó el texto «Valor justo: cómo se calcula» (las dos
   estimaciones y el PEG como orientador que no valúa).
+
+## §17 — R12: escala honesta, vista prudente, frontera suave y ancla de caja real (2026-11-03)
+
+Pase aprobado por el usuario el 2026-11-03 (respaldo
+`respaldo-pre-vista-prudente-regimen-2026-11-03`; tests 276/276).
+Reglas completas en docs/VALUATION-RULES.md R12; acá, lo que
+cambia en la capa del Optimizador:
+
+**Velocidad recalibrada.** La recta de §16
+(`((RE + 5) / 40) × 100`) saturaba en 100 para todo RE ≥ 35% y
+dejaba 7–8 activos reales con el score máximo. Nueva:
+`velocidad = clamp(((RE + 45) / 120) × 100)` — RE 15% ⇒ 50;
+RE 75% ⇒ 100 (el máximo es excepcional; el ancla alta en 75% y
+no en 60% es decisión de diseño documentada en R12: con 60%, la
+banda de ajuste dejaba 3 activos de la tabla R11 en ≥95). Con
+los RE en vivo de R11, exactamente 2 activos quedan ≥95
+(test-censo). El ajuste acotado ±15 y la anti-inversión no
+cambian; la brecha de velocidad que ningún ajuste puede cruzar
+(> 30 pts) equivale ahora a ≳ 36 pp de RE.
+
+**Vista prudente.** Conmutador «Vista: Esperada | Prudente»
+(persistido en el store, como el resto de los ajustes del
+análisis). El resultado suma `beforePessimistic` (la cartera
+leída con los retornos prudentes) y cada activo expone
+`expectedReturnPessimisticPct`, `yearsToDoublePessimistic`,
+`scorePessimistic` y `prudentFallback`. La lectura prudente
+recalcula solo la pata de convergencia contra `fvPesimista`
+(el piso del rango); GK y consenso quedan como están, y el
+payload de la vista esperada es idéntico con y sin la lectura
+(test de recomposición). En la UI, la vista prudente reordena
+la columna 1 por el RE prudente (monótono en él), muestra el
+score prudente y los KPIs de cartera prudentes; los activos
+sin piso válido muestran su RE esperado con la marca «Sin
+rango válido: se muestra su retorno esperado». Columnas 2 y 3
+y gráficos quedan como están: la propuesta es de la vista
+esperada.
+
+**Régimen del ancla de GK: forward y con banda.** El clasificador
+usa ahora `salesGrowthForwardPct` (consenso: Yahoo earningsTrend
++ pronóstico de TradingView, la misma definición del chequeo de
+ingresos del motor de FV); el trailing TTM queda como respaldo
+documentado (`growthRegimeBasis` en el payload). La frontera
+mezcla linealmente en [7,5%, 17,5%]: `growthAnchorBlendPct`
+expone el peso de la mezcla. Es el arreglo del defecto SIMO
+(salto de RE 72,6% → 34,6% entre dos lecturas por un refresco
+que cruzó el interruptor): el test de estabilidad exige que un
+movimiento de ±2 pp del input dentro de la banda mueva el RE
+≤ 5 pp.
+
+**Ancla de caja real en el ajuste.** `cashAnchorFor` clasifica
+cada activo por el signo de su FCF de los últimos 12 meses
+reportados (`fcfTtmUsd`: el TTM crudo de Yahoo, preservado antes
+de la reparación de la capa de datos que lo completa con el
+anual auditado). Estados: `genera-caja` / `quema-caja` /
+`sin-dato` / `no-aplica` (financieras por sector/industria,
+cripto y caja). Si quemó caja, el ajuste resta −6 con el total
+acotado a la banda ±15 (anti-inversión verificada con el ancla
+incluida); el reparo compite como driver del ajuste y la
+evaluación escrita lo cita cuando manda. FV, RE y orden por
+duplicación no se tocan (test de recomposición). La marca se
+expone en la ficha del activo (`cashAnchor` en
+`GET /api/asset/:symbol`, calculado con `cashAnchorStateFor`,
+el núcleo compartido con el motor), con su efecto en el score
+de ese activo escrito junto a la marca.
+
+**Superficies (corrección del usuario, 11:21).** La tarjeta
+del Optimizador NO suma líneas ni marcas: queda con su
+contenido de siempre (el ranking es para escanear y clickear;
+las tarjetas ya navegan al análisis). Todas las piezas nuevas
+de presentación viven en el ANÁLISIS DEL ACTIVO, junto a su
+resumen de valuación: (1) la marca de caja con su explicación
+y su efecto en el score; (2) la advertencia «Estimación a
+revisar» cuando `modelSuspect` está activo — la señal viajaba
+en el payload desde R9 sin render en ningún lado — con su
+motivo («las fuentes de este activo se contradicen entre
+sí»); (3) la nota de confianza junto a la figura de tiempo y
+retorno anualizado de la ficha (desde `fvConfidence`, sin
+cómputo nuevo); (4) el medidor de expectativas (`pePair` en
+`GET /api/asset/:symbol`, función pura `pePairFor` del motor
+de FV): PER actual y PER futuro recomputados desde
+primitivas, estado «sin ganancias todavía» si el EPS trailing
+≤ 0 y marca «Mucho futuro ya está en el precio» ante brecha
+extrema (forward < 40% del actual y actual > 15×). Nada de
+esto alimenta FV, RE ni score. Única marca nueva fuera de la
+ficha: en vista prudente, el pie de la columna 1 lista los
+activos sin rango válido que se muestran a su retorno
+esperado (línea de la vista, no de la tarjeta).

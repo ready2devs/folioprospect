@@ -160,14 +160,21 @@ describe('score dominado por la capacidad de duplicar (directiva 2026-11-03 04:3
     expect(fast.score!).toBe(
       Math.max(0, Math.min(100, Math.round(fast.scoreVelocity! + fast.scoreAdjustmentPts!)))
     );
-    expect(fast.scoreVelocity!).toBeGreaterThan(85);
+    // Escala R12: este fixture (RE ≈ 34%) ya NO satura la velocidad —
+    // con la recta nueva vale ≈ 66 (antes > 85 con la escala vieja,
+    // que daba 100 a todo RE ≥ 35%). El 100 quedó excepcional.
+    expect(fast.scoreVelocity!).toBeGreaterThan(60);
+    expect(fast.scoreVelocity!).toBeLessThan(75);
   });
 
   it('una brecha de velocidad > 30 pts no se invierte ni con los peores/mejores ajustes', () => {
+    // Fixture rápido reforzado para la escala R12: con la recta
+    // nueva, una brecha de velocidad > 30 exige una brecha de RE de
+    // ≳ 36 pp (acá: RE ≈ 50% contra ≈ 3%).
     const fast = scoreAsset(
       base({
-        price: 100, fvBase: 220, fvConfidence: 'Baja', fvComponentCount: 2,
-        earningsGrowthTotalPct: 30, analystTarget: 150,
+        price: 100, fvBase: 320, fvConfidence: 'Baja', fvComponentCount: 2,
+        earningsGrowthTotalPct: 30, analystTarget: 200,
         volatilityPct: 90, roicPct: 3,
       }),
       1000, SCORE_OPTS

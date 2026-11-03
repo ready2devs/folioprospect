@@ -34,6 +34,8 @@ import {
   buildPortfolioSeries,
   computeRiskMetrics,
   computeFairValue,
+  cashAnchorStateFor,
+  pePairFor,
   runPortfolioProjection,
   cleanTicker,
   resolveAssetMeta,
@@ -680,6 +682,35 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
     const fairValue = computeFairValue(fundInput);
 
+    // Ancla de caja real (R12): la MISMA marca que muestra el
+    // Optimizador, calculada con el mismo criterio del motor —
+    // el signo del FCF de los últimos 12 meses reportados (TTM
+    // crudo, antes de la reparación que lo completa con el anual
+    // auditado: misma regla que server/optimizerData.ts). En
+    // cripto no hay ficha de caja: null y la vista no la muestra.
+    const isCryptoAsset = matchedKey.startsWith('BINANCE:');
+    const cashAnchor = isCryptoAsset
+      ? null
+      : cashAnchorStateFor({
+          sector: (meta as any)?.sector ?? null,
+          fcfTtmUsd:
+            fundInput.freeCashflowTtmRaw ??
+            (fundInput.fcfDerivedFromFilings ? null : fundInput.freeCashflow ?? null),
+        });
+
+    // Medidor de expectativas (R12): PER actual vs futuro desde
+    // primitivas — el EPS forward es el MISMO que usó la pata de
+    // fórmula del FV (su procedencia lo expone). Solo información:
+    // no alimenta ningún cálculo.
+    const pePair = isCryptoAsset
+      ? null
+      : pePairFor({
+          price: quote.price,
+          epsTrailing: fundInput.trailingEps ?? null,
+          epsForward:
+            fairValue.fvProvenance?.find((p) => p.component === 'multiples')?.usedValue ?? null,
+        });
+
     // User's current position and transactions for this symbol
     const ledger = evaluateLedger(portfolio, db.assetMeta, quotes, fallbackPrices);
     const holding =
@@ -731,6 +762,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       sparkline: sparklines[matchedKey],
       chart,
       fairValue,
+      cashAnchor,
+      pePair,
       extras,
       earningsInfo,
       holding,

@@ -212,6 +212,40 @@ async function buildAssetInput(
       epsNextYearPct: finviz?.epsNextYearPct ?? null,
       epsNext5YPct: extras.epsNext5YGrowthPct ?? finviz?.epsNext5YPct ?? null,
       salesGrowthPct: finviz?.salesYoyTtmPct ?? null,
+      // Crecimiento de ventas FUTURO de consenso %: la misma
+      // definición que el motor de FV usa para su chequeo de
+      // ingresos — promedio de la tendencia de ingresos de Yahoo
+      // (estimaciones del próximo año vs el año actual, earningsTrend)
+      // y del pronóstico del próximo año fiscal de TradingView contra
+      // su TTM, cuando ambas fuentes están. Desde R12 es la serie que
+      // clasifica el régimen del ancla de GK en el motor (el futuro
+      // manda también ahí); el TTM de arriba queda como respaldo.
+      salesGrowthForwardPct: (() => {
+        const checks: number[] = [];
+        if (fund.trendRevenueGrowth != null && Number.isFinite(fund.trendRevenueGrowth)) {
+          checks.push(fund.trendRevenueGrowth * 100);
+        }
+        if (
+          fund.tvRevenueForecastNextFy != null &&
+          fund.tvRevenueTtm != null &&
+          fund.tvRevenueTtm > 0
+        ) {
+          checks.push((fund.tvRevenueForecastNextFy / fund.tvRevenueTtm - 1) * 100);
+        }
+        return checks.length ? checks.reduce((s, x) => s + x, 0) / checks.length : null;
+      })(),
+      // FCF TTM crudo para el ancla de caja real del score (R12):
+      // el valor TAL CUAL lo sirvió el proveedor, antes de la
+      // reparación que completa un TTM faltante/negativo con el
+      // flujo anual auditado (esa reparación alimenta el ancla
+      // histórica del FV; acá pisaría el hecho que el ancla mide).
+      // Si el crudo no está pero el FCF vigente NO vino de esa
+      // reparación, el vigente es el TTM y se usa; si vino de los
+      // estados (fcfDerivedFromFilings), el TTM crudo se desconoce
+      // y el ancla queda «sin dato» antes que mentir el signo.
+      fcfTtmUsd:
+        fund.freeCashflowTtmRaw ??
+        (fund.fcfDerivedFromFilings ? null : fund.freeCashflow ?? null),
       // ΔS real desde EDGAR (variación interanual de acciones diluidas):
       // antes era null «sin fuente confiable»; EDGAR sí la trae para los
       // emisores que reportan el concepto (brecha declarada en el doc).

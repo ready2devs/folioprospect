@@ -35,6 +35,32 @@
  * El crecimiento de GK conserva su ancla por régimen (ventas en
  * crecimiento, ROIC × reinversión en maduras — la doctrina del
  * usuario), que es un techo con fundamento económico, no un descuento.
+ *
+ * R12 (mismo día, a pedido del usuario): cuatro correcciones que no
+ * tocan ninguna estimación. (1) La escala de velocidad del score se
+ * recalibró: la anterior saturaba en 100 para todo RE ≥ 35% (en vivo
+ * 7–8 activos compartían el máximo y el score no discriminaba la
+ * parte alta); la nueva es la recta por RE 15% ⇒ 50 puntos y
+ * RE 75% ⇒ 100, para que el 100 sea excepcional. (2) Vista prudente:
+ * cada activo expone además su retorno si la convergencia apuntara
+ * al escenario PESIMISTA del FV (el piso de su rango) y la cartera
+ * su métrica prudente: es otra LECTURA de los mismos escenarios, no
+ * otro cálculo — la propuesta y la vista esperada no cambian.
+ * (3) El régimen del ancla de GK se clasifica por el crecimiento de
+ * ventas FUTURO de consenso (respaldo documentado: el trailing TTM)
+ * y la frontera entre regímenes deja de ser un interruptor: en una
+ * banda de ±5 pp alrededor del umbral las dos anclas se mezclan
+ * linealmente, para que un refresco de estimaciones no pueda partir
+ * el retorno de un activo de una lectura a la otra (defecto SIMO).
+ * (4) Ancla de caja real: si el flujo de caja libre de los últimos
+ * 12 meses reportados (TTM) fue negativo, el ajuste del score resta
+ * hasta −6 puntos DENTRO de la misma banda ±15 — un ancla en la
+ * realidad frente a las promesas de crecimiento que no toca ni el
+ * FV ni el RE; las financieras quedan fuera de la métrica y la
+ * ausencia de dato no castiga (R0). Además, la UI muestra por fin
+ * señales que el motor ya computaba: la marca de caja, el driver
+ * del ajuste en la tarjeta y la bandera modelSuspect («Estimación
+ * a revisar») en tarjeta y ficha.
  * A nivel cartera el RE es GEOMÉTRICO: se
  * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
  * matriz de correlaciones por bloques (aproximación documentada) y
@@ -65,6 +91,25 @@ export interface OptimizerAssetInput {
   epsNextYearPct?: number | null;
   epsNext5YPct?: number | null;
   salesGrowthPct?: number | null;
+  /** Crecimiento de ventas FUTURO de consenso % anual (estimaciones
+   *  de ingresos del próximo año vs el actual: Yahoo earningsTrend +
+   *  pronóstico de TradingView, promediados — la misma definición que
+   *  el motor de FV usa para su chequeo de ingresos). Desde R12 es la
+   *  serie que CLASIFICA el régimen del ancla de GK: el futuro manda
+   *  también acá. `salesGrowthPct` (TTM trailing de Finviz) queda
+   *  como respaldo documentado cuando el forward no está. */
+  salesGrowthForwardPct?: number | null;
+  /** Flujo de caja libre de los últimos 12 meses REPORTADOS (TTM),
+   *  en US$, tal cual lo sirve la fuente ANTES de cualquier
+   *  reparación de la capa de datos: insumo del ANCLA DE CAJA REAL
+   *  del score (R12). Solo importa su SIGNO: quemar caja en la
+   *  ventana móvil es un hecho reportado que no se mueve con
+   *  refrescos de estimaciones, a diferencia del año fiscal cerrado
+   *  (que puede cerrar positivo con un TTM ya negativo, caso SIMO).
+   *  La reparación que hoy completa un TTM faltante/negativo con el
+   *  flujo anual auditado sirve al ancla histórica del FV, pero NO
+   *  debe pisar este dato: el ancla de caja lee el TTM crudo. */
+  fcfTtmUsd?: number | null;
   /** ΔS % anual: positivo = emite acciones (diluye), negativo = recompra. */
   dilutionPct?: number | null;
   forwardPe?: number | null;
@@ -194,6 +239,13 @@ export interface AssetScore {
   gkGrowthPct: number | null;
   growthAnchorPct: number | null;
   growthRegime: GrowthRegime | null;
+  /** Peso (0–100) del ancla de crecimiento dentro del ancla mezclada
+   *  de R12: 100 = ancla de ventas pura, 0 = sustentable pura; los
+   *  valores intermedios son la banda de transición entre regímenes. */
+  growthAnchorBlendPct: number | null;
+  /** Qué serie clasificó el régimen: las ventas futuras de consenso
+   *  ('forward') o, en su defecto, el trailing TTM ('trailing'). */
+  growthRegimeBasis: GrowthRegimeBasis | null;
   /** RE anual estimado % (aritmético por activo). */
   expectedReturnPct: number | null;
   /** Piso de cordura Gordon: D/P + g acotado. */
@@ -202,6 +254,23 @@ export interface AssetScore {
   score: number | null;
   stars: number | null;
   yearsToDouble: number | null;
+  /** Vista prudente (R12): el MISMO retorno triangulado pero con la
+   *  convergencia apuntando al escenario pesimista del FV (el piso
+   *  de su rango, fvPesimista) en vez del FV base. GK y consenso no
+   *  dependen del FV y no cambian. Es una lectura alternativa de los
+   *  escenarios que el motor ya computa: no altera ningún número de
+   *  la vista esperada ni la propuesta. */
+  expectedReturnPessimisticPct: number | null;
+  /** Años a duplicar con el retorno prudente. */
+  yearsToDoublePessimistic: number | null;
+  /** Score con la velocidad del retorno prudente y el MISMO ajuste
+   *  acotado del score esperado: la coherencia score↔orden se
+   *  mantiene también en la vista prudente. */
+  scorePessimistic: number | null;
+  /** true si el activo no tiene un escenario pesimista válido
+   *  (sin rango de FV): su retorno prudente cae al esperado y la UI
+   *  lo marca, para que nadie lea un esperado como si fuera el piso. */
+  prudentFallback: boolean;
   volatilityPct: number;
   /** Descomposición de riesgo de Euler (aprox. por bloques de correlación). */
   mctrPct: number | null;
@@ -229,6 +298,16 @@ export interface AssetScore {
    *  cita para que ninguna diferencia score↔duplicación quede sin
    *  explicación. */
   scoreAdjustmentDriver: string | null;
+  /** Ancla de caja real (R12): estado según el FCF de los últimos
+   *  12 meses reportados. Es una MARCA visible y, si quemó caja, un
+   *  reparo dentro del ajuste del score — nada más: no entra en el
+   *  FV, en el RE ni en el orden por duplicación. */
+  cashAnchorState: CashAnchorState;
+  /** Puntos de score que el ancla de caja restó (0 o −6, antes del
+   *  acotamiento de la banda ±15 del ajuste total). */
+  cashAnchorPenaltyPts: number;
+  /** El FCF TTM (US$) detrás de la marca, para mostrarlo/auditarlo. */
+  cashAnchorFcfTtmUsd: number | null;
   fvConfidence: 'Alta' | 'Media' | 'Baja' | null;
   fvComponentCount: number | null;
   fvToPrice: number | null;
@@ -362,6 +441,11 @@ export interface OptimizerResult {
   /** Próximas ventas sugeridas (no dispararon reglas; la UI las ofrece de a una). */
   suggestionCandidates: SuggestionCandidate[];
   before: PortfolioMetrics;
+  /** La cartera ACTUAL bajo la vista prudente (R12): la misma
+   *  agregación geométrica que `before`, pero con el retorno
+   *  prudente (convergencia al piso del rango) de cada activo. La
+   *  volatilidad es la misma: no cambia entre vistas. */
+  beforePessimistic: PortfolioMetrics;
   after: PortfolioMetrics;
   /** Cartera final: posiciones resultantes con peso y score. */
   finalAssets: AssetScore[];
@@ -383,8 +467,22 @@ export const yearsToDoubleFor = (rPct: number | null): number | null =>
  *  la empresa es «en crecimiento» y su crecimiento de ganancias se
  *  ancla a las ventas; por debajo es «madura» y manda el crecimiento
  *  sustentable. Punto medio de la banda 10–15% indicada por el
- *  usuario (corrección 2026-11-03). */
+ *  usuario (corrección 2026-11-03). Desde R12 la serie que se compara
+ *  contra el umbral es el crecimiento de ventas FUTURO de consenso
+ *  (respaldo: el trailing TTM) y el umbral es el centro de una banda
+ *  de transición, no un interruptor (ver GROWTH_REGIME_BLEND_BAND_PP). */
 export const GROWTH_REGIME_SALES_PCT = 12.5;
+/** Semiancho (pp) de la banda de transición entre regímenes (R12):
+ *  con el crecimiento de ventas dentro de umbral ± 5 pp, el ancla de
+ *  GK es una MEZCLA LINEAL del ancla de crecimiento (ventas + 10 pp)
+ *  y la sustentable (ROIC × reinversión): en el borde inferior manda
+ *  la sustentable, en el superior la de ventas, en el centro el
+ *  promedio. Fuera de la banda manda el régimen correspondiente, como
+ *  siempre. Existe porque la frontera dura dejaba que un refresco de
+ *  estimaciones reclasificara a un activo de una lectura a la otra y
+ *  le partiera el retorno (SIMO: ancla 114 → 22 y RE 72,6% → 34,6%
+ *  entre dos lecturas del mismo día). Decisión de diseño simple. */
+export const GROWTH_REGIME_BLEND_BAND_PP = 5;
 /** Margen de apalancamiento operativo (pp): en régimen de crecimiento
  *  las ganancias pueden crecer hasta ventas + 10 pp (expansión de
  *  márgenes; la recompra ya entra como componente separado de GK, no
@@ -403,13 +501,17 @@ export function sustainableGrowthFromRoic(
 
 export type GrowthRegime = 'crecimiento' | 'madura';
 
+/** Serie que clasificó el régimen (R12): las ventas futuras de
+ *  consenso cuando están; el trailing TTM como respaldo documentado. */
+export type GrowthRegimeBasis = 'forward' | 'trailing';
+
 /** Ancla de cordura del crecimiento de ganancias, por régimen
- *  (corrección del usuario 2026-11-03):
- *  - Empresa en crecimiento (ventas > +12,5%): ancla = crecimiento de
- *    ventas + margen de apalancamiento operativo. Las ventas mandan
- *    porque una base de ganancias casi cero (Nebius) convierte
- *    cualquier % de EPS en un número sin sentido, mientras las ventas
- *    son la magnitud económica real que crece.
+ *  (corrección del usuario 2026-11-03; frontera suavizada en R12):
+ *  - Empresa en crecimiento: ancla = crecimiento de ventas + margen
+ *    de apalancamiento operativo. Las ventas mandan porque una base
+ *    de ganancias casi cero (Nebius) convierte cualquier % de EPS en
+ *    un número sin sentido, mientras las ventas son la magnitud
+ *    económica real que crece.
  *  - Empresa madura: ancla = crecimiento sustentable, g = ROIC ×
  *    reinversión con los reportados del motor; si la reinversión no
  *    se pudo calcular con fiabilidad, el respaldo es la forma equity
@@ -417,21 +519,55 @@ export type GrowthRegime = 'crecimiento' | 'madura';
  *    (`sustainableGrowthPct`).
  *  El ancla es TECHO de cordura, nunca piso: si el consenso implica
  *  menos, manda el consenso. Sin datos para el ancla, no hay ancla y
- *  la estimación entra a valor facial. */
+ *  la estimación entra a valor facial.
+ *
+ *  R12 — qué serie clasifica y cómo se cruza la frontera:
+ *  la clasificación usa el crecimiento de ventas FUTURO de consenso
+ *  (`salesGrowthForwardPct`) y solo cae al trailing TTM
+ *  (`salesGrowthPct`) cuando el forward no está — el futuro manda
+ *  también para decidir el régimen. Y la frontera ya no es un
+ *  interruptor: dentro de la banda umbral ± 5 pp, el ancla es la
+ *  mezcla lineal de ambas (peso `blendPct` sobre la de crecimiento,
+ *  de 0 en el borde inferior a 100 en el superior; en el centro, el
+ *  promedio). El régimen informado es el del lado dominante de la
+ *  mezcla. Sin ancla sustentable computable no hay con qué mezclar:
+ *  rige el interruptor clásico sobre el umbral. */
 export function growthAnchorFor(a: OptimizerAssetInput): {
   anchorPct: number;
   regime: GrowthRegime;
+  blendPct: number;
+  basis: GrowthRegimeBasis | null;
 } | null {
-  const sales = a.salesGrowthPct ?? null;
-  if (sales != null && sales > GROWTH_REGIME_SALES_PCT) {
-    return { anchorPct: sales + GROWTH_LEVERAGE_SLACK_PP, regime: 'crecimiento' };
-  }
+  const fwd = a.salesGrowthForwardPct ?? null;
+  const sales = fwd ?? a.salesGrowthPct ?? null;
+  const basis: GrowthRegimeBasis | null =
+    fwd != null ? 'forward' : sales != null ? 'trailing' : null;
   const firm = sustainableGrowthFromRoic(a.roicPct, a.reinvestmentRatePct);
-  if (firm != null) return { anchorPct: firm, regime: 'madura' };
-  if (a.sustainableGrowthPct != null) {
-    return { anchorPct: a.sustainableGrowthPct, regime: 'madura' };
+  const sustainable = firm ?? a.sustainableGrowthPct ?? null;
+  if (sales == null) {
+    // Sin ningún dato de ventas: el ancla sustentable si existe
+    // (comportamiento histórico); si no, sin ancla.
+    return sustainable != null
+      ? { anchorPct: sustainable, regime: 'madura', blendPct: 0, basis }
+      : null;
   }
-  return null;
+  const growthAnchor = sales + GROWTH_LEVERAGE_SLACK_PP;
+  if (sustainable == null) {
+    // Sin ancla sustentable no hay mezcla posible: interruptor
+    // clásico sobre el umbral.
+    return sales > GROWTH_REGIME_SALES_PCT
+      ? { anchorPct: growthAnchor, regime: 'crecimiento', blendPct: 100, basis }
+      : null;
+  }
+  const lo = GROWTH_REGIME_SALES_PCT - GROWTH_REGIME_BLEND_BAND_PP;
+  const hi = GROWTH_REGIME_SALES_PCT + GROWTH_REGIME_BLEND_BAND_PP;
+  const w = clamp((sales - lo) / (hi - lo), 0, 1);
+  return {
+    anchorPct: w * growthAnchor + (1 - w) * sustainable,
+    regime: w >= 0.5 ? 'crecimiento' : 'madura',
+    blendPct: Math.round(w * 100),
+    basis,
+  };
 }
 
 export interface GrinoldKronerParts {
@@ -441,6 +577,10 @@ export interface GrinoldKronerParts {
   /** Ancla de cordura aplicada (techo), si hubo. */
   growthAnchorPct: number | null;
   growthRegime: GrowthRegime | null;
+  /** Peso de la ancla de crecimiento en la mezcla de R12 (0–100). */
+  growthAnchorBlendPct: number | null;
+  /** Serie que clasificó el régimen: forward o trailing (R12). */
+  growthRegimeBasis: GrowthRegimeBasis | null;
   /** Crecimiento base antes del ancla (consenso de ganancias o, en su
    *  defecto, el de ventas). */
   growthBasePct: number | null;
@@ -475,7 +615,10 @@ export function grinoldKronerParts(a: OptimizerAssetInput): GrinoldKronerParts {
   // Sin estimación de ganancias, el crecimiento de ventas es el proxy.
   if (baseGrowth == null) baseGrowth = a.salesGrowthPct ?? null;
   if (baseGrowth == null) {
-    return { total: null, growthUsedPct: null, growthAnchorPct: null, growthRegime: null, growthBasePct: null };
+    return {
+      total: null, growthUsedPct: null, growthAnchorPct: null, growthRegime: null,
+      growthAnchorBlendPct: null, growthRegimeBasis: null, growthBasePct: null,
+    };
   }
   // Ancla por régimen (corrección 2): techo de cordura con fundamento
   // económico según el régimen — reemplaza al fade mecánico anterior
@@ -499,6 +642,8 @@ export function grinoldKronerParts(a: OptimizerAssetInput): GrinoldKronerParts {
     growthUsedPct: gRaw,
     growthAnchorPct: anchor?.anchorPct ?? null,
     growthRegime: anchor?.regime ?? null,
+    growthAnchorBlendPct: anchor?.blendPct ?? null,
+    growthRegimeBasis: anchor?.basis ?? null,
     growthBasePct: baseGrowth,
   };
 }
@@ -585,6 +730,85 @@ export const SCORE_ADJUSTMENT_BAND_PTS = 15;
  *  evaluación escrita lo cita con su driver. */
 export const SCORE_ADJUSTMENT_NOTABLE_PTS = 5;
 
+/** Escala de velocidad del score (R12): la recta por dos anclas —
+ *  un retorno esperado de 15% anual vale 50 puntos (un retorno
+ *  sólido es la mitad de la escala) y uno de 75% vale 100 (el máximo
+ *  es excepcional: solo un retorno extraordinario, muy por encima
+ *  del 60%, lo alcanza). velocidad = clamp(((RE + 45) / 120) × 100).
+ *  La escala anterior, ((RE + 5) / 40) × 100, saturaba en 100 para
+ *  todo RE ≥ 35%: en la tabla real 7–8 activos compartían el score
+ *  máximo y el puntaje no discriminaba justo donde más importa, la
+ *  parte alta. El segundo ancla se fijó en 75% y no en 60% porque
+ *  con 60% la banda de ajuste (±15) todavía dejaba tres activos
+ *  reales en ≥95 (MU, SIMO y NVDA de la tabla R11): el 100 seguiría
+ *  sin ser excepcional sobre los datos que el sistema produce. Con
+ *  75%, solo los retornos pegados al techo anti-basura del RE
+ *  (+80%) llegan a la zona del 100. Es calibración de PRESENTACIÓN:
+ *  no cambia ningún retorno ni ningún valor justo. */
+export function scoreVelocityFor(rePct: number): number {
+  return clamp(((rePct + 45) / 120) * 100, 0, 100);
+}
+
+/** Estado del ancla de caja real (R12) de un activo:
+ *  - 'genera-caja': su FCF de los últimos 12 meses reportados > 0.
+ *  - 'quema-caja': su FCF TTM < 0 → reparo en el score.
+ *  - 'sin-dato': no hay FCF TTM disponible → sin reparo (R0: la
+ *    ausencia de dato no se castiga).
+ *  - 'no-aplica': el FCF no es la métrica del negocio (financieras:
+ *    su materia prima es el dinero; cripto y caja) → sin reparo y
+ *    sin marca negativa. */
+export type CashAnchorState = 'genera-caja' | 'quema-caja' | 'sin-dato' | 'no-aplica';
+
+/** Reparo del ancla de caja real (R12, diseño aprobado 2026-11-03):
+ *  hasta −6 puntos de score si la empresa quemó caja en los últimos
+ *  12 meses reportados. Vive DENTRO de la banda de ajuste (±15): el
+ *  ajuste total se acota a la banda con el reparo incluido, así la
+ *  propiedad anti-inversión (brecha de velocidad > 30 no se cruza)
+ *  se mantiene intacta. Solo resta: jamás suma, y no toca ni el FV
+ *  ni el RE ni el orden por duplicación. */
+export const CASH_ANCHOR_PENALTY_PTS = 6;
+
+/** El FCF no aplica como métrica cuando el sector o la industria
+ *  son financieros (bancos, fintechs de balance, aseguradoras): su
+ *  «flujo de caja libre» contable no es comparable al de una empresa
+ *  industrial o de servicios. */
+const FINANCIAL_LABEL_RE = /financ/i;
+
+export interface CashAnchorInfo {
+  state: CashAnchorState;
+  penaltyPts: number;
+  fcfTtmUsd: number | null;
+}
+
+/** Núcleo del ancla de caja, usable fuera del optimizador (la ficha
+ *  del activo muestra la misma marca con el mismo criterio). */
+export function cashAnchorStateFor(input: {
+  sector?: string | null;
+  industry?: string | null;
+  fcfTtmUsd?: number | null;
+  isCrypto?: boolean;
+  isCash?: boolean;
+}): CashAnchorInfo {
+  const fcf = input.fcfTtmUsd ?? null;
+  if (input.isCrypto || input.isCash) return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: null };
+  if (FINANCIAL_LABEL_RE.test(input.sector ?? '') || FINANCIAL_LABEL_RE.test(input.industry ?? '')) {
+    return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: fcf };
+  }
+  if (fcf == null || !Number.isFinite(fcf)) return { state: 'sin-dato', penaltyPts: 0, fcfTtmUsd: null };
+  if (fcf < 0) return { state: 'quema-caja', penaltyPts: -CASH_ANCHOR_PENALTY_PTS, fcfTtmUsd: fcf };
+  return { state: 'genera-caja', penaltyPts: 0, fcfTtmUsd: fcf };
+}
+
+export function cashAnchorFor(a: OptimizerAssetInput): CashAnchorInfo {
+  return cashAnchorStateFor({
+    sector: a.sector,
+    industry: a.industry,
+    fcfTtmUsd: a.fcfTtmUsd,
+    isCrypto: a.isCrypto,
+    isCash: a.isCash,
+  });
+}
+
 export function consensusPct(a: OptimizerAssetInput): number | null {
   if (a.analystTarget == null || !(a.analystTarget > 0) || !(a.price > 0)) return null;
   // SIN tope (corrección del usuario 2026-11-03): la suba implícita en
@@ -633,6 +857,10 @@ export function scoreAsset(
   // FV usado por convergencia y score: el del motor, TAL CUAL (R11:
   // sin encoger por confianza, sin pisos por tripwire).
   const fvEffective = isCrypto || isCash ? null : (a.fvBase ?? null);
+  // Ancla de caja real (R12): se calcula siempre (la marca se
+  // muestra aunque el activo no tenga score) y su reparo entra
+  // después en la banda de ajuste del score.
+  const cashAnchor = cashAnchorFor(a);
   const gate = isCrypto || isCash ? null : earningsGateFor(a);
   const thesisSignals = thesisSignalsFor(a);
   const conservativeConvergence = false;
@@ -641,8 +869,15 @@ export function scoreAsset(
   let scoreVelocity: number | null = null;
   let scoreAdjustmentPts: number | null = null;
   let scoreAdjustmentDriver: string | null = null;
+  let rePess: number | null = null;
+  let prudentFallback = false;
+  let scorePess: number | null = null;
   if (isCrypto || isCash) {
     re = a.assumedReturnPct ?? (isCash ? 0 : 11.5);
+    // Cripto y caja no tienen rango de FV: su «prudente» es el mismo
+    // retorno supuesto, marcado como caída (prudentFallback).
+    rePess = re;
+    prudentFallback = true;
   } else {
     gkParts = grinoldKronerParts(a);
     gk = gkParts.total;
@@ -667,6 +902,38 @@ export function scoreAsset(
         RE_SANITY_CLAMP_PCT.max
       );
     }
+    // VISTA PRUDENTE (R12): la misma triangulación, pero la pata de
+    // convergencia apunta al escenario PESIMISTA del FV
+    // (fvPesimista: el piso del rango — el menor de los componentes
+    // que formaron el FV) en vez del FV base. GK y el consenso no
+    // dependen del FV y entran igual. Sin fvPesimista válido no hay
+    // escenario pesimista computable: el retorno prudente CAE al
+    // esperado y el activo queda marcado (prudentFallback) para que
+    // la UI lo muestre — nadie lee un esperado como si fuera el piso.
+    const fvPessConv =
+      a.fvPesimista != null && a.fvPesimista > 0 && a.price > 0
+        ? (Math.pow(a.fvPesimista / a.price, 1 / opts.yearsToCorrection) - 1) * 100
+        : null;
+    if (fvPessConv != null) {
+      const pParts: Array<[number | null, number]> = [
+        [gk, 0.45],
+        [fvPessConv, 0.35],
+        [cons, 0.2],
+      ];
+      const pAvail = pParts.filter(([v]) => v != null) as Array<[number, number]>;
+      if (pAvail.length) {
+        const tw = pAvail.reduce((s, [, w]) => s + w, 0);
+        rePess = clamp(
+          pAvail.reduce((s, [v, w]) => s + v * w, 0) / tw,
+          RE_SANITY_CLAMP_PCT.min,
+          RE_SANITY_CLAMP_PCT.max
+        );
+      }
+    }
+    if (rePess == null) {
+      rePess = re;
+      prudentFallback = true;
+    }
     const gAnchor =
       a.earningsGrowthTotalPct ?? a.salesGrowthPct ??
       (a.epsNext5YPct != null || a.epsNextYearPct != null
@@ -676,19 +943,19 @@ export function scoreAsset(
 
     // SCORE DOMINADO POR LA CAPACIDAD DE DUPLICAR (directiva del
     // usuario 2026-11-03, mismo día): la base es la velocidad — el
-    // retorno esperado convertido a escala 0–100 (RE −5% → 0; 15% →
-    // 50; 35% → 100) — y las demás dimensiones entran como un AJUSTE
-    // ACOTADO de ±15 puntos: oportunidad precio/FV (25/70 del
-    // ajuste), calidad del negocio (20/70), confianza de la
-    // valuación (15/70) y riesgo (10/70). El ajuste puede premiar o
-    // castigar dentro de su banda, pero no puede invertir el
-    // titular: dos activos cuya velocidad difiera en más de 30
-    // puntos jamás se cruzan en el score, y nadie del tercio más
-    // rápido termina en el tercio inferior por el ajuste. (El diseño
+    // retorno esperado convertido a escala 0–100 con la recta de
+    // scoreVelocityFor (RE 15% → 50; RE 75% → 100; recalibrada en
+    // R12 para que el 100 sea excepcional) — y las demás dimensiones
+    // entran como un AJUSTE ACOTADO de ±15 puntos: oportunidad
+    // precio/FV (25/70 del ajuste), calidad del negocio (20/70),
+    // confianza de la valuación (15/70) y riesgo (10/70). El ajuste
+    // puede premiar o castigar dentro de su banda, pero no puede
+    // invertir el titular: dos activos cuya velocidad difiera en
+    // más de 30 puntos jamás se cruzan en el score. (El diseño
     // «profesional» anterior — velocidad al 30% — invertía el orden
     // que la tabla muestra y era contraintuitivo: score bajo arriba
     // en la tabla.)
-    scoreVelocity = re != null ? clamp(((re + 5) / 40) * 100, 0, 100) : null;
+    scoreVelocity = re != null ? scoreVelocityFor(re) : null;
     let opportunity = a.opportunityScore ?? null;
     if (opportunity == null && fvEffective != null && fvEffective > 0 && a.price > 0) {
       opportunity = scoreFor(a.price / fvEffective, normalizeUncertainty(a.uncertainty) as UncertaintyLevel);
@@ -706,15 +973,16 @@ export function scoreAsset(
     const adjAvail = adjDims.filter((d) => d.value != null);
     if (scoreVelocity != null) {
       let adjustment = 0;
+      // Driver: la dimensión que más empujó el ajuste (su desvío
+      // del centro, ponderado, en unidades de índice). Solo se
+      // nombra si el ajuste es llamativo: la evaluación escrita
+      // lo cita.
+      let bestDriver: string | null = null;
+      let bestPush = 0;
       if (adjAvail.length > 0) {
         const tw = adjAvail.reduce((s, d) => s + d.weight, 0);
         const index = adjAvail.reduce((s, d) => s + (d.value as number) * d.weight, 0) / tw;
         adjustment = ((index - 50) / 50) * SCORE_ADJUSTMENT_BAND_PTS;
-        // Driver: la dimensión que más empujó el ajuste (su desvío
-        // del centro, ponderado). Solo se nombra si el ajuste es
-        // llamativo: la evaluación escrita lo cita.
-        let bestDriver: string | null = null;
-        let bestPush = 0;
         for (const d of adjAvail) {
           const push = ((d.value as number) - 50) * (d.weight / tw);
           if (Math.abs(push) > Math.abs(bestPush)) {
@@ -722,13 +990,42 @@ export function scoreAsset(
             bestDriver = d.driver;
           }
         }
-        if (Math.abs(adjustment) >= SCORE_ADJUSTMENT_NOTABLE_PTS) {
-          scoreAdjustmentDriver = bestDriver;
+      }
+      // ANCLA DE CAJA REAL (R12): si quemó caja en los últimos 12
+      // meses reportados, el ajuste resta el reparo DENTRO de la
+      // misma banda — el total se acota a ±15 con el reparo
+      // incluido, así la anti-inversión no se degrada. El reparo
+      // compite como driver con su empuje equivalente en unidades
+      // de índice (−6 pts de score = −20 de índice): cuando es el
+      // mayor empuje, la evaluación escrita lo cita.
+      if (cashAnchor.penaltyPts !== 0) {
+        const cashPush = cashAnchor.penaltyPts * (50 / SCORE_ADJUSTMENT_BAND_PTS);
+        if (Math.abs(cashPush) > Math.abs(bestPush)) {
+          bestPush = cashPush;
+          bestDriver = 'quema caja en los últimos 12 meses reportados';
         }
+        adjustment = clamp(
+          adjustment + cashAnchor.penaltyPts,
+          -SCORE_ADJUSTMENT_BAND_PTS,
+          SCORE_ADJUSTMENT_BAND_PTS
+        );
+      }
+      if (Math.abs(adjustment) >= SCORE_ADJUSTMENT_NOTABLE_PTS) {
+        scoreAdjustmentDriver = bestDriver;
       }
       scoreAdjustmentPts = Math.round(adjustment * 10) / 10;
       score = Math.round(clamp(scoreVelocity + adjustment, 0, 100));
       stars = clamp(Math.round(score / 20), 1, 5);
+    }
+    // Score de la vista prudente (R12): la velocidad del retorno
+    // prudente con el MISMO ajuste acotado — el ajuste mira
+    // oportunidad, calidad, confianza y riesgo, que no dependen de
+    // la vista; así el score acompaña el orden prudente igual que el
+    // esperado acompaña el suyo.
+    if (rePess != null && scoreVelocity != null) {
+      scorePess = Math.round(
+        clamp(scoreVelocityFor(rePess) + (scoreAdjustmentPts ?? 0), 0, 100)
+      );
     }
   }
 
@@ -763,12 +1060,18 @@ export function scoreAsset(
     gkGrowthPct: gkParts?.growthUsedPct ?? null,
     growthAnchorPct: gkParts?.growthAnchorPct ?? null,
     growthRegime: gkParts?.growthRegime ?? null,
+    growthAnchorBlendPct: gkParts?.growthAnchorBlendPct ?? null,
+    growthRegimeBasis: gkParts?.growthRegimeBasis ?? null,
     expectedReturnPct: re,
     gordonFloorPct: gordon,
     belowGordonFloor: gordon != null && re != null && re < gordon - 4,
     score,
     stars,
     yearsToDouble: yearsToDoubleFor(re),
+    expectedReturnPessimisticPct: rePess,
+    yearsToDoublePessimistic: yearsToDoubleFor(rePess),
+    scorePessimistic: scorePess,
+    prudentFallback,
     volatilityPct: vol,
     mctrPct: null,
     riskContributionPct: null,
@@ -781,6 +1084,9 @@ export function scoreAsset(
     scoreVelocity,
     scoreAdjustmentPts,
     scoreAdjustmentDriver,
+    cashAnchorState: cashAnchor.state,
+    cashAnchorPenaltyPts: cashAnchor.penaltyPts,
+    cashAnchorFcfTtmUsd: cashAnchor.fcfTtmUsd,
     fvConfidence: a.fvConfidence ?? null,
     fvComponentCount: a.fvComponentCount ?? null,
     fvToPrice,
@@ -903,6 +1209,14 @@ export function optimizePortfolio(
   const scored = inputs.map((a) => scoreAsset(a, totalValue, opts));
   const volBefore = applyRiskDecomposition(scored, opts.riskFreePct);
   const before = portfolioMetrics(scored, volBefore);
+  // Vista prudente de la cartera actual (R12): mismos pesos y misma
+  // volatilidad; solo cambia el retorno de cada activo por su
+  // lectura pesimista. No interviene en la propuesta, que se sigue
+  // calculando con la vista esperada.
+  const beforePessimistic = portfolioMetrics(
+    scored.map((a) => ({ ...a, expectedReturnPct: a.expectedReturnPessimisticPct })),
+    volBefore
+  );
   const sorted = [...scored].sort(
     (x, y) => (y.expectedReturnPct ?? -Infinity) - (x.expectedReturnPct ?? -Infinity)
   );
@@ -1279,9 +1593,13 @@ export function optimizePortfolio(
         weightPct: totalValue > 0 ? (al.amountUsd / totalValue) * 100 : 0,
         isCrypto: false, isCash: false, gkPct: null, fvConvergencePct: null, consensusPct: null,
         gkGrowthPct: null, growthAnchorPct: null, growthRegime: null,
+        growthAnchorBlendPct: null, growthRegimeBasis: null,
         expectedReturnPct: al.expectedReturnPct, gordonFloorPct: null, belowGordonFloor: false,
         score: al.score, stars: al.score != null ? clamp(Math.round(al.score / 20), 1, 5) : null,
         yearsToDouble: yearsToDoubleFor(al.expectedReturnPct),
+        expectedReturnPessimisticPct: al.expectedReturnPct,
+        yearsToDoublePessimistic: yearsToDoubleFor(al.expectedReturnPct),
+        scorePessimistic: al.score, prudentFallback: true,
         volatilityPct: 30, mctrPct: null, riskContributionPct: null, excessPerRisk: null,
         locked: false, defensive: false, confidence: 'media',
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
@@ -1289,6 +1607,7 @@ export function optimizePortfolio(
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
+        cashAnchorState: 'sin-dato', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
       });
     }
     const finalAssets = [...finalMap.values()].sort(
@@ -1305,14 +1624,19 @@ export function optimizePortfolio(
         weightPct: totalValue > 0 ? (cashLeft / totalValue) * 100 : 0,
         isCrypto: false, isCash: true, gkPct: null, fvConvergencePct: null, consensusPct: null,
         gkGrowthPct: null, growthAnchorPct: null, growthRegime: null,
+        growthAnchorBlendPct: null, growthRegimeBasis: null,
         expectedReturnPct: 0, gordonFloorPct: null, belowGordonFloor: false, score: null, stars: null,
-        yearsToDouble: null, volatilityPct: 0, mctrPct: null, riskContributionPct: null,
+        yearsToDouble: null,
+        expectedReturnPessimisticPct: 0, yearsToDoublePessimistic: null,
+        scorePessimistic: null, prudentFallback: true,
+        volatilityPct: 0, mctrPct: null, riskContributionPct: null,
         excessPerRisk: null, locked: false, defensive: false, confidence: 'alta',
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
         conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
+        cashAnchorState: 'no-aplica', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
       });
     }
     finalAssets.forEach((a) => {
@@ -1412,6 +1736,7 @@ export function optimizePortfolio(
     watchAlerts,
     suggestionCandidates,
     before,
+    beforePessimistic,
     after,
     finalAssets,
     verdict,

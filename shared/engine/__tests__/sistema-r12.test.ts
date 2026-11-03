@@ -1,0 +1,326 @@
+import { describe, it, expect } from 'vitest';
+import {
+  scoreAsset,
+  optimizePortfolio,
+  scoreVelocityFor,
+  growthAnchorFor,
+  grinoldKroner,
+  consensusPct,
+  cashAnchorFor,
+  CASH_ANCHOR_PENALTY_PTS,
+  type OptimizerAssetInput,
+} from '../optimizer.js';
+import { pePairFor } from '../fairvalue.js';
+
+/**
+ * Sistema R12 (aprobado por el usuario 2026-11-03; docs/VALUATION-RULES.md
+ * R12 y docs/OPTIMIZER-PROFESSIONAL.md §17):
+ *  1) Escala de velocidad del score recalibrada (el 100 excepcional).
+ *  2) Vista prudente: lectura contra el piso del rango de FV, sin
+ *     tocar ningún número de la vista esperada.
+ *  3) Régimen del ancla de GK clasificado por ventas FUTURAS de
+ *     consenso y frontera suave (banda ±5 pp sobre el umbral 12,5%).
+ *  4) Ancla de caja real: reparo de hasta −6 pts en el score si el
+ *     FCF de los últimos 12 meses reportados (TTM) fue negativo;
+ *     jamás toca FV ni RE.
+ */
+const OPTS = {
+  sellCommissionPct: 0.5, riskFreePct: 4, yearsToCorrection: 3, minTradeUsd: 250,
+  maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
+} as const;
+
+const base = (p: Partial<OptimizerAssetInput>): OptimizerAssetInput => ({
+  symbol: 'NASDAQ:XXX', ticker: 'XXX', name: 'Test Co', sector: 'Technology',
+  industry: 'Semiconductors', price: 100, qty: 10, value: 1000, ...p,
+});
+
+/** Fixture con ajuste del score NEUTRO (índice 50 → ajuste 0): la
+ *  oportunidad dada vale 50 y el riesgo calculado vale 50
+ *  (vol 46,25 → 100 − 31,25 × 1,6 = 50). El RE sale solo de la pata
+ *  de consenso (target), a valor facial. */
+const neutral = (rePct: number, p: Partial<OptimizerAssetInput> = {}) =>
+  base({
+    price: 100,
+    analystTarget: 100 * (1 + rePct / 100),
+    opportunityScore: 50,
+    volatilityPct: 46.25,
+    ...p,
+  });
+
+describe('R12 · escala de velocidad del score', () => {
+  it('las anclas de la recta: RE 15% → 50; RE 75% → 100; RE −45% → 0', () => {
+    expect(scoreVelocityFor(15)).toBeCloseTo(50, 6);
+    expect(scoreVelocityFor(75)).toBeCloseTo(100, 6);
+    expect(scoreVelocityFor(-45)).toBeCloseTo(0, 6);
+  });
+
+  it('un RE de 35% ya no satura: vale ≈ 67, no 100', () => {
+    expect(scoreVelocityFor(35)).toBeCloseTo(66.7, 1);
+  });
+
+  it('censo con los RE en vivo de la tabla R11: solo 2 activos ≥ 95', () => {
+    const liveREs = [80, 72.6, 60.5, 49.3, 42.2, 41.8, 35.5, 35.3, 29.9];
+    const scored = liveREs.map((re) => scoreAsset(neutral(re), 1000, OPTS));
+    for (const s of scored) expect(s.scoreAdjustmentPts).toBeCloseTo(0, 6);
+    const ge95 = scored.filter((s) => (s.score ?? 0) >= 95);
+    expect(ge95.length).toBe(2);
+    // El orden por score no contradice el orden por RE (duplicación):
+    // la secuencia de scores sigue exactamente la de los RE dados.
+    const scores = scored.map((s) => s.score!);
+    const sorted = [...scores].sort((x, y) => y - x);
+    expect(scores).toEqual(sorted);
+  });
+});
+
+describe('R12 · vista prudente (lectura contra el piso del rango)', () => {
+  const fixture = () =>
+    base({
+      price: 100, fvBase: 200, fvPesimista: 130, fvOptimista: 260,
+      analystTarget: 150, earningsGrowthTotalPct: 20, salesGrowthPct: 30,
+    });
+
+  it('el RE prudente usa el piso y el esperado NO se altera (recomposición a mano)', () => {
+    const a = fixture();
+    const s = scoreAsset(a, 1000, OPTS);
+    const gk = grinoldKroner(a)!;
+    const cons = consensusPct(a)!;
+    const convBase = (Math.pow(200 / 100, 1 / OPTS.yearsToCorrection) - 1) * 100;
+    const convPess = (Math.pow(130 / 100, 1 / OPTS.yearsToCorrection) - 1) * 100;
+    const expectedHand = 0.45 * gk + 0.35 * convBase + 0.2 * cons;
+    const prudentHand = 0.45 * gk + 0.35 * convPess + 0.2 * cons;
+    expect(s.expectedReturnPct).toBeCloseTo(expectedHand, 4);
+    expect(s.expectedReturnPessimisticPct).toBeCloseTo(prudentHand, 4);
+    expect(s.prudentFallback).toBe(false);
+    expect(s.expectedReturnPessimisticPct!).toBeLessThan(s.expectedReturnPct!);
+    expect(s.yearsToDoublePessimistic!).toBeGreaterThan(s.yearsToDouble!);
+    expect(s.scorePessimistic!).toBeLessThan(s.score!);
+  });
+
+  it('sin escenario pesimista válido: cae al esperado y queda marcado', () => {
+    const s = scoreAsset(
+      base({ price: 100, fvBase: 200, fvPesimista: null, analystTarget: 150, earningsGrowthTotalPct: 20, salesGrowthPct: 30 }),
+      1000, OPTS
+    );
+    expect(s.prudentFallback).toBe(true);
+    expect(s.expectedReturnPessimisticPct).toBe(s.expectedReturnPct);
+  });
+
+  it('la cartera prudente existe, es ≤ la esperada y el orden prudente reordena por el piso', () => {
+    const mk = (ticker: string, fvPess: number) =>
+      base({
+        symbol: `NASDAQ:${ticker}`, ticker, price: 100, value: 1000,
+        fvBase: 200, fvPesimista: fvPess, fvOptimista: 260,
+        analystTarget: 150, earningsGrowthTotalPct: 20, salesGrowthPct: 30,
+      });
+    const r = optimizePortfolio([mk('AAA', 150), mk('BBB', 110), mk('CCC', 190)]);
+    expect(r.beforePessimistic).toBeTruthy();
+    expect(r.beforePessimistic.expectedReturnGeoPct).toBeLessThanOrEqual(r.before.expectedReturnGeoPct);
+    expect(r.beforePessimistic.yearsToDouble!).toBeGreaterThanOrEqual(r.before.yearsToDouble!);
+    // Los tres tienen el MISMO RE esperado (mismo FV base y mismas
+    // patas); el orden prudente los separa por el piso: CCC > AAA > BBB.
+    const prudentOrder = [...r.assets]
+      .sort((x, y) => (y.expectedReturnPessimisticPct ?? -Infinity) - (x.expectedReturnPessimisticPct ?? -Infinity))
+      .map((a) => a.ticker);
+    expect(prudentOrder).toEqual(['CCC', 'AAA', 'BBB']);
+    const pess = prudentOrder.map(
+      (t) => r.assets.find((a) => a.ticker === t)!.expectedReturnPessimisticPct!
+    );
+    expect(pess[0]).toBeGreaterThan(pess[1]);
+    expect(pess[1]).toBeGreaterThan(pess[2]);
+  });
+});
+
+describe('R12 · régimen por ventas futuras y frontera suave', () => {
+  it('el forward manda sobre el trailing: trailing 8% + forward 45% → crecimiento, ancla 55', () => {
+    const anchor = growthAnchorFor(
+      base({ salesGrowthPct: 8, salesGrowthForwardPct: 45, roicPct: 20, reinvestmentRatePct: 30 })
+    );
+    expect(anchor?.basis).toBe('forward');
+    expect(anchor?.regime).toBe('crecimiento');
+    expect(anchor?.blendPct).toBe(100);
+    expect(anchor?.anchorPct).toBeCloseTo(55, 6);
+  });
+
+  it('mitad de la banda (forward 12,5%): el ancla es el promedio de ambas', () => {
+    // Crecimiento: 12,5 + 10 = 22,5. Sustentable: ROIC 20 × RR 30 = 6.
+    // Promedio: 14,25.
+    const anchor = growthAnchorFor(
+      base({ salesGrowthForwardPct: 12.5, roicPct: 20, reinvestmentRatePct: 30 })
+    );
+    expect(anchor?.basis).toBe('forward');
+    expect(anchor?.blendPct).toBe(50);
+    expect(anchor?.anchorPct).toBeCloseTo(14.25, 6);
+  });
+
+  it('bordes de la banda: 7,5% → sustentable pura; 17,5% → crecimiento pura', () => {
+    const lo = growthAnchorFor(base({ salesGrowthForwardPct: 7.5, roicPct: 20, reinvestmentRatePct: 30 }));
+    expect(lo?.blendPct).toBe(0);
+    expect(lo?.regime).toBe('madura');
+    expect(lo?.anchorPct).toBeCloseTo(6, 6);
+    const hi = growthAnchorFor(base({ salesGrowthForwardPct: 17.5, roicPct: 20, reinvestmentRatePct: 30 }));
+    expect(hi?.blendPct).toBe(100);
+    expect(hi?.regime).toBe('crecimiento');
+    expect(hi?.anchorPct).toBeCloseTo(27.5, 6);
+  });
+
+  it('estabilidad: un refresco de ±2 pp del forward dentro de la banda mueve el RE pocos puntos', () => {
+    const mk = (fwd: number) =>
+      base({
+        price: 100, fvBase: 200, analystTarget: 160,
+        earningsGrowthTotalPct: 60, salesGrowthForwardPct: fwd,
+        roicPct: 25, reinvestmentRatePct: 40,
+      });
+    const s11 = scoreAsset(mk(11), 1000, OPTS);
+    const s14 = scoreAsset(mk(14), 1000, OPTS);
+    expect(s11.expectedReturnPct).not.toBeNull();
+    expect(s14.expectedReturnPct).not.toBeNull();
+    // Con el interruptor viejo, cruzar 12,5% cambiaba el ancla de
+    // golpe (de sustentable 10 a ventas+10 ≈ 21–24) y el RE saltaba
+    // mucho más; con la mezcla, el salto queda acotado.
+    expect(Math.abs(s14.expectedReturnPct! - s11.expectedReturnPct!)).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('R12 · ancla de caja real (TTM reportado)', () => {
+  it('TTM negativo → reparo −6 y driver citado, aunque el año fiscal haya cerrado positivo', () => {
+    // Caso SIMO (diseño aprobado): su último año FISCAL cerró apenas
+    // positivo (~+US$6 M), pero la ventana móvil de 12 meses quema
+    // caja. El motor solo recibe el TTM — el año fiscal no es un
+    // insumo del ancla, justamente para que no la desactive.
+    const plain = scoreAsset(neutral(30), 1000, OPTS);
+    const burn = scoreAsset(neutral(30, { fcfTtmUsd: -50_000_000 }), 1000, OPTS);
+    expect(burn.cashAnchorState).toBe('quema-caja');
+    expect(burn.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
+    expect(burn.scoreAdjustmentPts).toBeCloseTo(-CASH_ANCHOR_PENALTY_PTS, 6);
+    expect(burn.scoreAdjustmentDriver).toBe('quema caja en los últimos 12 meses reportados');
+    expect(burn.score!).toBe(plain.score! - CASH_ANCHOR_PENALTY_PTS);
+  });
+
+  it('TTM positivo → genera caja, sin reparo', () => {
+    const s = scoreAsset(neutral(30, { fcfTtmUsd: 50_000_000 }), 1000, OPTS);
+    expect(s.cashAnchorState).toBe('genera-caja');
+    expect(s.cashAnchorPenaltyPts).toBe(0);
+    expect(s.score).toBe(scoreAsset(neutral(30), 1000, OPTS).score);
+  });
+
+  it('financiera con TTM negativo → no aplica, sin reparo ni marca negativa', () => {
+    const s = scoreAsset(
+      neutral(30, { sector: 'Financial Services', industry: 'Banks - Diversified', fcfTtmUsd: -50_000_000 }),
+      1000, OPTS
+    );
+    expect(s.cashAnchorState).toBe('no-aplica');
+    expect(s.cashAnchorPenaltyPts).toBe(0);
+    expect(s.score).toBe(scoreAsset(neutral(30), 1000, OPTS).score);
+  });
+
+  it('sin dato → sin-dato y sin reparo (R0: la ausencia no castiga)', () => {
+    const s = scoreAsset(neutral(30), 1000, OPTS);
+    expect(s.cashAnchorState).toBe('sin-dato');
+    expect(s.cashAnchorPenaltyPts).toBe(0);
+    expect(cashAnchorFor(base({})).state).toBe('sin-dato');
+  });
+
+  it('recomposición: FV y RE idénticos con y sin el ancla — vive solo en el score', () => {
+    const mk = (fcf?: number) =>
+      base({
+        price: 100, fvBase: 200, fvPesimista: 150, analystTarget: 160,
+        earningsGrowthTotalPct: 25, salesGrowthPct: 30,
+        opportunityScore: 50, volatilityPct: 46.25,
+        ...(fcf != null ? { fcfTtmUsd: fcf } : {}),
+      });
+    const without = scoreAsset(mk(), 1000, OPTS);
+    const withAnchor = scoreAsset(mk(-80_000_000), 1000, OPTS);
+    expect(withAnchor.expectedReturnPct).toBe(without.expectedReturnPct);
+    expect(withAnchor.expectedReturnPessimisticPct).toBe(without.expectedReturnPessimisticPct);
+    expect(withAnchor.gkPct).toBe(without.gkPct);
+    expect(withAnchor.fvConvergencePct).toBe(without.fvConvergencePct);
+    expect(withAnchor.consensusPct).toBe(without.consensusPct);
+    expect(withAnchor.fvEffective).toBe(without.fvEffective);
+    expect(withAnchor.score!).toBe(without.score! - CASH_ANCHOR_PENALTY_PTS);
+  });
+
+  it('el medidor es puro: mismas primitivas, mismo par, sin mutar la entrada', () => {
+    // pePairFor SOLO se consume en la ruta de la ficha para
+    // mostrarlo; ningún camino de cálculo (FV, RE, score) lo lee.
+    // La garantía testeable acá es su pureza: determinista y sin
+    // efectos sobre su entrada.
+    const input = { price: 187.9, epsTrailing: 2.44, epsForward: 20.9 };
+    const snapshot = { ...input };
+    const p1 = pePairFor(input);
+    const p2 = pePairFor(input);
+    expect(p1).toEqual(p2);
+    expect(input).toEqual(snapshot);
+  });
+});
+
+describe('R12 · medidor de expectativas (PER actual vs futuro, desde primitivas)', () => {
+  it('recomputa ambos PER desde precio y EPS, sin leer ningún P/E publicado', () => {
+    const p = pePairFor({ price: 100, epsTrailing: 2, epsForward: 10 });
+    expect(p.trailingPe).toBeCloseTo(50, 6);
+    expect(p.forwardPe).toBeCloseTo(10, 6);
+    expect(p.noEarningsYet).toBe(false);
+  });
+
+  it('brecha extrema: forward < 40% del actual y actual > 15× (caso tipo SIMO)', () => {
+    // SIMO al cierre del pase R11: precio 187,90, EPS trailing ≈ 2,44
+    // (≈77×) y EPS forward de consenso ≈ 20,9 (≈9×).
+    const p = pePairFor({ price: 187.9, epsTrailing: 2.44, epsForward: 20.9 });
+    expect(p.trailingPe!).toBeGreaterThan(70);
+    expect(p.forwardPe!).toBeLessThan(10);
+    expect(p.extremeGap).toBe(true);
+  });
+
+  it('sin brecha extrema si el actual no supera 15×, aunque el forward sea mucho menor', () => {
+    const p = pePairFor({ price: 100, epsTrailing: 10, epsForward: 25 });
+    expect(p.trailingPe).toBeCloseTo(10, 6);
+    expect(p.extremeGap).toBe(false);
+  });
+
+  it('sin brecha extrema si el forward no cae por debajo del 40% del actual', () => {
+    const p = pePairFor({ price: 100, epsTrailing: 2, epsForward: 4 });
+    expect(p.trailingPe).toBeCloseTo(50, 6);
+    expect(p.forwardPe).toBeCloseTo(25, 6);
+    expect(p.extremeGap).toBe(false);
+  });
+
+  it('EPS trailing ≤ 0: estado honesto «sin ganancias todavía», sin PER actual', () => {
+    const p = pePairFor({ price: 100, epsTrailing: -1.5, epsForward: 3 });
+    expect(p.trailingPe).toBeNull();
+    expect(p.noEarningsYet).toBe(true);
+    expect(p.forwardPe).toBeCloseTo(33.3, 1);
+    expect(p.extremeGap).toBe(false);
+  });
+
+  it('sin datos: ningún PER inventado', () => {
+    const p = pePairFor({ price: 100, epsTrailing: null, epsForward: null });
+    expect(p.trailingPe).toBeNull();
+    expect(p.forwardPe).toBeNull();
+    expect(p.noEarningsYet).toBe(false);
+    expect(p.extremeGap).toBe(false);
+  });
+
+  it('EPS forward ≤ 0: sin PER futuro y sin brecha', () => {
+    const p = pePairFor({ price: 100, epsTrailing: 2, epsForward: -0.5 });
+    expect(p.forwardPe).toBeNull();
+    expect(p.extremeGap).toBe(false);
+  });
+});
+
+describe('R12 · ancla de caja real (TTM reportado)', () => {
+  it('el reparo vive DENTRO de la banda ±15: el ajuste total nunca la supera', () => {
+    const s = scoreAsset(
+      base({
+        price: 100, analystTarget: 160, opportunityScore: 0,
+        fvConfidence: 'Baja', volatilityPct: 90, roicPct: -10, debtToEquity: 3,
+        fcfTtmUsd: -1_000_000,
+      }),
+      1000, OPTS
+    );
+    // El índice por sí solo ya castiga ≈ −11,6; con el reparo de −6
+    // el total se acota a la banda: −15, no −17,6. La propiedad
+    // anti-inversión (brecha de velocidad > 30 no se cruza) sigue
+    // intacta con el ancla incluida.
+    expect(s.scoreAdjustmentPts).toBe(-15);
+    expect(Math.abs(s.scoreAdjustmentPts!)).toBeLessThanOrEqual(15);
+  });
+});

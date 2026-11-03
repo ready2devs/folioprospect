@@ -1447,6 +1447,9 @@ export async function fetchFundamentals(
             targetLowPrice: fd.targetLowPrice?.raw ?? null,
             analystCount: fd.numberOfAnalystOpinions?.raw ?? null,
             freeCashflow: fd.freeCashflow?.raw ?? null,
+            // TTM crudo preservado antes de la reparación de abajo
+            // (R12): el ancla de caja del optimizador lee este signo.
+            freeCashflowTtmRaw: fd.freeCashflow?.raw ?? null,
             operatingCashflow: fd.operatingCashflow?.raw ?? null,
             totalCash: fd.totalCash?.raw ?? null,
             totalDebt: fd.totalDebt?.raw ?? null,

@@ -52,6 +52,13 @@ export interface FundamentalInput {
    *  proveedor de mercado no la traía (escalón de estados contables). */
   fcfDerivedFromFilings?: boolean;
   freeCashflow?: number | null;
+  /** FCF TTM tal cual lo sirve el proveedor, ANTES de la reparación
+   *  de la capa de datos que completa un TTM faltante/negativo con el
+   *  flujo anual auditado (esa reparación sirve al ancla histórica,
+   *  pero pisaría el dato que el ANCLA DE CAJA REAL del optimizador
+   *  necesita: el signo del TTM reportado, R12). Solo lo lee el
+   *  optimizador; el motor de FV no lo usa. */
+  freeCashflowTtmRaw?: number | null;
   operatingCashflow?: number | null;
   totalCash?: number | null;
   totalDebt?: number | null;
@@ -1220,6 +1227,60 @@ export function evaluateEarningsDcf(args: {
     growthUsed: { g1, g5, gTerm },
     growthTier: tier,
     flags,
+  };
+}
+
+/** Medidor de expectativas (R12, agregado del usuario 2026-11-03):
+ *  el par PER actual vs PER futuro, SIEMPRE recomputado desde
+ *  primitivas (precio ÷ EPS), nunca tomado del P/E publicado por
+ *  el proveedor. Es una capa de INFORMACIÓN visible: no alimenta
+ *  ningún cálculo (ni FV, ni RE, ni score) — como el PEG
+ *  orientador, existe para que el usuario vea cuánto futuro ya
+ *  está pagando el precio. */
+export interface PePairInfo {
+  /** Precio ÷ EPS trailing reportado (TTM). null si el EPS ≤ 0 o no hay dato. */
+  trailingPe: number | null;
+  /** Precio ÷ EPS forward de consenso (el que usa la pata de
+   *  fórmula del FV). null si el EPS ≤ 0 o no hay dato. */
+  forwardPe: number | null;
+  epsTrailing: number | null;
+  epsForward: number | null;
+  /** EPS trailing ≤ 0: con lo reportado, la empresa todavía no gana plata. */
+  noEarningsYet: boolean;
+  /** Brecha extrema: el PER futuro es menos del 40% del actual y
+   *  el actual supera 15× — el precio ya paga un salto de
+   *  ganancias que la empresa todavía tiene que ejecutar. */
+  extremeGap: boolean;
+}
+
+/** Umbral de brecha extrema del medidor (decisión de diseño simple,
+ *  ejemplo del usuario adoptado tal cual): forward < 40% del
+ *  trailing, con trailing > 15×. */
+export const PE_GAP_RATIO = 0.4;
+export const PE_GAP_MIN_TRAILING = 15;
+
+export function pePairFor(input: {
+  price: number;
+  epsTrailing?: number | null;
+  epsForward?: number | null;
+}): PePairInfo {
+  const price = input.price;
+  const epsT = input.epsTrailing ?? null;
+  const epsF = input.epsForward ?? null;
+  const trailingPe = price > 0 && epsT != null && epsT > 0 ? price / epsT : null;
+  const forwardPe = price > 0 && epsF != null && epsF > 0 ? price / epsF : null;
+  const extremeGap =
+    trailingPe != null &&
+    forwardPe != null &&
+    trailingPe > PE_GAP_MIN_TRAILING &&
+    forwardPe < PE_GAP_RATIO * trailingPe;
+  return {
+    trailingPe,
+    forwardPe,
+    epsTrailing: epsT,
+    epsForward: epsF,
+    noEarningsYet: epsT != null && epsT <= 0,
+    extremeGap,
   };
 }
 

@@ -28,6 +28,8 @@ import {
   searchLocalCatalog,
   planLedgerSync,
   type OptimizerResult,
+  type CashAnchorInfo,
+  type PePairInfo,
 } from '@shared/engine';
 
 export type { ArgFxResponse };
@@ -240,6 +242,12 @@ export interface AssetDetailResponse {
     dividendEvents?: { date: string; amount: number }[];
   };
   fairValue: FairValueResult;
+  /** Ancla de caja real (R12): la misma marca del Optimizador,
+   *  calculada en el servidor con el criterio del motor. */
+  cashAnchor?: CashAnchorInfo | null;
+  /** Medidor de expectativas (R12): PER actual vs futuro desde
+   *  primitivas. Solo información visible. */
+  pePair?: PePairInfo | null;
   extras?: AssetExtras;
   earningsInfo?: AssetEarningsInfo | null;
   holding: ComputedHolding | null;

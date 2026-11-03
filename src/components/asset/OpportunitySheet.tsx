@@ -14,7 +14,18 @@ import {
   type OpportunityFormState,
 } from './opportunitySeed';
 import { finvizSentiment, type FinvizSentiment } from '@shared/engine/finvizSentiment';
-import { ChevronDown, Pencil, Star } from 'lucide-react';
+import { AlertTriangle, Banknote, ChevronDown, Flame, Pencil, Star } from 'lucide-react';
+
+/** Formato de múltiplo PER (una decimal, coma es-AR): 77,2×. */
+const fmtPe = (v: number): string => v.toFixed(1).replace('.', ',') + '×';
+
+/** Formato compacto para magnitudes de flujo de caja (US$). */
+const fmtFcfUsd = (v: number): string => {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '−' : '';
+  if (abs >= 1e9) return `${sign}US$ ${(abs / 1e9).toFixed(1).replace('.', ',')} mil millones`;
+  return `${sign}US$ ${Math.round(abs / 1e6)} millones`;
+};
 
 /**
  * Ficha de «Evaluación de oportunidad» embebida en el detalle del activo.
@@ -885,6 +896,117 @@ export const OpportunitySheet: React.FC<{
         )}
       </div>
 
+      {/* Ancla de caja real (R12): la misma marca del Optimizador,
+          junto al resumen de valuación. Dato reportado (FCF de los
+          últimos 12 meses), no una estimación. */}
+      {detail.cashAnchor && (
+        <div style={{ padding: '10px 0 6px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={fldLabel}>Caja real · últimos 12 meses reportados</div>
+          {detail.cashAnchor.state === 'genera-caja' && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, marginTop: 3, color: 'var(--pos-bright)' }}>
+                <Banknote size={15} /> Genera caja
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Su flujo de caja libre de los últimos 12 meses fue positivo
+                {detail.cashAnchor.fcfTtmUsd != null ? ` (${fmtFcfUsd(detail.cashAnchor.fcfTtmUsd)})` : ''}: la empresa se financia con lo que genera.
+              </div>
+            </>
+          )}
+          {detail.cashAnchor.state === 'quema-caja' && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, marginTop: 3, color: 'var(--neg-bright)' }}>
+                <Flame size={15} /> Todavía no genera caja
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Su flujo de caja libre de los últimos 12 meses fue negativo
+                {detail.cashAnchor.fcfTtmUsd != null ? ` (${fmtFcfUsd(detail.cashAnchor.fcfTtmUsd)})` : ''}. En el Optimizador, esta ancla le resta 6 puntos al score; no cambia su valor justo ni su retorno estimado.
+              </div>
+            </>
+          )}
+          {detail.cashAnchor.state === 'no-aplica' && (
+            <>
+              <div style={{ fontSize: 14.5, fontWeight: 700, marginTop: 3, color: 'var(--text-secondary)' }}>Caja: no aplica</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                En las empresas financieras el flujo de caja libre no es la métrica que las describe: esta ancla no resta puntos.
+              </div>
+            </>
+          )}
+          {detail.cashAnchor.state === 'sin-dato' && (
+            <>
+              <div style={{ fontSize: 14.5, fontWeight: 700, marginTop: 3, color: 'var(--text-secondary)' }}>Sin dato de caja</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                No hay dato del flujo de caja de los últimos 12 meses: la falta de un dato nunca resta puntos.
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Medidor de expectativas (R12): PER actual vs futuro desde
+          primitivas. Solo información: no alimenta ningún cálculo. */}
+      {detail.pePair && (
+        <div style={{ padding: '10px 0 6px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={fldLabel}>Expectativas en el precio · PER actual vs futuro</div>
+          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3 }}>
+            {detail.pePair.trailingPe != null
+              ? `PER actual: ${fmtPe(detail.pePair.trailingPe)}`
+              : detail.pePair.noEarningsYet
+                ? 'PER actual: sin ganancias todavía'
+                : 'PER actual: sin dato'}
+            {detail.pePair.trailingPe != null && (
+              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}> (ganancias reportadas, últimos 12 meses)</span>
+            )}
+            {' · '}
+            {detail.pePair.forwardPe != null
+              ? `PER futuro: ${fmtPe(detail.pePair.forwardPe)}`
+              : detail.pePair.epsForward != null
+                ? 'PER futuro: el consenso todavía no espera ganancias'
+                : 'PER futuro: sin dato'}
+            {detail.pePair.forwardPe != null && (
+              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}> (ganancias que el consenso espera)</span>
+            )}
+          </div>
+          {detail.pePair.extremeGap && (
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#FBBF24', marginTop: 3 }}>
+              Mucho futuro ya está en el precio
+            </div>
+          )}
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+            Si el PER futuro es mucho más bajo que el actual, el precio de hoy ya está pagando un salto de
+            ganancias que la empresa todavía tiene que ejecutar: vender más, facturar más y operar con
+            eficiencia. Cuanto más grande es la brecha, más de ese futuro ya está dado por hecho en el precio.
+          </div>
+        </div>
+      )}
+
+      {/* Advertencia de fuentes contradictorias (modelSuspect, R9):
+          la señal ya viajaba en el payload; ahora se muestra. */}
+      {(detail.fairValue?.fvFlags ?? []).includes('modelSuspect') && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-start',
+            padding: '9px 11px',
+            marginTop: 10,
+            borderRadius: 8,
+            background: 'rgba(251, 191, 36, 0.08)',
+            border: '1px solid rgba(251, 191, 36, 0.3)',
+            fontSize: 12.5,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.45,
+          }}
+        >
+          <AlertTriangle size={15} color="#FBBF24" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <b style={{ color: '#FBBF24' }}>Estimación a revisar:</b> las fuentes de este activo se contradicen
+            entre sí (una estimación de su valor justo queda muy lejos de la otra). El número se muestra tal
+            cual: es un aviso para mirarlo con más cuidado antes de decidir.
+          </span>
+        </div>
+      )}
+
       <div
         style={{
           display: 'grid',
@@ -906,6 +1028,13 @@ export const OpportunitySheet: React.FC<{
               {fmtLocal(result.fv, 0)} en ese plazo, sería ganar {fmtSignedPct(result.annualizedPct, 1)} por
               año, cada año. Eso es la rentabilidad anual compuesta (también llamada CAGR): no es dividir
               el total entre los años, porque cada año la ganancia se suma a lo ya ganado.
+            </div>
+          )}
+          {detail.fairValue?.fvConfidence && (
+            <div style={fldSub}>
+              Confianza de esta valuación: <b>{detail.fairValue.fvConfidence}</b> — sale de qué tan de
+              acuerdo están entre sí las dos estimaciones del valor justo. Es la fe que el propio
+              sistema le tiene a este tiempo de corrección: a mayor confianza, más firme es el plazo.
             </div>
           )}
         </div>

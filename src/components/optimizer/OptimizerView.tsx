@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Sparkles, RefreshCw, Lock, Shield, Star, Plus, X, Lightbulb } from 'lucide-react';
+import { Sparkles, RefreshCw, Lock, Shield, Star, Plus, X, Lightbulb, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { optimizePortfolio, fmtPairPct, fmtPairYears, type AssetScore, type Extraction } from '@shared/engine';
 import { InfoTip } from './InfoTip';
@@ -28,6 +28,56 @@ const DupChip: React.FC<{ a: AssetScore }> = ({ a }) => (
   </span>
 );
 
+/** Chip de duplicación de la VISTA PRUDENTE (R12): los mismos
+ *  escenarios del motor, leídos contra el piso del rango de FV. */
+const DupChipPrudent: React.FC<{ a: AssetScore }> = ({ a }) => (
+  <span className="opt-dup" style={{ borderColor: bandColor(a.yearsToDoublePessimistic) + '88' }}>
+    {a.yearsToDoublePessimistic != null ? (
+      <>
+        Duplica en {fmtY(a.yearsToDoublePessimistic)} años
+        <small>RETORNO PRUD. {a.expectedReturnPessimisticPct != null ? fmtPct(a.expectedReturnPessimisticPct) : '—'} / AÑO</small>
+      </>
+    ) : (
+      'No duplica'
+    )}
+  </span>
+);
+
+/** Bloque de score de la columna 1: en vista prudente muestra el
+ *  score prudente (velocidad del retorno prudente + el mismo ajuste
+ *  acotado); en la esperada, el de siempre. */
+const ScoreBlock: React.FC<{ a: AssetScore; prudent: boolean }> = ({ a, prudent }) => {
+  const sc = prudent ? a.scorePessimistic : a.score;
+  if (sc != null) {
+    const st = Math.min(5, Math.max(1, Math.round(sc / 20)));
+    return (
+      <div className="opt-score">
+        {prudent ? 'Score prudente' : 'Score de inversión'}
+        <b>{sc}<span>/100</span></b>
+        <Stars n={st} />
+      </div>
+    );
+  }
+  const reShown = prudent ? a.expectedReturnPessimisticPct : a.expectedReturnPct;
+  return (
+    <div className="opt-score">
+      {a.isCrypto ? 'Cripto · sin score' : 'Sin score'}
+      <b className="opt-assumed">{reShown != null ? fmtPct(reShown) : '—'}<span> supuesto</span></b>
+    </div>
+  );
+};
+
+/** NOTA DE SUPERFICIES (corrección del usuario 2026-11-03 11:21):
+ *  la tarjeta del Optimizador NO suma líneas ni marcas nuevas —
+ *  queda como estaba (nombre, sector, peso, score, estrellas y
+ *  chip de duplicación) porque el ranking es para escanear y
+ *  clickear. Todas las marcas y explicaciones nuevas de R12
+ *  (ancla de caja, estimación a revisar, confianza, medidor PER)
+ *  viven en el ANÁLISIS DEL ACTIVO (OpportunitySheet), junto a su
+ *  resumen de valuación. Los datos viajan igual en el payload
+ *  (cashAnchorState, modelSuspect, fvConfidence) para la ficha y
+ *  la metodología; acá no se renderizan. */
+
 export const OptimizerView: React.FC = () => {
   const { optimizerData, optimizerLoading, loadOptimizer, evaluation, selectAsset } = useAppStore();
   // Ajustes del análisis persistidos en el store (no en estado local): si el
@@ -44,6 +94,8 @@ export const OptimizerView: React.FC = () => {
   const setAcceptedSug = useAppStore((s) => s.setOptAcceptedSug);
   const skippedSug = useAppStore((s) => s.optSkippedSug);
   const setSkippedSug = useAppStore((s) => s.setOptSkippedSug);
+  const viewMode = useAppStore((s) => s.optViewMode);
+  const setViewMode = useAppStore((s) => s.setOptViewMode);
   const [mfOpen, setMfOpen] = useState(false);
   const [mfType, setMfType] = useState<'cash' | 'sell'>('sell');
   const [mfSymbol, setMfSymbol] = useState('');
@@ -97,6 +149,11 @@ export const OptimizerView: React.FC = () => {
   }
   if (!result) return null;
   const { before, after } = result;
+  // Vista prudente (R12): otra lectura de los mismos escenarios —
+  // orden, scores e indicadores contra el piso de cada rango. La
+  // propuesta (columnas 2 y 3, gráficos) sigue siendo la esperada.
+  const prudent = viewMode === 'prudente';
+  const bp = result.beforePessimistic;
   const [reB, reA] = fmtPairPct(before.expectedReturnGeoPct, after.expectedReturnGeoPct);
   const [yB, yA] = fmtPairYears(before.yearsToDouble, after.yearsToDouble);
   const [vB, vA] = fmtPairPct(before.volatilityPct, after.volatilityPct);
@@ -122,6 +179,14 @@ export const OptimizerView: React.FC = () => {
   const lockedNames = result.assets.filter((a) => a.locked).map((a) => a.ticker);
   const defensiveNames = result.assets.filter((a) => a.defensive).map((a) => a.ticker);
   const colAssets = result.assets.filter((a) => !a.isCash);
+  // En vista prudente la columna 1 se ordena por el retorno
+  // prudente (monótono en él; sin piso válido cae al esperado y la
+  // tarjeta lo marca). En vista esperada, el orden del motor.
+  const colAssetsShown = prudent
+    ? [...colAssets].sort(
+        (x, y) => (y.expectedReturnPessimisticPct ?? -Infinity) - (x.expectedReturnPessimisticPct ?? -Infinity)
+      )
+    : colAssets;
   // Activos que el usuario puede vender a mano (los de candado no se tocan).
   const pickerAssets = colAssets.filter((a) => !a.locked && a.value > 0);
   const selSymbol =
@@ -198,16 +263,53 @@ export const OptimizerView: React.FC = () => {
         ))}
       </section>
 
+      <div className="opt-viewbar">
+        <span className="opt-viewbar-l">Vista <InfoTip k="vistaPrudente" /></span>
+        <div className="opt-seg" role="tablist" aria-label="Vista del optimizador">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!prudent}
+            className={!prudent ? 'on' : ''}
+            onClick={() => setViewMode('esperada')}
+          >
+            Esperada
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={prudent}
+            className={prudent ? 'on' : ''}
+            onClick={() => setViewMode('prudente')}
+          >
+            Prudente
+          </button>
+        </div>
+        {prudent && (
+          <span className="opt-viewbar-hint">
+            Cada activo leído contra el piso de su rango; la propuesta sigue en vista esperada.
+          </span>
+        )}
+      </div>
+
       <div className="opt-kpis">
         <div className="opt-kpi">
-          <div className="opt-kpi-l">RETORNO ESPERADO / AÑO <InfoTip k="retorno" /></div>
-          <div className="opt-kpi-v">{reB} → <em>{reA}</em></div>
-          <div className="opt-kpi-d">Geométrico (neto del arrastre de volatilidad)</div>
+          <div className="opt-kpi-l">{prudent ? 'RETORNO PRUDENTE / AÑO' : 'RETORNO ESPERADO / AÑO'} <InfoTip k={prudent ? 'vistaPrudente' : 'retorno'} /></div>
+          <div className="opt-kpi-v">
+            {prudent ? fmtPct(bp.expectedReturnGeoPct) : (<>{reB} → <em>{reA}</em></>)}
+          </div>
+          <div className="opt-kpi-d">{prudent ? 'Si cada empresa valiera el piso de su rango' : 'Geométrico (neto del arrastre de volatilidad)'}</div>
         </div>
         <div className="opt-kpi">
           <div className="opt-kpi-l">TIEMPO HASTA DUPLICAR <InfoTip k="duplicar" /></div>
-          <div className="opt-kpi-v">{yB} años → <em>{yA} años</em></div>
-          <div className="opt-kpi-d">Con la cartera optimizada</div>
+          <div className="opt-kpi-v">
+            {prudent
+              ? bp.yearsToDouble != null
+                ? `${fmtY(bp.yearsToDouble)} años`
+                : 'No duplica'
+              : (<>{yB} años → <em>{yA} años</em></>)}
+          </div>
+          <div className="opt-kpi-d">{prudent ? 'Con los pisos de cada rango' : 'Con la cartera optimizada'}</div>
         </div>
         <div className="opt-kpi">
           <div className="opt-kpi-l">RIESGO (VOLATILIDAD) <InfoTip k="riesgo" /></div>
@@ -237,14 +339,20 @@ export const OptimizerView: React.FC = () => {
           <div className="opt-col-head">
             <span className="opt-n">1</span>
             <h3>Tu cartera hoy</h3>
-            <p>Ordenada por tiempo a duplicar · Score de inversión <InfoTip k="score" /></p>
+            <p>
+              {prudent ? (
+                <>Ordenada por su piso · Score prudente <InfoTip k="vistaPrudente" /></>
+              ) : (
+                <>Ordenada por tiempo a duplicar · Score de inversión <InfoTip k="score" /></>
+              )}
+            </p>
           </div>
           <div className="opt-cards">
-            {colAssets.map((a) => (
+            {colAssetsShown.map((a) => (
               <article
                 key={a.symbol}
                 className="opt-card clickable"
-                style={{ borderLeftColor: bandColor(a.yearsToDouble) }}
+                style={{ borderLeftColor: bandColor(prudent ? a.yearsToDoublePessimistic : a.yearsToDouble) }}
                 onClick={() => void selectAsset(a.symbol)}
                 title={`Ver el análisis de ${a.ticker}`}
               >
@@ -254,19 +362,8 @@ export const OptimizerView: React.FC = () => {
                 </div>
                 <div className="opt-nm">{a.name}{a.industry ? ` · ${a.industry}` : ''}</div>
                 <div className="opt-r2">
-                  {a.score != null ? (
-                    <div className="opt-score">
-                      Score de inversión
-                      <b>{a.score}<span>/100</span></b>
-                      <Stars n={a.stars} />
-                    </div>
-                  ) : (
-                    <div className="opt-score">
-                      {a.isCrypto ? 'Cripto · sin score' : 'Sin score'}
-                      <b className="opt-assumed">{a.expectedReturnPct != null ? fmtPct(a.expectedReturnPct) : '—'}<span> supuesto</span></b>
-                    </div>
-                  )}
-                  <DupChip a={a} />
+                  <ScoreBlock a={a} prudent={prudent} />
+                  {prudent ? <DupChipPrudent a={a} /> : <DupChip a={a} />}
                 </div>
                 {(a.locked || a.defensive) && (
                   <div className="opt-flags">
@@ -278,8 +375,32 @@ export const OptimizerView: React.FC = () => {
             ))}
           </div>
           <div className="opt-foot">
-            <div className="opt-foot-big">Duplica en <em>{yB} años</em></div>
-            <div className="opt-foot-small">Retorno esperado ponderado: {reB} anual</div>
+            {prudent ? (
+              <>
+                <div className="opt-foot-big">
+                  {bp.yearsToDouble != null ? (
+                    <>Duplica en <em>{fmtY(bp.yearsToDouble)} años</em> (prudente)</>
+                  ) : (
+                    'Con los pisos, la cartera no duplica'
+                  )}
+                </div>
+                <div className="opt-foot-small">Retorno prudente ponderado: {fmtPct(bp.expectedReturnGeoPct)} anual · cada activo al piso de su rango</div>
+                {(() => {
+                  const fb = colAssets.filter((x) => x.prudentFallback && !x.isCrypto && !x.isCash);
+                  return fb.length > 0 ? (
+                    <div className="opt-foot-small" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <AlertTriangle size={11} color="#FBBF24" />
+                      Sin rango válido (se muestran a su retorno esperado): {fb.map((x) => x.ticker).join(', ')}
+                    </div>
+                  ) : null;
+                })()}
+              </>
+            ) : (
+              <>
+                <div className="opt-foot-big">Duplica en <em>{yB} años</em></div>
+                <div className="opt-foot-small">Retorno esperado ponderado: {reB} anual</div>
+              </>
+            )}
             <div className="opt-legend">
               <div className="opt-legend-t">Años para duplicar inversión <InfoTip k="duplicar" /></div>
               <div className="opt-lbar">{BAND_COLORS.map((c) => <div key={c} style={{ background: c }} />)}</div>

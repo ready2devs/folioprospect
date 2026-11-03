@@ -676,3 +676,221 @@ las demás dimensiones son ajustes acotados a ±15 puntos. Detalle en
 docs/OPTIMIZER-PROFESSIONAL.md §16 y en los textos de metodología
 de la app.
 
+## R12 — Adenda 2026-11-03 (mediodía): escala honesta, vista prudente, frontera de regímenes suave y ancla de caja real
+
+Pase aprobado por el usuario el 2026-11-03 (10:58, con agregados
+del mismo día: ancla de caja 11:06, ventana TTM 11:07, ubicaciones
+UI 11:13 y visibilidad de `modelSuspect` 11:14). Respaldo previo:
+`respaldo-pre-vista-prudente-regimen-2026-11-03`. Tests: 276/276.
+Ninguna regla de este pase cambia el valor justo; dos son de
+presentación (escala y vista), una corrige la capa de retorno
+(frontera de regímenes) y una agrega un reparo acotado al score
+(ancla de caja). El FV de R11 queda intacto.
+
+### 1. Escala de velocidad del score (presentación)
+
+La recta anterior, `((RE + 5) / 40) × 100`, saturaba en 100 para
+todo RE ≥ 35%: en la tabla real 7–8 activos compartían el score
+máximo y el puntaje no discriminaba la parte alta. Nueva recta,
+por dos anclas:
+
+```
+velocidad = clamp(((RE + 45) / 120) × 100, 0, 100)
+```
+
+RE 15% ⇒ 50 (un retorno sólido es la mitad de la escala, ancla del
+usuario) y RE 75% ⇒ 100 (el máximo es excepcional). El usuario
+pidió el 100 «del orden de ≥60% anual»; el segundo ancla se fijó
+en 75% y no en 60% porque con 60% la banda de ajuste (±15) todavía
+dejaba **tres** activos de la tabla R11 en ≥95 (MU, SIMO, NVDA) y
+la aceptación del pase era «a lo sumo 1–2»: con 75% quedan 2 y
+solo los retornos pegados al techo anti-basura del RE (+80%)
+llegan a la zona del 100. Es calibración de presentación: no
+cambia ningún RE ni ningún FV, y la propiedad anti-inversión se
+mantiene (el ajuste total sigue acotado a ±15; una brecha de
+velocidad > 30 puntos — ahora ≳ 36 pp de RE — no se cruza).
+
+### 2. Vista prudente (presentación)
+
+El Optimizador suma un conmutador «Vista: Esperada | Prudente».
+En la vista prudente, cada activo se ordena y se muestra por su
+escenario pesimista: el MISMO retorno triangulado de siempre,
+pero con la pata de convergencia apuntando al piso de su rango
+(`fvPesimista`, el escenario pesimista que el motor ya computa:
+el mínimo de los componentes que formaron el FV) en vez del FV
+base; GK y consenso no dependen del FV y no cambian. Pesos,
+horizonte y clamp anti-basura son los mismos. El score prudente
+es la velocidad del retorno prudente con el MISMO ajuste acotado.
+La cartera expone su lectura prudente (`beforePessimistic`:
+geométrico con el mismo arrastre de volatilidad). Si un activo
+no tiene escenario pesimista válido, su retorno prudente cae al
+esperado y la UI lo marca («Sin rango válido: se muestra su
+retorno esperado»). La propuesta de optimización (salidas,
+destinos, cartera final) sigue siendo un objeto de la vista
+esperada: la prudente es otra lectura de los mismos escenarios,
+no otro cálculo. Texto ⓘ: «la vista prudente ordena por lo que
+pasaría si cada empresa vale lo que dice el piso de su rango;
+sirve para ver qué tan bien parado queda cada activo si el
+consenso está inflado». La marca de los activos sin rango
+válido vive en el pie de la columna 1 en vista prudente (línea
+de la vista, no de la tarjeta): «Sin rango válido (se muestran
+a su retorno esperado): …» con los tickers afectados.
+
+### 3. Frontera de regímenes suave y hacia adelante (capa de RE)
+
+Defecto que lo motivó (crudos after-r11-4 vs after-r11-5): SIMO
+pasó de régimen «crecimiento» (ancla 114,47; RE 72,6%) a «madura»
+(ancla 21,97; RE 34,6%) entre dos lecturas porque el clasificador
+comparaba el crecimiento de ventas TRAILING contra un interruptor
+duro en +12,5% y un refresco de estimaciones lo cruzó. Dos
+arreglos:
+
+- **(a) La serie que clasifica es el crecimiento de ventas FUTURO
+  de consenso** —el mismo que la pata de ganancias del motor de FV
+  ya ingesta para su chequeo de ingresos: promedio de la tendencia
+  de ingresos de Yahoo (earningsTrend, próximo año vs actual) y
+  del pronóstico del próximo año fiscal de TradingView contra su
+  TTM—. El futuro manda también acá (doctrina sistémica
+  2026-11-03). Si el dato forward no está disponible para un
+  activo, respaldo documentado al trailing TTM (Finviz); el
+  payload expone qué serie clasificó (`growthRegimeBasis`).
+- **(b) La frontera es una banda de mezcla, no un interruptor**:
+  en ±5 pp alrededor del umbral de +12,5% (banda [7,5%, 17,5%]),
+  el ancla mezcla linealmente el ancla de crecimiento (ventas +
+  10 pp) y la sustentable (ROIC × reinversión, con su respaldo
+  equity): `w = clamp((ventas − 7,5) / 10, 0, 1)`;
+  `ancla = w × (ventas + 10) + (1 − w) × sustentable`. Fuera de la
+  banda manda el régimen correspondiente; la etiqueta de régimen
+  es «crecimiento» si w ≥ 0,5. Si no hay ancla sustentable
+  calculable, rige el interruptor clásico (sin mezcla posible).
+  La regla de siempre sigue: si el consenso de EPS implica menos
+  crecimiento que el ancla, manda el consenso (el ancla es techo,
+  nunca piso). Con esto, un refresco que mueva el input ±2 pp
+  dentro de la banda mueve el RE unos pocos puntos, no decenas
+  (test de estabilidad con fixtures a ambos lados del umbral
+  viejo).
+
+### 4. Ancla de caja real (reparo en el score, jamás en la valuación)
+
+Motivación del usuario: puntuar por la evolución futura estimada
+no debe desligar el score del precio y la realidad; pidió «una
+pequeña ancla en base a la generación de flujos del último año».
+
+- **Dato**: flujo de caja libre de los **últimos 12 meses
+  reportados (TTM)** —precisión del usuario 11:07: su frase fue
+  «del último año» y la lectura fiel es la ventana móvil, que
+  captura los trimestres recientes; la ventana de año fiscal
+  cerrado se descartó porque SIMO la pasaría de largo (su último
+  fiscal cerró apenas positivo, ~+US$6 M, mientras su TTM quema
+  caja por la acumulación de inventarios)—. Es un hecho reportado:
+  no se mueve con refrescos de estimaciones. Fuente: el FCF TTM
+  tal cual lo sirve Yahoo (financialData), preservado por la capa
+  de datos en `freeCashflowTtmRaw` ANTES de la reparación que
+  completa un TTM faltante/negativo con el flujo anual auditado
+  de EDGAR (esa reparación sirve al ancla histórica del FV; acá
+  pisaría exactamente el hecho que se quiere medir).
+- **Marca visible** en la ficha del activo (análisis), junto a
+  su resumen de valuación, con tres estados en lenguaje simple:
+  «Genera caja»
+  (FCF TTM > 0), «Todavía no genera caja» (FCF TTM < 0) y
+  «Sin dato» / «No aplica». El FCF no aplica como métrica en
+  financieras (sector o industria financieros: su materia prima
+  es el dinero; caso NU) ni en cripto/caja: sin reparo y sin
+  marca negativa.
+- **Efecto**: si quemó caja, el ajuste del score resta
+  **−6 puntos DENTRO de la banda existente de ±15** — el ajuste
+  total se acota a la banda con el reparo incluido, así la
+  propiedad anti-inversión se mantiene intacta (verificado por
+  test con el peor índice posible + reparo: total −15, no −21)—.
+  Si genera caja: 0. Sin bonus positivo jamás: el ancla solo
+  resta. **No toca** el FV, ni el RE, ni el orden por duplicación
+  (test de recomposición: FV y RE idénticos con y sin el ancla).
+  La ausencia de dato tampoco castiga (R0).
+- **Explicación**: el reparo compite como driver del ajuste con
+  su empuje equivalente (−6 pts de score = −20 en unidades de
+  índice); cuando es el mayor empuje y el ajuste es notable, la
+  evaluación escrita lo cita, y el análisis del activo muestra
+  la marca con su efecto («En el Optimizador, esta ancla le
+  resta 6 puntos al score»). Texto ⓘ del score: «Si la empresa quemó
+  caja en los últimos 12 meses reportados, el score le resta
+  unos puntos: es un ancla en la realidad frente a las promesas
+  de crecimiento. No cambia su valor justo ni su retorno
+  estimado.»
+
+### 5. Visibilidad de señales que el sistema ya computaba
+
+Agregado del usuario tras verificarlo contra el código (11:13 y
+11:14): la bandera **`modelSuspect`** existía en el motor y en el
+payload desde R9, pero la UI no la renderizaba en ningún lado.
+Desde este pase, el análisis del activo muestra la advertencia
+«Estimación a revisar» cuando la bandera está activa, con su
+motivo junto a la marca: «las fuentes de este activo se
+contradicen entre sí». Sin cambio de cálculo: es hacer visible
+una señal existente.
+
+**Corrección de superficies (usuario, 11:21) — SUPERSEDE las
+ubicaciones pedidas a las 11:13 y 11:19.** Textual: «Esas
+explicaciones deberían estar en el análisis del activo, no
+sobrecargues la tarjeta en el optimizador. La idea es que vea
+ese ranking y haga clic en el activo si lo quiero analizar en
+profundidad.» Diseño vigente: la tarjeta del Optimizador no
+suma ninguna línea ni marca nueva (queda con su contenido de
+siempre: nombre, sector, peso, score, estrellas y chip de
+duplicación; las tarjetas ya navegan al análisis, comportamiento
+existente); TODAS las marcas y explicaciones nuevas de este
+pase —ancla de caja con su efecto en el score, estimación a
+revisar con su motivo, nota de confianza y medidor de
+expectativas— viven en el análisis del activo, junto a su
+resumen de valuación. Los datos viajan igual en el payload del
+Optimizador para la metodología y la ficha.
+
+### 6. Capa de información visible (agregados del usuario, 11:19)
+
+Dos piezas que solo MUESTRAN datos que el sistema ya tiene, sin
+alimentar ningún cálculo (la misma disciplina que el PEG
+orientador):
+
+- **Nota de confianza junto al tiempo del activo**: la etiqueta
+  de confianza de la valuación (Alta/Media/Baja, que el motor
+  computa por la dispersión entre las patas del FV) se muestra
+  en el análisis del activo, junto a su figura de tiempo y
+  retorno anualizado de la ficha («Confianza de esta valuación:
+  … — es la fe que el propio sistema le tiene a este tiempo de
+  corrección»). Nada nuevo se computa: la etiqueta existente,
+  donde se analiza en profundidad. (La ubicación original en el
+  chip de duplicación de la tarjeta quedó supersedida por la
+  corrección de superficies de §5.)
+- **Medidor de expectativas (ficha del activo)**: el par «PER
+  actual: X× (ganancias reportadas, últimos 12 meses) · PER
+  futuro: Y× (ganancias que el consenso espera)», ambos
+  recomputados desde primitivas — precio ÷ EPS trailing
+  reportado (TTM, Yahoo `trailingEps`) y precio ÷ EPS forward de
+  consenso (el mismo que usó la pata de fórmula del FV, expuesto
+  por su procedencia) — nunca del P/E publicado por el proveedor.
+  Si el EPS trailing es ≤ 0, el estado honesto es «sin ganancias
+  todavía» y no se muestra PER actual. **Brecha extrema**: PER
+  futuro < 40% del PER actual, con PER actual > 15× (umbral:
+  ejemplo del usuario adoptado como decisión de diseño simple)
+  ⇒ marca breve «Mucho futuro ya está en el precio». Texto ⓘ:
+  «Si el PER futuro es mucho más bajo que el actual, el precio
+  de hoy ya está pagando un salto de ganancias que la empresa
+  todavía tiene que ejecutar: vender más, facturar más y operar
+  con eficiencia. Cuanto más grande es la brecha, más de ese
+  futuro ya está dado por hecho en el precio.» El medidor vive
+  solo en la ficha: por la corrección de superficies de §5, la
+  tarjeta del Optimizador no suma líneas (brecha resuelta por
+  diseño, no omisión silenciosa).
+
+### Parámetros de R12 y su procedencia
+
+| Parámetro | Valor | Procedencia |
+|---|---|---|
+| Ancla baja de velocidad | RE 15% ⇒ 50 pts | Directiva del usuario (2026-11-03) |
+| Ancla alta de velocidad | RE 75% ⇒ 100 pts | Decisión de diseño simple (el usuario pidió «del orden de ≥60%»; con 60% la aceptación de ≤2 activos ≥95 no se cumplía sobre la tabla R11) |
+| Banda de mezcla de regímenes | ±5 pp sobre 12,5% | Ejemplo del usuario («p. ej. ±5 pp»), adoptado |
+| Serie clasificadora del régimen | Ventas futuras de consenso; respaldo trailing | Directiva del usuario (el futuro manda) + R0 para el respaldo |
+| Ventana del ancla de caja | Últimos 12 meses reportados (TTM) | Precisión del usuario (2026-11-03 11:07) |
+| Reparo del ancla de caja | −6 pts, dentro de la banda ±15 | Diseño aprobado por el usuario (2026-11-03 11:06) |
+| Texto de la advertencia de fuentes | «Estimación a revisar» | Elección de redacción del pase, aprobada como familia por el usuario (11:14) |
+| Umbral de brecha extrema del medidor PER | forward < 40% del actual y actual > 15× | Ejemplo del usuario (11:19), adoptado como decisión de diseño simple |
+
