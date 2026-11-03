@@ -171,11 +171,14 @@ async function buildAssetInput(
       fcfHist.length >= 3 ? medianOf(fcfHist) <= 0 : null;
 
     // Normalización a mitad de ciclo (§6): si el yield forward implícito
-    // supera 20% o la serie anual de EPS es muy dispersa (rango > 1,5× su
-    // mediana con ≥4 años), el componente de múltiplos que alimenta el
-    // score se recalcula con el EPS mediano de la serie reportada y se
-    // reagrega con la MISMA función del motor de FV. Un pico de ciclo no
-    // se trata como permanente; un valle tampoco.
+    // (EPS usado ÷ precio — ambos del instrumento cotizado, misma base)
+    // supera 20%, el EPS de pico se presume no permanente. La
+    // normalización es INVARIANTE A LA BASE: escala el EPS forward por
+    // la razón mediana/último año de la MISMA serie reportada de EDGAR
+    // (si el emisor reporta por acción ordinaria y cotiza por ADS, la
+    // razón cancela la base; comparar niveles sería mezclar peras con
+    // manzanas — el caso SIMO). El componente normalizado se reagrega
+    // con la MISMA función del motor de FV. El FV de la ficha no cambia.
     let fvBaseUsed = fv.fairValue;
     let fvConfidenceUsed = fv.fvConfidence ?? null;
     let fvComponentCountUsed: number | null =
@@ -190,25 +193,16 @@ async function buildAssetInput(
     const epsHist = (fund.epsHistory ?? []).filter(
       (x): x is number => x != null && Number.isFinite(x)
     );
-    let epsDispersion: number | null = null;
-    if (epsHist.length >= 4) {
-      const med = medianOf(epsHist);
-      if (med !== 0) {
-        epsDispersion = (Math.max(...epsHist) - Math.min(...epsHist)) / Math.abs(med);
-      }
-    }
-    const cyclicalTrigger =
-      (fwdYield != null && fwdYield > 0.2) || (epsDispersion != null && epsDispersion > 1.5);
+    const cyclicalTrigger = fwdYield != null && fwdYield > 0.2;
     if (cyclicalTrigger && fv.multiplesValue != null && forwardEpsUsed != null && forwardEpsUsed > 0) {
       const medAll = epsHist.length >= 3 ? medianOf(epsHist) : null;
-      const positives = epsHist.filter((x) => x > 0);
+      const latestEps = epsHist.length >= 3 ? epsHist[0] : null;
+      // EPS forward re-escalado a mitad de ciclo (base del instrumento).
       midCycleEps =
-        medAll != null && medAll > 0
-          ? medAll
-          : positives.length >= 3
-            ? medianOf(positives)
-            : null;
-      if (midCycleEps != null) {
+        medAll != null && medAll > 0 && latestEps != null && latestEps > 0
+          ? forwardEpsUsed * (medAll / latestEps)
+          : null;
+      if (midCycleEps != null && midCycleEps > 0 && midCycleEps < forwardEpsUsed) {
         const multiple = fv.multiplesValue / forwardEpsUsed;
         // Calidad por componente alineada con fvComponents (mismo orden
         // de construcción dcf → múltiplos → target que computeFairValue).

@@ -114,7 +114,8 @@ interface AnnualPoint {
 function annualSeriesUsd(
   facts: any,
   concepts: string[],
-  taxonomies: string[] = ['us-gaap', 'ifrs-full']
+  taxonomies: string[] = ['us-gaap', 'ifrs-full'],
+  unit: string = 'USD'
 ): AnnualPoint[] {
   let best: AnnualPoint[] | null = null;
   let bestScore: [number, string, number] | null = null;
@@ -122,7 +123,7 @@ function annualSeriesUsd(
     const fy = new Map<string, AnnualPoint>();
     const dur = new Map<string, AnnualPoint>();
     for (const tax of taxonomies) {
-      const units = facts?.[tax]?.[concept]?.units?.USD;
+      const units = facts?.[tax]?.[concept]?.units?.[unit];
       if (!Array.isArray(units)) continue;
       for (const v of units as FactValue[]) {
         if (typeof v.val !== 'number' || !v.end) continue;
@@ -230,11 +231,16 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
     fcfHistory.push(p.val - cx);
     if (fcfHistory.length >= 5) break;
   }
-  const epsPts = annualSeriesUsd(
-    facts,
-    ['EarningsPerShareDiluted', 'EarningsPerShareBasic'],
-    ['us-gaap']
-  );
+  // El EPS se reporta en unidades «USD/shares», no «USD»: leerlo de la
+  // unidad equivocada dejaba la serie vacía para todos los emisores
+  // (bug detectado al auditar la normalización cíclica del Optimizador:
+  // sin serie de EPS no hay EPS de mitad de ciclo posible).
+  const EPS_CONCEPTS = ['EarningsPerShareDiluted', 'EarningsPerShareBasic'];
+  const epsByShare = annualSeriesUsd(facts, EPS_CONCEPTS, ['us-gaap', 'ifrs-full'], 'USD/shares');
+  const epsPts =
+    epsByShare.length > 0
+      ? epsByShare
+      : annualSeriesUsd(facts, EPS_CONCEPTS, ['us-gaap', 'ifrs-full'], 'USD');
   const epsHistory = epsPts.slice(0, 5).map((p) => p.val);
   const sharesHistory = annualSeriesShares(facts).slice(0, 5).map((p) => p.val);
   if (fcfHistory.length === 0 && epsHistory.length === 0 && sharesHistory.length === 0) return null;

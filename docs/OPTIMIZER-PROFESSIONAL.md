@@ -86,17 +86,27 @@ TMDX 5-nov, ONTO 9-nov, HSAI 10-nov quedan diferidos en la semana del
 3-nov; NBIS, 12-nov, queda fuera de la ventana por 2 días hábiles).
 
 ### §6 — EPS de mitad de ciclo para cíclicas medibles
-Disparadores objetivos (capa de datos, sobre campos del motor de FV):
-yield forward implícito (EPS usado ÷ precio) > 20%, o dispersión de la
-serie anual de EPS reportado (máx−mín)/|mediana| > 1,5 con ≥4 años. Si
-dispara, el componente de múltiplos que ve el Optimizador se recalcula
-con el **EPS mediano de la serie** (o de sus años positivos) y se
-reagrega con la misma `aggregateFairValue` y las mismas calidades,
-con flag `cyclicalNormalized`. *Deriva de:* MU rankeaba con EPS forward
-de pico de ciclo (209, yield implícito 25%) tratado como permanente
-mientras su DCF usaba la mediana histórica (el valle): dos extremos
-promediados no dan el centro. El FV de la ficha no cambia; cambia el FV
-que el Optimizador usa para puntuar (y queda trazado en el input).
+Disparador objetivo (capa de datos, sobre campos del motor de FV):
+yield forward implícito (EPS usado ÷ precio) > 20%. Ambos términos son
+del instrumento cotizado, así que el disparador es inmune a mezclas de
+base (acción ordinaria vs ADS). Si dispara, el EPS forward se
+re-escala por la razón **mediana/último año de la misma serie anual de
+EPS reportado (EDGAR)** — la razón cancela la base de reporte, por lo
+que la normalización es invariante a ella (comparar niveles de EPS
+entre la serie reportada y el forward habría mezclado bases: el caso
+SIMO, que reporta por acción ordinaria y cotiza por ADS) — y el
+componente de múltiplos se reagrega con la misma `aggregateFairValue`
+y las mismas calidades, con flag `cyclicalNormalized`. *Deriva de:* MU
+rankeaba con EPS forward de pico de ciclo (209, yield implícito 25%)
+tratado como permanente mientras su DCF usaba la mediana histórica
+(el valle): dos extremos promediados no dan el centro. El FV de la
+ficha no cambia; cambia el FV que el Optimizador usa para puntuar (y
+queda trazado en el input como `midCycleEps`). Requiere ≥3 años de
+serie reportada con último año y mediana positivos; sin eso, no se
+normaliza (la winsorización y el shrinkage siguen acotando el daño).
+*Bug raíz encontrado al implementar:* la serie de EPS de EDGAR venía
+vacía para todos los emisores porque `parseEdgarSeries` leía la unidad
+`USD` y el EPS se reporta en `USD/shares`; corregido, con test.
 
 ### §7 — Score sin doble conteo
 Nueva fórmula: **30% velocidad, 25% oportunidad (contra el FV
@@ -146,6 +156,7 @@ motor detrás.
 | Techo del bloque memoria MU+SIMO (~14%) y SIMO hasta ~3–3,5% | Son parámetros de ESTA cartera y de un par de tickers concreto; un «bloque» no es un campo general del motor (las industrias Finviz de MU y SIMO ni siquiera coinciden). | Tope por posición (12%) + concentración sectorial en la narrativa. Un techo por grupo correlacionado sería el desarrollo general correcto (la matriz de correlaciones por bloques ya existe para riesgo). |
 | Prima de valuación de NBIS «cara contra CoreWeave» y su backlog/RPO de US$37.500 M | No hay fuente conectada de múltiplos de pares no tenidos ni de backlog/RPO; el motor solo ve los campos de Yahoo/Finviz/EDGAR del propio activo. | `eps-negativo` + `dilucion-fuerte` (§3) capturan la parte medible del deterioro; su FV de un componente dejó de ser tal con §10. |
 | Ventas de insiders (NBIS −US$421 M en 2 años, etc.) | Ninguna fuente integrada trae transacciones de insiders. | Ninguno. |
+| Dilución *esperada* de NBIS (+15–22% anual por SBC/compensación) | El ΔS de EDGAR es *trailing* (acciones promedio reportadas): en emisores reestructurados (NBIS ex-Yandex) la serie refleja la reestructuración y recompras — su lectura en vivo fue −13,7% interanual, que contradice la expectativa forward. El motor usa el dato reportado y la discrepancia queda declarada acá; la señal de dilución simplemente no dispara para ese caso. | `eps-negativo` + `ganancias-en-caida` capturaron a NBIS igual (salida por tesis en la verificación en vivo). |
 | «SIMO ya aprobó su examen» (balance del 28-oct superó) como mérito acumulativo | El motor no guarda historial de exámenes aprobados por activo; sería estado nuevo, no una regla sobre campos actuales. | El score ajustado y el listón de destino (§4) lo tratan como a cualquier activo con números sólidos. |
 | Calidad de franquicia/monopolio (TMDX: única plataforma multi-órgano FDA) | Juicio cualitativo sin campo medible en las fuentes actuales (el moat score es heurística de márgenes/ROE). | `moatScore` dentro de la calidad del score (§7). |
 

@@ -214,3 +214,30 @@ describe('parseEdgarSeries — acciones en circulación (ΔS)', () => {
     expect(s?.epsHistory).toEqual([2.5]);
   });
 });
+
+describe('parseEdgarSeries — EPS en unidades USD/shares', () => {
+  it('lee el EPS diluido de la unidad USD/shares (la USD a secas lo dejaba vacío)', () => {
+    const facts = {
+      facts: {
+        'us-gaap': {
+          EarningsPerShareDiluted: {
+            units: {
+              'USD/shares': [
+                { end: '2024-12-31', start: '2024-01-01', val: 1.25, form: '10-K', fp: 'FY', filed: '2025-02-01' },
+                { end: '2025-12-31', start: '2025-01-01', val: 2.5, form: '10-K', fp: 'FY', filed: '2026-02-01' },
+              ],
+            },
+          },
+          NetCashProvidedByUsedInOperatingActivities: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 10e9, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: { USD: [{ end: '2025-12-31', start: '2025-01-01', val: 2e9, form: '10-K', fp: 'FY', filed: '2026-02-01' }] },
+          },
+        },
+      },
+    };
+    const s = parseEdgarSeries(facts);
+    expect(s!.epsHistory).toEqual([2.5, 1.25]);
+  });
+});
