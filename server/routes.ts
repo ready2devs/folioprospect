@@ -44,6 +44,7 @@ import {
   findCatalogEntry,
 } from '../shared/engine/index.js';
 import { buildOptimizerResult } from './optimizerData.js';
+import { resolveAnchorFromFundamentals } from './cashAnchor.js';
 import type {
   CashTx,
   DividendTx,
@@ -682,20 +683,25 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
     const fairValue = computeFairValue(fundInput);
 
-    // Ancla de caja real (R12): la MISMA marca que muestra el
-    // Optimizador, calculada con el mismo criterio del motor —
-    // el signo del FCF de los últimos 12 meses reportados (TTM
-    // crudo, antes de la reparación que lo completa con el anual
-    // auditado: misma regla que server/optimizerData.ts). En
-    // cripto no hay ficha de caja: null y la vista no la muestra.
+    // Ancla de caja real (R12/R12.3): la MISMA marca que muestra el
+    // Optimizador, calculada con el mismo criterio del motor y la
+    // MISMA resolución de fuentes (server/cashAnchor.ts): primario
+    // el FCF derivado de los estados reportados (EDGAR), respaldo el
+    // crudo del proveedor antes de la reparación que lo completa
+    // con el anual auditado. En cripto no hay ficha de caja: null y
+    // la vista no la muestra.
     const isCryptoAsset = matchedKey.startsWith('BINANCE:');
+    const anchorFcfDetail = isCryptoAsset ? null : resolveAnchorFromFundamentals(fundInput);
     const cashAnchor = isCryptoAsset
       ? null
       : cashAnchorStateFor({
           sector: (meta as any)?.sector ?? null,
-          fcfTtmUsd:
-            fundInput.freeCashflowTtmRaw ??
-            (fundInput.fcfDerivedFromFilings ? null : fundInput.freeCashflow ?? null),
+          fcfTtmUsd: anchorFcfDetail!.providerFcfTtmUsd,
+          fcfTtmResolvedUsd: anchorFcfDetail!.fcfTtmUsd,
+          fcfTtmSource: anchorFcfDetail!.source,
+          fcfTtmPeriodEnd: anchorFcfDetail!.periodEnd,
+          fcfTtmDiscrepancy: anchorFcfDetail!.discrepancy,
+          fcfTtmEdgarFyOnlyGap: anchorFcfDetail!.edgarFyOnlyGap,
         });
 
     // Medidor de expectativas (R12): PER actual vs futuro desde

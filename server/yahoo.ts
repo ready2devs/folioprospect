@@ -6,7 +6,7 @@ import type { FinvizFundamentals } from '../shared/engine/finvizParse.js';
 import { loadSeedExtract, loadSeedHistory } from './db.js';
 import { fetchFinvizFundamentals } from './finviz.js';
 import { fetchTvEstimates } from './tradingview.js';
-import { fetchEdgarAnnualCashflow, fetchEdgarSeries } from './edgar.js';
+import { fetchEdgarAnnualCashflow, fetchEdgarSeries, fetchEdgarTtmCashflow } from './edgar.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1549,6 +1549,12 @@ export async function fetchFundamentals(
             input.capexHistory = edSeries?.capexHistory?.length ? edSeries.capexHistory : null;
             input.netIncomeHistory = edSeries?.netIncomeHistory?.length ? edSeries.netIncomeHistory : null;
             input.depreciationHistory = edSeries?.depreciationHistory?.length ? edSeries.depreciationHistory : null;
+            // Derivación TTM desde los estados reportados (R12.3):
+            // fuente primaria del ANCLA DE CAJA REAL. Comparte la
+            // caché de company facts con la serie anual (24 h); si
+            // EDGAR no puede derivarla, queda null y el ancla cae al
+            // respaldo del proveedor (server/cashAnchor.ts).
+            input.fcfTtmEdgar = await fetchEdgarTtmCashflow(ySym).catch(() => null);
           } catch {
             input.fcfHistory = yahooFcfHistory.length > 0 ? yahooFcfHistory : null;
             input.fcfHistorySource = yahooFcfHistory.length > 0 ? 'yahoo' : null;

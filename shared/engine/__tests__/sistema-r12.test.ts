@@ -299,6 +299,80 @@ describe('R12 · medidor de expectativas (PER actual vs futuro, desde primitivas
   });
 });
 
+describe('R12.3 · ancla de caja: fuente reportada primaria, proveedor respaldo', () => {
+  it('mega-cap con el campo del proveedor roto y reportado positivo → genera caja, sin reparo, procedencia registrada (caso GOOG)', () => {
+    const s = scoreAsset(
+      neutral(30, {
+        fcfTtmUsd: -1_162_500_000,
+        fcfTtmResolvedUsd: 19_747_000_000,
+        fcfTtmSource: 'reportado',
+        fcfTtmPeriodEnd: '2026-09-30',
+        fcfTtmDiscrepancy: true,
+      }),
+      1000, OPTS
+    );
+    expect(s.cashAnchorState).toBe('genera-caja');
+    expect(s.cashAnchorPenaltyPts).toBe(0);
+    expect(s.cashAnchorFcfTtmUsd).toBe(19_747_000_000);
+    expect(s.cashAnchorSource).toBe('reportado');
+    expect(s.cashAnchorPeriodEnd).toBe('2026-09-30');
+    expect(s.cashAnchorDiscrepancy).toBe(true);
+    expect(s.cashAnchorProviderFcfTtmUsd).toBe(-1_162_500_000);
+    expect(s.score).toBe(scoreAsset(neutral(30), 1000, OPTS).score);
+  });
+
+  it('quemador real con reportado negativo consistente → reparo intacto (caso AMZN reportado)', () => {
+    const s = scoreAsset(
+      neutral(30, {
+        fcfTtmUsd: -34_731_700_000,
+        fcfTtmResolvedUsd: -46_892_000_000,
+        fcfTtmSource: 'reportado',
+        fcfTtmPeriodEnd: '2026-09-30',
+        fcfTtmDiscrepancy: false,
+      }),
+      1000, OPTS
+    );
+    expect(s.cashAnchorState).toBe('quema-caja');
+    expect(s.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
+    expect(s.cashAnchorSource).toBe('reportado');
+    expect(s.cashAnchorDiscrepancy).toBe(false);
+  });
+
+  it('respaldo del proveedor cuando EDGAR no reconstruye la ventana → la marca sobrevive con su procedencia (caso SIMO)', () => {
+    const s = scoreAsset(
+      neutral(30, {
+        fcfTtmUsd: -503_000_000,
+        fcfTtmResolvedUsd: -503_000_000,
+        fcfTtmSource: 'proveedor',
+        fcfTtmEdgarFyOnlyGap: true,
+      }),
+      1000, OPTS
+    );
+    expect(s.cashAnchorState).toBe('quema-caja');
+    expect(s.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
+    expect(s.cashAnchorSource).toBe('proveedor');
+    expect(s.cashAnchorEdgarFyOnlyGap).toBe(true);
+  });
+
+  it('resolución explícita sin dato → sin-dato y sin reparo, aunque no haya campo del proveedor', () => {
+    const s = scoreAsset(neutral(30, { fcfTtmResolvedUsd: null, fcfTtmSource: null }), 1000, OPTS);
+    expect(s.cashAnchorState).toBe('sin-dato');
+    expect(s.cashAnchorPenaltyPts).toBe(0);
+    expect(s.cashAnchorSource).toBeNull();
+  });
+
+  it('el valor resuelto manda sobre el crudo: mismo activo, el estado sigue a la resolución y no al proveedor', () => {
+    const info = cashAnchorFor(base({
+      fcfTtmUsd: -10_000_000,
+      fcfTtmResolvedUsd: 5_000_000,
+      fcfTtmSource: 'reportado',
+    }));
+    expect(info.state).toBe('genera-caja');
+    expect(info.fcfTtmUsd).toBe(5_000_000);
+    expect(info.providerFcfTtmUsd).toBe(-10_000_000);
+  });
+});
+
 describe('R12 · ancla de caja real (TTM reportado)', () => {
   it('el score vive en [0, 100] y el sospechoso tiene techo 39, también en el peor fixture', () => {
     const peor = {

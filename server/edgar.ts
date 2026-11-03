@@ -428,3 +428,204 @@ export async function fetchEdgarSeries(tickerRaw: string): Promise<EdgarSeries |
   const facts = await fetchEdgarFacts(ticker);
   return facts ? parseEdgarSeries(facts) : null;
 }
+
+// ─── Derivación TTM desde estados reportados (R12.3) ─────────────────
+//
+// El ANCLA DE CAJA REAL mide un HECHO reportado — el flujo de caja
+// libre de los últimos 12 meses —, así que su fuente primaria son los
+// estados reportados y no el campo TTM de un proveedor: esa cifra es
+// una derivación opaca que para GOOG devolvía el signo invertido
+// respecto de sus balances. Acá la ventana móvil se reconstruye desde
+// los puntos reportados, por concepto:
+//   · si el emisor publica un punto «rodante» de ~12 meses que termina
+//     en su trimestre más reciente (Amazon lo tagea en cada 10-Q), se
+//     usa ese punto;
+//   · si no, la fórmula clásica FY + YTD − YTDpy: año fiscal cerrado
+//     + acumulado del año en curso − el mismo acumulado del año
+//     anterior, todo con puntos reportados.
+// Si el emisor solo tiene puntos de años fiscales cerrados (filers
+// 20-F cuyas presentaciones intermedias no quedan tageadas en los
+// company facts), la derivación devuelve windowKind 'fy': mide el
+// último año fiscal, NO los últimos 12 meses, y el consumidor decide
+// si esa ventana sirve para el ancla (server/cashAnchor.ts).
+
+export interface EdgarTtmCashflow {
+  operatingCashflow: number;
+  /** Capex como monto positivo. */
+  capex: number;
+  freeCashflow: number;
+  /** Último día de la ventana derivada (ISO). */
+  periodEnd: string;
+  /** 'ttm' = ventana móvil construida con puntos intermedios
+   *  (rodante reportado o FY+YTD−YTDpy); 'fy' = solo el año fiscal
+   *  cerrado, sin puntos intermedios. */
+  windowKind: 'ttm' | 'fy';
+}
+
+interface DurationPoint {
+  start: string;
+  end: string;
+  val: number;
+  filed: string;
+}
+
+const DAY_MS = 86_400_000;
+
+function dayDiff(a: string, b: string): number {
+  return Math.round((Date.parse(b) - Date.parse(a)) / DAY_MS);
+}
+
+const isAnnualish = (p: DurationPoint): boolean => {
+  const d = dayDiff(p.start, p.end);
+  return d >= 330 && d <= 400;
+};
+const isInterim = (p: DurationPoint): boolean => {
+  const d = dayDiff(p.start, p.end);
+  return d >= 60 && d < 330;
+};
+
+/** Puntos con duración (start/end) de UN concepto en una unidad:
+ *  ante duplicados por re-presentación gana el filed más reciente. */
+function conceptDurationPoints(factsJson: any, concept: string, unit: string): DurationPoint[] {
+  const byKey = new Map<string, DurationPoint>();
+  for (const ns of ['us-gaap', 'ifrs-full']) {
+    const arr = factsJson?.facts?.[ns]?.[concept]?.units?.[unit];
+    if (!Array.isArray(arr)) continue;
+    for (const p of arr) {
+      if (!p || typeof p.val !== 'number' || !Number.isFinite(p.val)) continue;
+      if (!p.start || !p.end) continue;
+      const dur = dayDiff(p.start, p.end);
+      if (dur < 60 || dur > 460) continue;
+      const key = `${p.start}|${p.end}`;
+      const filed = typeof p.filed === 'string' ? p.filed : '';
+      const prev = byKey.get(key);
+      if (!prev || filed >= prev.filed) byKey.set(key, { start: p.start, end: p.end, val: p.val, filed });
+    }
+  }
+  return [...byKey.values()];
+}
+
+interface FlowDerivation {
+  val: number;
+  kind: 'rolling' | 'fy-ytd' | 'fy';
+  end: string;
+}
+
+/** FY + YTD − YTDpy con los puntos dados, para la ventana que termina
+ *  en targetEnd. null si falta alguna pata. */
+function deriveFormulaAt(points: DurationPoint[], targetEnd: string): number | null {
+  const ytds = points
+    .filter((p) => isInterim(p) && Math.abs(dayDiff(p.end, targetEnd)) <= 4)
+    .sort((a, b) => dayDiff(a.start, a.end) - dayDiff(b.start, b.end));
+  const ytd = ytds[ytds.length - 1];
+  if (!ytd) return null;
+  const ytdDur = dayDiff(ytd.start, ytd.end);
+  const fy = points.find(
+    (p) => isAnnualish(p) && Math.abs(dayDiff(p.end, ytd.start) - 1) <= 4
+  );
+  if (!fy) return null;
+  const ytdPy = points.find(
+    (p) =>
+      Math.abs(dayDiff(p.end, targetEnd) - 365) <= 12 &&
+      Math.abs(dayDiff(p.start, p.end) - ytdDur) <= 12
+  );
+  if (!ytdPy) return null;
+  return fy.val + ytd.val - ytdPy.val;
+}
+
+/** Deriva UN flujo (operativo o capex) para la ventana que termina en
+ *  targetEnd, desde los puntos de un concepto. */
+function deriveFlowAt(points: DurationPoint[], targetEnd: string): FlowDerivation | null {
+  if (points.length === 0) return null;
+  const annual = points
+    .filter((p) => isAnnualish(p) && Math.abs(dayDiff(p.end, targetEnd)) <= 4)
+    .sort((a, b) => (a.filed < b.filed ? 1 : -1))[0];
+  // ¿El concepto tiene puntos intermedios recientes? Si los tiene, un
+  // punto de ~12 meses que termina en un trimestre ES el rodante
+  // reportado; si no los tiene, ese punto es su año fiscal.
+  const hasInterim = points.some((p) => isInterim(p) && dayDiff(p.end, targetEnd) <= 400);
+  const viaFormula = deriveFormulaAt(points, targetEnd);
+  if (viaFormula != null) return { val: viaFormula, kind: 'fy-ytd', end: targetEnd };
+  if (annual) return { val: annual.val, kind: hasInterim ? 'rolling' : 'fy', end: targetEnd };
+  return null;
+}
+
+const KIND_RANK: Record<FlowDerivation['kind'], number> = { 'fy-ytd': 3, rolling: 2, fy: 1 };
+
+/** Mejor derivación de un flujo en targetEnd entre sus conceptos:
+ *  manda la construcción más fiel a la ventana móvil (un concepto
+ *  abandonado —p. ej. el capex viejo de Amazon, sin puntos desde
+ *  2017— nunca le gana al vigente). */
+function deriveFlow(factsJson: any, concepts: string[], unit: string, targetEnd: string): FlowDerivation | null {
+  let best: FlowDerivation | null = null;
+  for (const concept of concepts) {
+    const d = deriveFlowAt(conceptDurationPoints(factsJson, concept, unit), targetEnd);
+    if (d && (!best || KIND_RANK[d.kind] > KIND_RANK[best.kind])) best = d;
+  }
+  return best;
+}
+
+/** Fines de ventana candidatos: los fines de cualquier punto
+ *  utilizable de ambos flujos (más nuevo primero). */
+function candidateEnds(factsJson: any, unit: string): string[] {
+  const ends = new Set<string>();
+  for (const concept of [...OCF_CONCEPTS, ...CAPEX_CONCEPTS]) {
+    for (const p of conceptDurationPoints(factsJson, concept, unit)) ends.add(p.end);
+  }
+  return [...ends].sort().reverse().slice(0, 8);
+}
+
+function deriveTtmInUnit(factsJson: any, unit: string): EdgarTtmCashflow | null {
+  const ends = candidateEnds(factsJson, unit);
+  const freshest = ends[0];
+  for (const end of ends) {
+    // La ventana del ancla es la ÚLTIMA reportada: se tolera que un
+    // flujo rezague al otro un trimestre (≤ 100 días), pero jamás se
+    // acepta una ventana vieja como si fuera los últimos 12 meses
+    // (si un flujo dejó de tagearse, no hay derivación: respaldo).
+    if (freshest && dayDiff(end, freshest) > 100) break;
+    const ocf = deriveFlow(factsJson, OCF_CONCEPTS, unit, end);
+    const capex = deriveFlow(factsJson, CAPEX_CONCEPTS, unit, end);
+    if (!ocf || !capex) continue;
+    const windowKind: EdgarTtmCashflow['windowKind'] =
+      ocf.kind === 'fy' && capex.kind === 'fy' ? 'fy' : 'ttm';
+    return {
+      operatingCashflow: ocf.val,
+      capex: Math.abs(capex.val),
+      freeCashflow: ocf.val - Math.abs(capex.val),
+      periodEnd: end,
+      windowKind,
+    };
+  }
+  return null;
+}
+
+export function parseEdgarTtmCashflow(factsJson: any): EdgarTtmCashflow | null {
+  if (!factsJson?.facts) return null;
+  const usd = deriveTtmInUnit(factsJson, 'USD');
+  if (usd) return usd;
+  // Sin unidades USD: derivar en la moneda de reporte y traducir con
+  // la tasa implícita en el par de caja (mismo criterio que la serie
+  // histórica: latestCashWithFx). Si tampoco se puede, no hay dato.
+  const cash = latestCashWithFx(factsJson.facts);
+  if (cash && cash.fxRate != null && cash.fxRate > 0 && cash.ccy && cash.ccy !== 'USD') {
+    const fx = cash.fxRate;
+    const local = deriveTtmInUnit(factsJson, cash.ccy);
+    if (local) {
+      return {
+        operatingCashflow: local.operatingCashflow / fx,
+        capex: local.capex / fx,
+        freeCashflow: local.freeCashflow / fx,
+        periodEnd: local.periodEnd,
+        windowKind: local.windowKind,
+      };
+    }
+  }
+  return null;
+}
+
+export async function fetchEdgarTtmCashflow(tickerRaw: string): Promise<EdgarTtmCashflow | null> {
+  const ticker = tickerRaw.toUpperCase().replace(/\./g, '-');
+  const facts = await fetchEdgarFacts(ticker);
+  return facts ? parseEdgarTtmCashflow(facts) : null;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEdgarCashflow, parseEdgarSeries } from '../edgar.js';
+import { parseEdgarCashflow, parseEdgarSeries, parseEdgarTtmCashflow } from '../edgar.js';
 
 // Fixture estilo SIMO (us-gaap): anuales USD + unidades TWD a ignorar,
 // duplicados por re-presentación y un interino semestral que no debe ganar.
@@ -290,5 +290,185 @@ describe('parseEdgarSeries — EPS en unidades USD/shares', () => {
     };
     const s = parseEdgarSeries(facts);
     expect(s!.epsHistory).toEqual([2.5, 1.25]);
+  });
+});
+
+// ─── R12.3: derivación TTM desde estados reportados ──────────────────
+// Fuente primaria del ANCLA DE CAJA REAL: la ventana móvil se
+// reconstruye desde los puntos reportados, no del campo TTM de un
+// proveedor (que para GOOG devolvía el signo invertido).
+
+const pt = (start: string, end: string, val: number, filed = '2026-10-30') => ({ start, end, val, form: '10-Q', fp: 'Q3', filed });
+
+// Filer con 10-Q (estilo GOOG): FY cerrado + acumulados YTD de ambos años.
+const googTtmFacts = {
+  facts: {
+    'us-gaap': {
+      NetCashProvidedByUsedInOperatingActivities: {
+        units: {
+          USD: [
+            pt('2025-01-01', '2025-12-31', 164.7e9, '2026-02-05'),
+            pt('2025-01-01', '2025-09-30', 120.1e9, '2025-10-30'),
+            pt('2026-01-01', '2026-03-31', 40.0e9, '2026-04-30'),
+            pt('2026-01-01', '2026-09-30', 134.9e9, '2026-10-29'),
+          ],
+        },
+      },
+      PaymentsToAcquirePropertyPlantAndEquipment: {
+        units: {
+          USD: [
+            pt('2025-01-01', '2025-12-31', 91.4e9, '2026-02-05'),
+            pt('2025-01-01', '2025-09-30', 64.1e9, '2025-10-30'),
+            pt('2026-01-01', '2026-09-30', 132.5e9, '2026-10-29'),
+          ],
+        },
+      },
+    },
+  },
+};
+
+// Filer con puntos RODANTES tageados y concepto de capex migrado
+// (estilo AMZN): el concepto viejo no tiene puntos desde 2017 y NO
+// debe ganar; sin YTD del año anterior, la fórmula no se puede armar
+// y manda el rodante reportado.
+const amznTtmFacts = {
+  facts: {
+    'us-gaap': {
+      NetCashProvidedByUsedInOperatingActivities: {
+        units: {
+          USD: [
+            pt('2025-01-01', '2025-12-31', 139.5e9, '2026-02-05'),
+            pt('2026-01-01', '2026-09-30', 141.2e9),
+            pt('2025-10-01', '2026-09-30', 168.3e9),
+          ],
+        },
+      },
+      PaymentsToAcquirePropertyPlantAndEquipment: {
+        units: {
+          USD: [
+            pt('2016-01-01', '2016-12-31', 7.0e9, '2017-02-15'),
+            pt('2017-01-01', '2017-03-31', 2.0e9, '2017-04-28'),
+          ],
+        },
+      },
+      PaymentsToAcquireProductiveAssets: {
+        units: {
+          USD: [pt('2026-01-01', '2026-09-30', 175.7e9), pt('2025-10-01', '2026-09-30', 215.2e9)],
+        },
+      },
+    },
+  },
+};
+
+// Filer 20-F solo con años fiscales (estilo SIMO): la derivación
+// devuelve la ventana del año fiscal, marcada 'fy' — NO un TTM.
+const simoAnnualFacts = {
+  facts: {
+    'us-gaap': {
+      NetCashProvidedByUsedInOperatingActivities: {
+        units: {
+          USD: [
+            pt('2024-01-01', '2024-12-31', 77.1e6, '2025-04-30'),
+            pt('2025-01-01', '2025-12-31', 61.4e6, '2026-04-30'),
+          ],
+        },
+      },
+      PaymentsToAcquirePropertyPlantAndEquipment: {
+        units: {
+          USD: [
+            pt('2024-01-01', '2024-12-31', 44.4e6, '2025-04-30'),
+            pt('2025-01-01', '2025-12-31', 55.1e6, '2026-04-30'),
+          ],
+        },
+      },
+    },
+  },
+};
+
+describe('parseEdgarTtmCashflow (R12.3)', () => {
+  it('filer 10-Q: reconstruye el TTM con FY + YTD − YTDpy (estilo GOOG)', () => {
+    const r = parseEdgarTtmCashflow(googTtmFacts);
+    expect(r).not.toBeNull();
+    expect(r!.windowKind).toBe('ttm');
+    expect(r!.periodEnd).toBe('2026-09-30');
+    expect(r!.operatingCashflow).toBeCloseTo(179.5e9, 0);
+    expect(r!.capex).toBeCloseTo(159.8e9, 0);
+    expect(r!.freeCashflow).toBeCloseTo(19.7e9, 0);
+  });
+
+  it('punto rodante reportado + concepto de capex migrado: gana el vigente (estilo AMZN)', () => {
+    const r = parseEdgarTtmCashflow(amznTtmFacts);
+    expect(r).not.toBeNull();
+    expect(r!.windowKind).toBe('ttm');
+    expect(r!.periodEnd).toBe('2026-09-30');
+    expect(r!.operatingCashflow).toBeCloseTo(168.3e9, 0);
+    expect(r!.capex).toBeCloseTo(215.2e9, 0);
+    expect(r!.freeCashflow).toBeCloseTo(-46.9e9, 0);
+  });
+
+  it('solo años fiscales: devuelve la ventana FY marcada como tal, no un TTM (estilo SIMO)', () => {
+    const r = parseEdgarTtmCashflow(simoAnnualFacts);
+    expect(r).not.toBeNull();
+    expect(r!.windowKind).toBe('fy');
+    expect(r!.periodEnd).toBe('2025-12-31');
+    expect(r!.freeCashflow).toBeCloseTo(6.3e6, 0);
+  });
+
+  it('capex sin puntos en la ventana vigente: no deriva (una ventana vieja no es un TTM)', () => {
+    const facts = {
+      facts: {
+        'us-gaap': {
+          NetCashProvidedByUsedInOperatingActivities: googTtmFacts.facts['us-gaap'].NetCashProvidedByUsedInOperatingActivities,
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: { USD: [pt('2024-01-01', '2024-12-31', 50.0e9, '2025-03-01')] },
+          },
+        },
+      },
+    };
+    expect(parseEdgarTtmCashflow(facts)).toBeNull();
+  });
+
+  it('sin unidades USD: deriva en la moneda de reporte y traduce con el par de caja', () => {
+    const facts = {
+      facts: {
+        'us-gaap': {
+          CashAndCashEquivalentsAtCarryingValue: {
+            units: {
+              USD: [{ end: '2025-12-31', val: 100e9, form: '20-F', fp: 'FY', filed: '2026-03-01' }],
+              AUD: [{ end: '2025-12-31', val: 200e9, form: '20-F', fp: 'FY', filed: '2026-03-01' }],
+            },
+          },
+          NetCashProvidedByUsedInOperatingActivities: {
+            units: {
+              AUD: [
+                pt('2025-01-01', '2025-12-31', 329.4e9, '2026-03-01'),
+                pt('2025-01-01', '2025-09-30', 240.2e9, '2025-11-15'),
+                pt('2026-01-01', '2026-09-30', 269.8e9, '2026-11-15'),
+              ],
+            },
+          },
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: {
+              AUD: [
+                pt('2025-01-01', '2025-12-31', 182.8e9, '2026-03-01'),
+                pt('2025-01-01', '2025-09-30', 128.2e9, '2025-11-15'),
+                pt('2026-01-01', '2026-09-30', 265.0e9, '2026-11-15'),
+              ],
+            },
+          },
+        },
+      },
+    };
+    const r = parseEdgarTtmCashflow(facts);
+    expect(r).not.toBeNull();
+    expect(r!.windowKind).toBe('ttm');
+    // (329,4 + 269,8 − 240,2) / 2 = 179,5 ; (182,8 + 265,0 − 128,2) / 2 = 159,8
+    expect(r!.operatingCashflow).toBeCloseTo(179.5e9, 0);
+    expect(r!.freeCashflow).toBeCloseTo(19.7e9, 0);
+  });
+
+  it('sin facts utilizables → null', () => {
+    expect(parseEdgarTtmCashflow(null)).toBeNull();
+    expect(parseEdgarTtmCashflow({ facts: {} })).toBeNull();
   });
 });

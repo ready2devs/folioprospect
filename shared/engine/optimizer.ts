@@ -109,17 +109,38 @@ export interface OptimizerAssetInput {
    *  también acá. `salesGrowthPct` (TTM trailing de Finviz) queda
    *  como respaldo documentado cuando el forward no está. */
   salesGrowthForwardPct?: number | null;
-  /** Flujo de caja libre de los últimos 12 meses REPORTADOS (TTM),
-   *  en US$, tal cual lo sirve la fuente ANTES de cualquier
-   *  reparación de la capa de datos: insumo del ANCLA DE CAJA REAL
-   *  del score (R12). Solo importa su SIGNO: quemar caja en la
-   *  ventana móvil es un hecho reportado que no se mueve con
-   *  refrescos de estimaciones, a diferencia del año fiscal cerrado
-   *  (que puede cerrar positivo con un TTM ya negativo, caso SIMO).
-   *  La reparación que hoy completa un TTM faltante/negativo con el
-   *  flujo anual auditado sirve al ancla histórica del FV, pero NO
-   *  debe pisar este dato: el ancla de caja lee el TTM crudo. */
+  /** Flujo de caja libre TTM (US$) tal cual lo sirve el proveedor,
+   *  ANTES de cualquier reparación de la capa de datos. Desde R12.3
+   *  ya NO es el insumo directo del ancla de caja: es su CHEQUEO
+   *  CRUZADO y su respaldo. La reparación que completa un TTM
+   *  faltante/negativo con el flujo anual auditado sirve al ancla
+   *  histórica del FV y tampoco pisa este dato. */
   fcfTtmUsd?: number | null;
+  /** FCF de los últimos 12 meses RESUELTO para el ANCLA DE CAJA REAL
+   *  (R12.3, resuelto por la capa de datos en server/cashAnchor.ts):
+   *  la fuente primaria son los ESTADOS REPORTADOS (derivación EDGAR
+   *  desde los trimestres presentados), porque el ancla mide un hecho
+   *  reportado y el campo TTM del proveedor demostró venir roto
+   *  (GOOG con el signo invertido respecto de sus balances). El campo
+   *  del proveedor solo manda como respaldo documentado cuando los
+   *  reportados no permiten reconstruir la ventana. Solo importa el
+   *  SIGNO del valor resuelto: quemar caja en la ventana móvil es un
+   *  hecho que no se mueve con refrescos de estimaciones, a
+   *  diferencia del año fiscal cerrado (que puede cerrar positivo
+   *  con un TTM ya negativo, caso SIMO). null/ausente = sin
+   *  resolución (el ancla cae al fcfTtmUsd histórico). */
+  fcfTtmResolvedUsd?: number | null;
+  /** Procedencia del FCF resuelto del ancla. */
+  fcfTtmSource?: 'reportado' | 'proveedor' | null;
+  /** Cierre de la ventana reportada usada (si la fuente es la
+   *  reportada), para la ficha. */
+  fcfTtmPeriodEnd?: string | null;
+  /** El proveedor difería del reportado en signo o en más de 2,5×:
+   *  mandó el reportado y la discrepancia queda registrada. */
+  fcfTtmDiscrepancy?: boolean;
+  /** EDGAR solo pudo ofrecer el año fiscal cerrado (ventana
+   *  distinta de la móvil): hueco documentado del respaldo. */
+  fcfTtmEdgarFyOnlyGap?: boolean;
   /** ΔS % anual: positivo = emite acciones (diluye), negativo = recompra. */
   dilutionPct?: number | null;
   forwardPe?: number | null;
@@ -332,6 +353,18 @@ export interface AssetScore {
   cashAnchorPenaltyPts: number;
   /** El FCF TTM (US$) detrás de la marca, para mostrarlo/auditarlo. */
   cashAnchorFcfTtmUsd: number | null;
+  /** Procedencia del FCF del ancla (R12.3): estados reportados ante
+   *  la SEC o campo del proveedor (respaldo). */
+  cashAnchorSource: 'reportado' | 'proveedor' | null;
+  /** Cierre de la ventana reportada usada por el ancla. */
+  cashAnchorPeriodEnd: string | null;
+  /** El proveedor difería del reportado (signo o > 2,5×): mandó el
+   *  reportado y la discrepancia quedó registrada. */
+  cashAnchorDiscrepancy: boolean;
+  /** El crudo TTM del proveedor, para el cruce visible en la ficha. */
+  cashAnchorProviderFcfTtmUsd: number | null;
+  /** EDGAR solo ofrecía el año fiscal cerrado (otra ventana). */
+  cashAnchorEdgarFyOnlyGap: boolean;
   fvConfidence: 'Alta' | 'Media' | 'Baja' | null;
   fvComponentCount: number | null;
   fvToPrice: number | null;
@@ -807,26 +840,65 @@ const FINANCIAL_LABEL_RE = /financ/i;
 export interface CashAnchorInfo {
   state: CashAnchorState;
   penaltyPts: number;
+  /** El FCF TTM detrás de la marca: el RESUELTO (R12.3) — el
+   *  derivado de los estados reportados si EDGAR pudo reconstruirlo,
+   *  el campo del proveedor como respaldo documentado si no. */
   fcfTtmUsd: number | null;
+  /** Procedencia del FCF detrás de la marca: 'reportado' (estados
+   *  presentados ante la SEC) o 'proveedor' (campo TTM del proveedor
+   *  de mercado). null cuando no hay valor (sin dato / no aplica). */
+  source: 'reportado' | 'proveedor' | null;
+  /** Cierre de la ventana reportada usada (solo fuente reportada). */
+  periodEnd: string | null;
+  /** El proveedor difería del reportado en signo o en más de 2,5×;
+   *  mandó el reportado y la ficha muestra la discrepancia. */
+  discrepancy: boolean;
+  /** El crudo del proveedor, para mostrar el cruce en la ficha. */
+  providerFcfTtmUsd: number | null;
+  /** EDGAR solo pudo ofrecer el año fiscal cerrado (otra ventana):
+   *  hueco documentado cuando manda el respaldo del proveedor. */
+  edgarFyOnlyGap: boolean;
 }
 
 /** Núcleo del ancla de caja, usable fuera del optimizador (la ficha
- *  del activo muestra la misma marca con el mismo criterio). */
+ *  del activo muestra la misma marca con el mismo criterio).
+ *  R12.3: si la capa de datos resolvió el ancla (fcfTtmResolvedUsd
+ *  presente como clave, aunque sea null), ese valor manda con su
+ *  procedencia; sin resolución se usa el campo histórico del
+ *  proveedor (compatibilidad con llamadores anteriores). */
 export function cashAnchorStateFor(input: {
   sector?: string | null;
   industry?: string | null;
   fcfTtmUsd?: number | null;
+  fcfTtmResolvedUsd?: number | null;
+  fcfTtmSource?: 'reportado' | 'proveedor' | null;
+  fcfTtmPeriodEnd?: string | null;
+  fcfTtmDiscrepancy?: boolean;
+  fcfTtmEdgarFyOnlyGap?: boolean;
   isCrypto?: boolean;
   isCash?: boolean;
 }): CashAnchorInfo {
-  const fcf = input.fcfTtmUsd ?? null;
-  if (input.isCrypto || input.isCash) return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: null };
-  if (FINANCIAL_LABEL_RE.test(input.sector ?? '') || FINANCIAL_LABEL_RE.test(input.industry ?? '')) {
-    return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: fcf };
+  const resolved = input.fcfTtmResolvedUsd !== undefined;
+  const raw = resolved ? input.fcfTtmResolvedUsd ?? null : input.fcfTtmUsd ?? null;
+  const fcf = raw != null && Number.isFinite(raw) ? raw : null;
+  const provenance: Pick<CashAnchorInfo, 'periodEnd' | 'discrepancy' | 'providerFcfTtmUsd' | 'edgarFyOnlyGap'> = {
+    periodEnd: resolved ? input.fcfTtmPeriodEnd ?? null : null,
+    discrepancy: resolved ? !!input.fcfTtmDiscrepancy : false,
+    providerFcfTtmUsd:
+      input.fcfTtmUsd != null && Number.isFinite(input.fcfTtmUsd) ? input.fcfTtmUsd : null,
+    edgarFyOnlyGap: resolved ? !!input.fcfTtmEdgarFyOnlyGap : false,
+  };
+  const source: CashAnchorInfo['source'] =
+    fcf == null ? null : resolved ? input.fcfTtmSource ?? null : 'proveedor';
+  if (input.isCrypto || input.isCash) {
+    return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: null, source: null, periodEnd: null, discrepancy: false, providerFcfTtmUsd: provenance.providerFcfTtmUsd, edgarFyOnlyGap: provenance.edgarFyOnlyGap };
   }
-  if (fcf == null || !Number.isFinite(fcf)) return { state: 'sin-dato', penaltyPts: 0, fcfTtmUsd: null };
-  if (fcf < 0) return { state: 'quema-caja', penaltyPts: -CASH_ANCHOR_PENALTY_PTS, fcfTtmUsd: fcf };
-  return { state: 'genera-caja', penaltyPts: 0, fcfTtmUsd: fcf };
+  if (FINANCIAL_LABEL_RE.test(input.sector ?? '') || FINANCIAL_LABEL_RE.test(input.industry ?? '')) {
+    return { state: 'no-aplica', penaltyPts: 0, fcfTtmUsd: fcf, source, ...provenance };
+  }
+  if (fcf == null) return { state: 'sin-dato', penaltyPts: 0, fcfTtmUsd: null, source: null, ...provenance };
+  if (fcf < 0) return { state: 'quema-caja', penaltyPts: -CASH_ANCHOR_PENALTY_PTS, fcfTtmUsd: fcf, source, ...provenance };
+  return { state: 'genera-caja', penaltyPts: 0, fcfTtmUsd: fcf, source, ...provenance };
 }
 
 export function cashAnchorFor(a: OptimizerAssetInput): CashAnchorInfo {
@@ -834,6 +906,11 @@ export function cashAnchorFor(a: OptimizerAssetInput): CashAnchorInfo {
     sector: a.sector,
     industry: a.industry,
     fcfTtmUsd: a.fcfTtmUsd,
+    fcfTtmResolvedUsd: a.fcfTtmResolvedUsd,
+    fcfTtmSource: a.fcfTtmSource,
+    fcfTtmPeriodEnd: a.fcfTtmPeriodEnd,
+    fcfTtmDiscrepancy: a.fcfTtmDiscrepancy,
+    fcfTtmEdgarFyOnlyGap: a.fcfTtmEdgarFyOnlyGap,
     isCrypto: a.isCrypto,
     isCash: a.isCash,
   });
@@ -1200,6 +1277,11 @@ export function scoreAsset(
     cashAnchorState: cashAnchor.state,
     cashAnchorPenaltyPts: cashAnchor.penaltyPts,
     cashAnchorFcfTtmUsd: cashAnchor.fcfTtmUsd,
+    cashAnchorSource: cashAnchor.source,
+    cashAnchorPeriodEnd: cashAnchor.periodEnd,
+    cashAnchorDiscrepancy: cashAnchor.discrepancy,
+    cashAnchorProviderFcfTtmUsd: cashAnchor.providerFcfTtmUsd,
+    cashAnchorEdgarFyOnlyGap: cashAnchor.edgarFyOnlyGap,
     fvConfidence: a.fvConfidence ?? null,
     fvComponentCount: a.fvComponentCount ?? null,
     fvToPrice,
@@ -1790,6 +1872,8 @@ export function optimizePortfolio(
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
         scoreBand: al.score != null ? scoreBandFor(al.score, false) : null, scoreComponents: null,
         cashAnchorState: 'sin-dato', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
+        cashAnchorSource: null, cashAnchorPeriodEnd: null, cashAnchorDiscrepancy: false,
+        cashAnchorProviderFcfTtmUsd: null, cashAnchorEdgarFyOnlyGap: false,
       });
     }
     const finalAssets = [...finalMap.values()].sort(
@@ -1820,6 +1904,8 @@ export function optimizePortfolio(
         scoreVelocity: null, scoreAdjustmentPts: null, scoreAdjustmentDriver: null,
         scoreBand: null, scoreComponents: null,
         cashAnchorState: 'no-aplica', cashAnchorPenaltyPts: 0, cashAnchorFcfTtmUsd: null,
+        cashAnchorSource: null, cashAnchorPeriodEnd: null, cashAnchorDiscrepancy: false,
+        cashAnchorProviderFcfTtmUsd: null, cashAnchorEdgarFyOnlyGap: false,
       });
     }
     finalAssets.forEach((a) => {

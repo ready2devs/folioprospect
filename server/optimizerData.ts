@@ -19,6 +19,7 @@ import { fetchAssetChart, fetchAssetExtras, fetchFundamentals } from './yahoo.js
 import { fetchFinvizFundamentals } from './finviz.js';
 import { fetchSectorContext, finvizIndustrySlug } from './sectorContext.js';
 import { addDays, fetchNasdaqEarningsDay, todayInNewYork } from './earnings.js';
+import { resolveAnchorFromFundamentals } from './cashAnchor.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -207,6 +208,11 @@ async function buildAssetInput(
     if (fund.revenueGrowth != null) totalGrowth.push(fund.revenueGrowth * 100);
     if (fund.earningsGrowth != null) totalGrowth.push(fund.earningsGrowth * 100);
     totalGrowth.sort((a, b) => a - b);
+    // Ancla de caja real (R12.3): resolución ÚNICA desde los
+    // fundamentales — primario los estados reportados (EDGAR),
+    // respaldo el crudo del proveedor. La misma resolución alimenta
+    // la ficha del activo (server/routes.ts).
+    const anchorFcf = resolveAnchorFromFundamentals(fund);
     return {
       ...baseInput,
       industry: undefined, // se completa con el slug de Finviz si hace falta para pares
@@ -237,18 +243,22 @@ async function buildAssetInput(
         }
         return checks.length ? checks.reduce((s, x) => s + x, 0) / checks.length : null;
       })(),
-      // FCF TTM crudo para el ancla de caja real del score (R12):
-      // el valor TAL CUAL lo sirvió el proveedor, antes de la
-      // reparación que completa un TTM faltante/negativo con el
-      // flujo anual auditado (esa reparación alimenta el ancla
-      // histórica del FV; acá pisaría el hecho que el ancla mide).
-      // Si el crudo no está pero el FCF vigente NO vino de esa
-      // reparación, el vigente es el TTM y se usa; si vino de los
-      // estados (fcfDerivedFromFilings), el TTM crudo se desconoce
-      // y el ancla queda «sin dato» antes que mentir el signo.
-      fcfTtmUsd:
-        fund.freeCashflowTtmRaw ??
-        (fund.fcfDerivedFromFilings ? null : fund.freeCashflow ?? null),
+      // FCF TTM del proveedor (crudo, antes de la reparación que
+      // completa un TTM faltante/negativo con el flujo anual
+      // auditado): desde R12.3 es el CHEQUEO CRUZADO y el respaldo
+      // del ancla de caja — si el crudo no está pero el FCF vigente
+      // NO vino de esa reparación, el vigente es el TTM y se usa; si
+      // vino de los estados (fcfDerivedFromFilings), no se presenta
+      // como TTM del proveedor.
+      fcfTtmUsd: anchorFcf.providerFcfTtmUsd,
+      // FCF del ancla RESUELTO (R12.3): manda el derivado de los
+      // estados reportados; el proveedor solo como respaldo con su
+      // procedencia registrada.
+      fcfTtmResolvedUsd: anchorFcf.fcfTtmUsd,
+      fcfTtmSource: anchorFcf.source,
+      fcfTtmPeriodEnd: anchorFcf.periodEnd,
+      fcfTtmDiscrepancy: anchorFcf.discrepancy,
+      fcfTtmEdgarFyOnlyGap: anchorFcf.edgarFyOnlyGap,
       // ΔS real desde EDGAR (variación interanual de acciones diluidas):
       // antes era null «sin fuente confiable»; EDGAR sí la trae para los
       // emisores que reportan el concepto (brecha declarada en el doc).

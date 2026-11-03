@@ -57,8 +57,26 @@ export interface FundamentalInput {
    *  flujo anual auditado (esa reparación sirve al ancla histórica,
    *  pero pisaría el dato que el ANCLA DE CAJA REAL del optimizador
    *  necesita: el signo del TTM reportado, R12). Solo lo lee el
-   *  optimizador; el motor de FV no lo usa. */
+   *  optimizador; el motor de FV no lo usa. Desde R12.3 es el CHEQUEO
+   *  CRUZADO y el respaldo del ancla: la fuente primaria es la
+   *  derivación desde estados reportados (fcfTtmEdgar). */
   freeCashflowTtmRaw?: number | null;
+  /** Derivación del FCF de los últimos 12 meses desde los ESTADOS
+   *  REPORTADOS (SEC EDGAR: flujo operativo − capex reconstruidos con
+   *  los puntos de los trimestres presentados, server/edgar.ts).
+   *  Fuente PRIMARIA del ancla de caja real (R12.3): el ancla mide un
+   *  hecho reportado y el campo TTM del proveedor demostró venir roto
+   *  (GOOG con el signo invertido). windowKind 'fy' = EDGAR solo pudo
+   *  ofrecer el año fiscal cerrado (otra ventana: no es un TTM salvo
+   *  cierre reciente; lo decide server/cashAnchor.ts). Estructural:
+   *  coincide con EdgarTtmCashflow de server/edgar.ts. */
+  fcfTtmEdgar?: {
+    operatingCashflow: number;
+    capex: number;
+    freeCashflow: number;
+    periodEnd: string;
+    windowKind: 'ttm' | 'fy';
+  } | null;
   operatingCashflow?: number | null;
   totalCash?: number | null;
   totalDebt?: number | null;

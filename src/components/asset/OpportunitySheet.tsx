@@ -27,6 +27,10 @@ const fmtFcfUsd = (v: number): string => {
   return `${sign}US$ ${Math.round(abs / 1e6)} millones`;
 };
 
+/** Fecha ISO (aaaa-mm-dd) en formato local dd/mm/aaaa. */
+const fmtIsoDate = (iso: string): string =>
+  /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso;
+
 /**
  * Ficha de «Evaluación de oportunidad» embebida en el detalle del activo.
  *
@@ -940,6 +944,25 @@ export const OpportunitySheet: React.FC<{
               </div>
             </>
           )}
+          {/* Procedencia del dato del ancla (R12.3): la fuente primaria
+              son los estados reportados; el proveedor solo respalda. */}
+          {(detail.cashAnchor.state === 'genera-caja' || detail.cashAnchor.state === 'quema-caja') &&
+            detail.cashAnchor.source === 'reportado' && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                Dato de los estados reportados ante la SEC
+                {detail.cashAnchor.periodEnd ? ` (últimos 12 meses al ${fmtIsoDate(detail.cashAnchor.periodEnd)})` : ''}.
+                {detail.cashAnchor.discrepancy && detail.cashAnchor.providerFcfTtmUsd != null
+                  ? ` El proveedor de mercado mostraba ${fmtFcfUsd(detail.cashAnchor.providerFcfTtmUsd)}: ante la diferencia, manda el dato reportado.`
+                  : ''}
+              </div>
+            )}
+          {(detail.cashAnchor.state === 'genera-caja' || detail.cashAnchor.state === 'quema-caja') &&
+            detail.cashAnchor.source === 'proveedor' && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                Dato del proveedor de mercado: los estados reportados no permiten reconstruir los últimos 12 meses de este emisor
+                {detail.cashAnchor.edgarFyOnlyGap ? ' (ante la SEC solo constan sus años fiscales cerrados)' : ''}.
+              </div>
+            )}
         </div>
       )}
 
