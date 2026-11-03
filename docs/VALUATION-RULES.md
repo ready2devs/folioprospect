@@ -121,7 +121,13 @@ Ninguna zona rechaza un componente. La única nulidad posible está en R5.
 **Base del DCF.** Con 3 o más años de FCF anual reportado disponibles
 (serie de EDGAR —estados auditados— o, en su defecto, estados de Yahoo;
 gana la fuente con más años), la base es la **mediana de los últimos 3–5
-años**: nunca un año valle ni un año pico. Si el último año se aparta de
+años**. La serie de EDGAR se construye con dos cuidados universales:
+mandan los puntos de año fiscal verdadero (`fp = FY`) sobre los períodos
+móviles TTM de los informes trimestrales, y entre conceptos contables
+candidatos para el mismo flujo gana la serie más fresca — un emisor
+puede abandonar un concepto (p. ej., migrar su capex a otro rubro) y una
+serie vieja no debe emparejarse con flujos actuales.
+Nunca un año valle ni un año pico. Si el último año se aparta de
 la mediana por más de 3× en cualquier dirección, se usa igual la mediana
 y se marca `normalizedBase`. Si el último año es menor que 0,5× la
 mediana (o el último EPS anual es menor que 0,5× su mediana), el

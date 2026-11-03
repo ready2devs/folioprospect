@@ -56,7 +56,7 @@ interface FactValue {
 }
 
 const OCF_CONCEPTS = ['NetCashProvidedByUsedInOperatingActivities', 'CashFlowsFromUsedInOperatingActivities'];
-const CAPEX_CONCEPTS = ['PaymentsToAcquirePropertyPlantAndEquipment', 'PurchaseOfPropertyAndEquipment'];
+const CAPEX_CONCEPTS = ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets', 'PurchaseOfPropertyAndEquipment'];
 const CASH_CONCEPTS = ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalents'];
 
 /** Último instante de balance en USD + tasa implícita contra la otra moneda. */
@@ -97,39 +97,62 @@ interface AnnualPoint {
 }
 
 /**
- * Serie anual (períodos ≥300 días o fp FY) en USD de un concepto, ordenada
- * por fecha de cierre descendente y deduplicada por cierre (gana la
- * presentación más reciente). Se detiene en el primer concepto que rinde
- * datos, con la misma precedencia que latestAnnualUsd.
+ * Serie anual en USD de un concepto, ordenada por fecha de cierre
+ * descendente y deduplicada por cierre (gana la presentación más
+ * reciente). Dos reglas universales de selección:
+ * - Dentro de un concepto mandan los puntos de año fiscal verdadero
+ *   (fp 'FY'); los períodos móviles de ~1 año que reportan los 10-Q
+ *   (TTM con cierre trimestral) solo se usan si el concepto no tiene
+ *   ningún punto FY.
+ * - Entre conceptos candidatos gana la serie más fresca (con puntos FY,
+ *   luego cierre más reciente, luego más puntos): un concepto puede
+ *   quedar abandonado por el emisor hace años (p. ej., capex migrado de
+ *   'PaymentsToAcquirePropertyPlantAndEquipment' a
+ *   'PaymentsToAcquireProductiveAssets') y tomar «el primer concepto con
+ *   datos» emparejaba flujos de hace una década.
  */
 function annualSeriesUsd(
   facts: any,
   concepts: string[],
   taxonomies: string[] = ['us-gaap', 'ifrs-full']
 ): AnnualPoint[] {
+  let best: AnnualPoint[] | null = null;
+  let bestScore: [number, string, number] | null = null;
   for (const concept of concepts) {
-    const byEnd = new Map<string, AnnualPoint>();
+    const fy = new Map<string, AnnualPoint>();
+    const dur = new Map<string, AnnualPoint>();
     for (const tax of taxonomies) {
       const units = facts?.[tax]?.[concept]?.units?.USD;
       if (!Array.isArray(units)) continue;
       for (const v of units as FactValue[]) {
         if (typeof v.val !== 'number' || !v.end) continue;
-        let fullYear = v.fp === 'FY';
+        let days: number | null = null;
         if (v.start && v.end) {
-          const days = (Date.parse(v.end) - Date.parse(v.start)) / 86400000;
-          fullYear = days >= 300 && days <= 380;
+          days = (Date.parse(v.end) - Date.parse(v.start)) / 86400000;
         }
-        if (!fullYear) continue;
+        const aboutYear = days != null && days >= 300 && days <= 380;
+        const map = v.fp === 'FY' && (days == null || aboutYear) ? fy : aboutYear ? dur : null;
+        if (!map) continue;
         const filed = v.filed || '';
-        const prev = byEnd.get(v.end);
-        if (!prev || filed > prev.filed) byEnd.set(v.end, { end: v.end, val: v.val, filed });
+        const prev = map.get(v.end);
+        if (!prev || filed > prev.filed) map.set(v.end, { end: v.end, val: v.val, filed });
       }
     }
-    if (byEnd.size > 0) {
-      return [...byEnd.values()].sort((a, b) => (a.end < b.end ? 1 : -1));
+    const chosen = fy.size > 0 ? fy : dur;
+    if (chosen.size === 0) continue;
+    const pts = [...chosen.values()].sort((a, b) => (a.end < b.end ? 1 : -1));
+    const score: [number, string, number] = [fy.size > 0 ? 1 : 0, pts[0].end, pts.length];
+    if (
+      !bestScore ||
+      score[0] > bestScore[0] ||
+      (score[0] === bestScore[0] &&
+        (score[1] > bestScore[1] || (score[1] === bestScore[1] && score[2] > bestScore[2])))
+    ) {
+      best = pts;
+      bestScore = score;
     }
   }
-  return [];
+  return best ?? [];
 }
 
 export interface EdgarSeries {

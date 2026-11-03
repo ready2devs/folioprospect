@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEdgarCashflow } from '../edgar.js';
+import { parseEdgarCashflow, parseEdgarSeries } from '../edgar.js';
 
 // Fixture estilo SIMO (us-gaap): anuales USD + unidades TWD a ignorar,
 // duplicados por re-presentación y un interino semestral que no debe ganar.
@@ -94,5 +94,79 @@ describe('parseEdgarCashflow', () => {
     expect(parseEdgarCashflow(null)).toBeNull();
     expect(parseEdgarCashflow({})).toBeNull();
     expect(parseEdgarCashflow({ facts: { 'us-gaap': {} } })).toBeNull();
+  });
+});
+
+describe('parseEdgarSeries', () => {
+  it('concepto de capex abandonado por el emisor: gana la serie fresca (ProductiveAssets)', () => {
+    // El primer concepto de capex solo tiene datos de 2011-2012; el
+    // emisor migró a PaymentsToAcquireProductiveAssets. La serie de FCF
+    // debe emparejar los cierres actuales, no los de hace una década.
+    const facts = {
+      facts: {
+        'us-gaap': {
+          NetCashProvidedByUsedInOperatingActivities: {
+            units: {
+              USD: [
+                { end: '2012-01-29', start: '2011-01-30', val: 0.9e9, form: '10-K', fp: 'FY', filed: '2012-03-01' },
+                { end: '2025-01-26', start: '2024-01-29', val: 64.09e9, form: '10-K', fp: 'FY', filed: '2025-02-26' },
+                { end: '2026-01-25', start: '2025-01-27', val: 102.72e9, form: '10-K', fp: 'FY', filed: '2026-02-25' },
+              ],
+            },
+          },
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: {
+              USD: [
+                { end: '2012-01-29', start: '2011-01-30', val: 0.14e9, form: '10-K', fp: 'FY', filed: '2012-03-01' },
+              ],
+            },
+          },
+          PaymentsToAcquireProductiveAssets: {
+            units: {
+              USD: [
+                { end: '2025-01-26', start: '2024-01-29', val: 3.24e9, form: '10-K', fp: 'FY', filed: '2025-02-26' },
+                { end: '2026-01-25', start: '2025-01-27', val: 6.04e9, form: '10-K', fp: 'FY', filed: '2026-02-25' },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const s = parseEdgarSeries(facts);
+    expect(s).not.toBeNull();
+    expect(s!.fcfHistory).toHaveLength(2);
+    expect(s!.fcfHistory[0]).toBeCloseTo(96.68e9, 0);
+    expect(s!.fcfHistory[1]).toBeCloseTo(60.85e9, 0);
+  });
+
+  it('puntos TTM de 10-Q no desplazan a los años fiscales (fp FY manda)', () => {
+    const facts = {
+      facts: {
+        'us-gaap': {
+          NetCashProvidedByUsedInOperatingActivities: {
+            units: {
+              USD: [
+                { end: '2025-09-30', start: '2024-10-01', val: 130e9, form: '10-Q', fp: 'Q3', filed: '2025-10-30' },
+                { end: '2024-12-31', start: '2024-01-01', val: 100e9, form: '10-K', fp: 'FY', filed: '2025-01-30' },
+                { end: '2025-12-31', start: '2025-01-01', val: 140e9, form: '10-K', fp: 'FY', filed: '2026-01-29' },
+              ],
+            },
+          },
+          PaymentsToAcquirePropertyPlantAndEquipment: {
+            units: {
+              USD: [
+                { end: '2025-09-30', start: '2024-10-01', val: 120e9, form: '10-Q', fp: 'Q3', filed: '2025-10-30' },
+                { end: '2024-12-31', start: '2024-01-01', val: 60e9, form: '10-K', fp: 'FY', filed: '2025-01-30' },
+                { end: '2025-12-31', start: '2025-01-01', val: 132e9, form: '10-K', fp: 'FY', filed: '2026-01-29' },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const s = parseEdgarSeries(facts);
+    expect(s).not.toBeNull();
+    // Solo cierres fiscales: 140−132 y 100−60. El TTM 130−120 no aparece.
+    expect(s!.fcfHistory).toEqual([8e9, 40e9]);
   });
 });
