@@ -98,6 +98,57 @@ describe('parseEdgarCashflow', () => {
 });
 
 describe('parseEdgarSeries', () => {
+  it('emisor IFRS (20-F): el capex «…ClassifiedAsInvestingActivities» arma la serie de FCF', () => {
+    // Patrón de las petroleras latinoamericanas que reportan en
+    // ifrs-full: el OCF se llama CashFlowsFromUsedInOperatingActivities
+    // y el capex PurchaseOfPropertyPlantAndEquipmentClassifiedAs… —
+    // sin ese nombre de concepto la serie salía vacía y el DCF caía a
+    // la foto TTM sin normalizar (hallazgo VIST, adenda R9). Valores
+    // sintéticos del mismo orden que los reales auditados.
+    const facts = {
+      facts: {
+        'ifrs-full': {
+          CashFlowsFromUsedInOperatingActivities: {
+            units: {
+              USD: [
+                { end: '2022-12-31', start: '2022-01-01', val: 690e6, form: '20-F', fp: 'FY', filed: '2023-04-01' },
+                { end: '2023-12-31', start: '2023-01-01', val: 712e6, form: '20-F', fp: 'FY', filed: '2024-04-01' },
+                { end: '2024-12-31', start: '2024-01-01', val: 959e6, form: '20-F', fp: 'FY', filed: '2025-04-01' },
+              ],
+            },
+          },
+          PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities: {
+            units: {
+              USD: [
+                { end: '2022-12-31', start: '2022-01-01', val: 479e6, form: '20-F', fp: 'FY', filed: '2023-04-01' },
+                { end: '2023-12-31', start: '2023-01-01', val: 688e6, form: '20-F', fp: 'FY', filed: '2024-04-01' },
+                { end: '2024-12-31', start: '2024-01-01', val: 1053e6, form: '20-F', fp: 'FY', filed: '2025-04-01' },
+              ],
+            },
+          },
+          DilutedEarningsLossPerShare: {
+            units: {
+              'USD/shares': [
+                { end: '2023-12-31', start: '2023-01-01', val: 4.0, form: '20-F', fp: 'FY', filed: '2024-04-01' },
+                { end: '2024-12-31', start: '2024-01-01', val: 4.63, form: '20-F', fp: 'FY', filed: '2025-04-01' },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const s = parseEdgarSeries(facts);
+    expect(s).not.toBeNull();
+    // FCF = OCF − capex, más reciente primero: 2024 negativo (capex de
+    // crecimiento por encima del OCF), 2023 chico, 2022 sano.
+    expect(s!.fcfHistory).toHaveLength(3);
+    expect(s!.fcfHistory[0]).toBeCloseTo(-94e6, 0);
+    expect(s!.fcfHistory[1]).toBeCloseTo(24e6, 0);
+    expect(s!.fcfHistory[2]).toBeCloseTo(211e6, 0);
+    // Y el EPS IFRS (EarningsLossPerShare) también se lee.
+    expect(s!.epsHistory).toEqual([4.63, 4.0]);
+  });
+
   it('concepto de capex abandonado por el emisor: gana la serie fresca (ProductiveAssets)', () => {
     // El primer concepto de capex solo tiene datos de 2011-2012; el
     // emisor migró a PaymentsToAcquireProductiveAssets. La serie de FCF

@@ -9,9 +9,11 @@ import {
 } from '../optimizer.js';
 
 /**
- * Pase correctivo de la capa de RE (docs/OPTIMIZER-PROFESSIONAL.md §12):
- * convergencia conservadora por confianza (A), topes de RE por
- * confianza (B) y desacuerdo de signo en el EPS (D). Fixtures
+ * Pase correctivo de la capa de RE (docs/OPTIMIZER-PROFESSIONAL.md §12,
+ * con la recalibración del desapilado de §13): convergencia al FV
+ * encogido por confianza con piso del rango SOLO bajo el tripwire
+ * modelSuspect (A), topes de RE por confianza en una sola capa
+ * +35/+30/+25 (B) y desacuerdo de signo en el EPS (D). Fixtures
  * sintéticos derivados de las reglas: el motor no conoce tickers.
  */
 const SCORE_OPTS = {
@@ -31,20 +33,23 @@ const base = (p: Partial<OptimizerAssetInput>): OptimizerAssetInput => ({
   ...p,
 });
 
-describe('convergencia conservadora por confianza (A)', () => {
-  it('el destino: Alta = FV pelado, Media = encogido 0,7, Baja = piso del rango', () => {
+describe('convergencia por confianza (A, desapilada §13)', () => {
+  it('el destino: encogido por confianza; el piso SOLO con modelSuspect', () => {
     expect(convergenceTargetFor(100, 450, 'Alta', 150)).toEqual({ target: 450, conservative: false });
     expect(convergenceTargetFor(100, 450, 'Media', 150)).toEqual({ target: 345, conservative: false });
-    // Baja: encogido k=0,4 sería 240; el piso del rango (150) es menor y manda.
-    expect(convergenceTargetFor(100, 450, 'Baja', 150)).toEqual({ target: 150, conservative: true });
-    // Baja con piso por encima del encogido: manda el encogido.
-    expect(convergenceTargetFor(100, 450, 'Baja', 440)).toEqual({ target: 240, conservative: true });
-    // Baja sin rango: respaldo k=0,25.
-    expect(convergenceTargetFor(100, 450, 'Baja', null)).toEqual({ target: 187.5, conservative: true });
+    // Baja SIN tripwire: encogido k=0,4 (240) — el piso ya no gobierna
+    // como regla general (la prudencia vive una sola vez, en el FV).
+    expect(convergenceTargetFor(100, 450, 'Baja', 150)).toEqual({ target: 240, conservative: false });
+    // Con modelSuspect: el piso del rango (150) manda sobre el encogido.
+    expect(convergenceTargetFor(100, 450, 'Baja', 150, true)).toEqual({ target: 150, conservative: true });
+    // Con modelSuspect y piso por encima del encogido: manda el encogido.
+    expect(convergenceTargetFor(100, 450, 'Baja', 440, true)).toEqual({ target: 240, conservative: true });
+    // Con modelSuspect y sin rango: respaldo k=0,25.
+    expect(convergenceTargetFor(100, 450, 'Baja', null, true)).toEqual({ target: 187.5, conservative: true });
     expect(convergenceTargetFor(100, null, 'Baja', 150)).toBeNull();
   });
 
-  it('un activo Baja con rango ancho converge al PISO, no a un % del número puntual', () => {
+  it('un activo Baja con rango ancho converge al encogido k=0,4 (no al piso) sin tripwire', () => {
     const a = scoreAsset(
       base({
         price: 100, fvBase: 450, fvConfidence: 'Baja', fvRangeLow: 150, fvRangeHigh: 900,
@@ -53,12 +58,25 @@ describe('convergencia conservadora por confianza (A)', () => {
       }),
       1000, SCORE_OPTS
     );
-    // Convergencia a 3 años hasta 150 (el piso), no hasta 240 (k=0,4).
-    expect(a.conservativeConvergence).toBe(true);
-    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(1.5, 1 / 3) - 1) * 100, 4);
-    // El FV efectivo de exhibición/score sigue siendo el encogido lineal.
+    expect(a.modelSuspect).toBe(false);
+    expect(a.conservativeConvergence).toBe(false);
+    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(2.4, 1 / 3) - 1) * 100, 4);
     expect(a.fvEffective).toBeCloseTo(240);
     expect(a.fvRaw).toBe(450);
+  });
+
+  it('el mismo activo con el FV marcado sospechoso SÍ converge al piso del rango', () => {
+    const a = scoreAsset(
+      base({
+        price: 100, fvBase: 450, fvConfidence: 'Baja', fvRangeLow: 150, fvRangeHigh: 900,
+        fvComponentCount: 3, fvModelSuspect: true, earningsGrowthTotalPct: 10,
+        analystTarget: 150, volatilityPct: 30, roicPct: 15,
+      }),
+      1000, SCORE_OPTS
+    );
+    expect(a.modelSuspect).toBe(true);
+    expect(a.conservativeConvergence).toBe(true);
+    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(1.5, 1 / 3) - 1) * 100, 4);
   });
 
   it('un activo Media con el mismo rango NO usa el piso (sigue el shrinkage)', () => {
@@ -87,21 +105,21 @@ describe('topes de RE por confianza (B)', () => {
       analystTarget: 300, volatilityPct: 30, roicPct: 15,
     });
 
-  it('Baja: el RE final no supera +18% aunque el blend crudo dé ~31%', () => {
+  it('Baja: el RE final no supera +25% aunque el blend crudo dé ~31%', () => {
     const a = scoreAsset(hot('Baja'), 1000, SCORE_OPTS);
     expect(a.expectedReturnPct).toBe(RE_CONFIDENCE_CAP_PCT.Baja);
-    expect(a.expectedReturnPct).toBe(18);
-    expect(a.yearsToDouble!).toBeCloseTo(Math.LN2 / Math.log(1.18), 4);
+    expect(a.expectedReturnPct).toBe(25);
+    expect(a.yearsToDouble!).toBeCloseTo(Math.LN2 / Math.log(1.25), 4);
   });
 
-  it('Media: tope +28%', () => {
+  it('Media: tope +30%', () => {
     const a = scoreAsset(hot('Media'), 1000, SCORE_OPTS);
-    expect(a.expectedReturnPct).toBe(28);
+    expect(a.expectedReturnPct).toBe(30);
   });
 
   it('Alta: el mismo blend queda por debajo del techo histórico (+35%) y no se recorta', () => {
     const a = scoreAsset(hot('Alta'), 1000, SCORE_OPTS);
-    expect(a.expectedReturnPct!).toBeGreaterThan(28);
+    expect(a.expectedReturnPct!).toBeGreaterThan(30);
     expect(a.expectedReturnPct!).toBeLessThanOrEqual(35);
   });
 });
@@ -134,7 +152,7 @@ describe('desacuerdo de signo en el EPS (D)', () => {
     ).toBeCloseTo(19.8, 5);
   });
 
-  it('un Media con desacuerdo de signo converge como Baja (al piso) y respeta el tope Baja', () => {
+  it('un Media con desacuerdo de signo converge como Baja (encogido k=0,4) y respeta el tope Baja', () => {
     const a = scoreAsset(
       base({
         price: 100, fvBase: 450, fvConfidence: 'Media', fvRangeLow: 150, fvRangeHigh: 900,
@@ -144,8 +162,10 @@ describe('desacuerdo de signo en el EPS (D)', () => {
       1000, SCORE_OPTS
     );
     expect(a.epsSignDisagreement).toBe(true);
-    expect(a.conservativeConvergence).toBe(true);
-    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(1.5, 1 / 3) - 1) * 100, 4);
+    // Desapilado §13: sin modelSuspect no hay piso — converge al
+    // encogido del escalón Baja (k=0,4 ⇒ destino 240).
+    expect(a.conservativeConvergence).toBe(false);
+    expect(a.fvConvergencePct!).toBeCloseTo((Math.pow(2.4, 1 / 3) - 1) * 100, 4);
     // La etiqueta pública de la valuación no se toca.
     expect(a.fvConfidence).toBe('Media');
     expect(a.expectedReturnPct!).toBeLessThanOrEqual(RE_CONFIDENCE_CAP_PCT.Baja);

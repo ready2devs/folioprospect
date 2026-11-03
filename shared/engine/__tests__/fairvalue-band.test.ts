@@ -6,13 +6,20 @@ import {
   type FvComponentInput,
 } from '../fairvalue.js';
 
-// Regresión 2026-11-03: el Fair Value nunca puede depender del precio.
-// Antes la banda de credibilidad se medía contra el precio y el FV
-// saltaba cuando el precio cruzaba un umbral (SIMO bajo US$192,58; META
-// sobre US$615,99; MU bajo US$715,69). Con el promedio winsorizado la
-// referencia es el promedio de los otros componentes y los componentes
-// se anclan al EPS reparado (no al P/E publicado), así que el FV es
-// idéntico a cualquier precio.
+// Regresión 2026-11-03: la BANDA de credibilidad nunca se mide contra
+// el precio. Antes se medía contra el precio y el FV SALTABA cuando el
+// precio cruzaba un umbral (SIMO bajo US$192,58; META sobre US$615,99;
+// MU bajo US$715,69). Con el promedio winsorizado la referencia es el
+// promedio de los otros componentes y los componentes se anclan al EPS
+// reparado (no al P/E publicado).
+// Matiz R9 (mismo día): dos cotas deliberadas SÍ son relativas al
+// mercado — el tope sectorial del múltiplo (referencia: el P/E forward
+// del propio activo, o el de la industria si se conoce) y la
+// normalización de la base del DCF por FCF yield. Son funciones
+// CONTINUAS del precio: mueven el FV suavemente, jamás con el salto
+// discreto del artefacto original. La invariancia exacta se mantiene
+// cuando ninguna de las dos cotas está activa (fixture de abajo) y la
+// agregación pura nunca dependió del precio.
 const C = (key: FvComponentInput['key'], value: number): FvComponentInput => ({
   key,
   value,
@@ -70,11 +77,38 @@ describe('invariancia del FV frente al precio (computeFairValue, EPS anclado)', 
     returnOnEquity: 0.25,
   });
 
-  it('mismo FV a precios 120–300 (incluye el viejo umbral 192,58)', () => {
+  it('sin cotas de mercado activas, el FV es idéntico a precios 120–300', () => {
+    // EPS bajo contra el precio (P/E propio 30–75 ⇒ el tope sectorial
+    // de R9 no llega a atar) y capitalización amplia (FCF yield < 10%
+    // ⇒ sin haircut cíclico): ningún componente depende del precio.
+    const calm = (price: number): FundamentalInput => ({
+      ...anchored(price),
+      forwardEps: 4,
+      forwardEpsAlt: 3.9,
+      sharesOutstanding: 5e7,
+    });
     const fvs = [120, 187.9, 192.58, 250, 300].map(
-      (p) => computeFairValue(anchored(p)).fairValue
+      (p) => computeFairValue(calm(p)).fairValue
     );
     expect(fvs.every((v) => v != null)).toBe(true);
     expect(new Set(fvs).size).toBe(1);
+  });
+
+  it('con el tope sectorial activo el FV se mueve CONTINUO, sin el salto del artefacto', () => {
+    // El fixture original cotiza a P/E propio 5,6–14 contra un
+    // múltiplo de tabla de 20: el tope R9 ata y el componente de
+    // múltiplos sigue al precio de forma proporcional y continua. Lo
+    // que no puede volver es el SALTO discreto al cruzar un umbral.
+    const prices = [120, 187.9, 192.58, 250, 300];
+    const fvs = prices.map((p) => computeFairValue(anchored(p)).fairValue ?? NaN);
+    expect(fvs.every((v) => Number.isFinite(v))).toBe(true);
+    for (let i = 1; i < fvs.length; i++) {
+      expect(fvs[i]).toBeGreaterThan(fvs[i - 1]);
+      // Continuidad: entre precios cercanos (187,9 → 192,58, +2,5%) el
+      // FV no puede saltar más que unos pocos puntos porcentuales.
+      if (prices[i] / prices[i - 1] < 1.05) {
+        expect(fvs[i] / fvs[i - 1]).toBeLessThan(1.1);
+      }
+    }
   });
 });

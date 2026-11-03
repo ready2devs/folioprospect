@@ -252,6 +252,12 @@ export interface FairValueResult {
    *  escalón la confianza que usa y anulando el crecimiento de EPS de
    *  Grinold-Kroner (pase correctivo RE, D). */
   epsSignDisagreement?: boolean;
+  /** Tripwire de plausibilidad (R9): el FV final supera 2× el target de
+   *  consenso o 2,5× el precio. No cambia el número: lo señala, fuerza
+   *  confianza Baja y la capa de RE converge al piso del rango. */
+  fvModelSuspect?: boolean;
+  /** Componente que domina la desviación cuando fvModelSuspect. */
+  fvSuspectDominant?: 'dcf' | 'multiples' | 'target' | null;
   /** Peso efectivo de cada componente en el Fair Value (alineado con
    *  fvComponents): ponderación por calidad medible del dato con ratio
    *  acotado [0,5×, 2×] el peso igualitario. */

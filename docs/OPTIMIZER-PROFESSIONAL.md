@@ -150,6 +150,14 @@ motor detrás.
 
 ## §12 — Pase correctivo de la capa de retorno esperado (2026-11-03)
 
+> **Nota de vigencia (§13):** la calibración de A (piso del rango como
+> regla general para Baja) y de B (topes +35/+28/+18) de esta sección
+> fue SUPERADA el mismo día por el desapilado de §13: la prudencia vive
+> una sola vez, dentro del FV (anclajes R9), y en la capa de RE quedan
+> la convergencia al FV encogido, el piso solo bajo `modelSuspect` y
+> topes +35/+30/+25. Los ítems C (castigo al DCF emergente) y D
+> (desacuerdo de signo del EPS) rigen tal como están escritos acá.
+
 **Diagnóstico (captura del usuario, 2026-11-03 03:19).** Con el pase
 profesional ya en producción, la columna 1 (ordenada por tiempo a
 duplicar) quedó encabezada por NBIS (RE 24,9%, duplica en 3,1 años) y
@@ -248,3 +256,59 @@ de C, que es un parámetro del FV documentado arriba).
 - Ventana de examen de 5 días hábiles: una semana de trading; es el
   horizonte en el que «esperar el número» no cuesta casi nada y
   comprarlo/venderlo antes es pura apuesta al resultado.
+
+## §13 — Fase 2: anclajes de componentes y desapilado del conservadurismo (2026-11-03)
+
+**Disparador.** El usuario auditó el FV de VIST contra valores reales
+(precio 66,89; EPS forward de consenso ~9,2–12,5; target de consenso
+95,40 con 12 analistas; P/E forward real 5,3–7,2×) y el motor imprimía
+346,24: el problema de fondo estaba en los COMPONENTES del FV, no solo
+en la capa de RE. Los anclajes generales están en
+`docs/VALUATION-RULES.md` (adenda R9): múltiplo con tope sectorial,
+target que nunca vive ni se recorta por encima del máximo de su
+consenso, referencia de banda robusta a outliers, base del DCF
+normalizada en cíclicas (incluido el arreglo del parser EDGAR para
+emisores IFRS, cuya serie de FCF salía vacía) y tripwire
+`modelSuspect`.
+
+**Ponderación (directivas del usuario, mismo día).** El target de
+analistas LIDERA el FV (calidad hasta 1,0 con ≥5 analistas y
+dispersión moderada ⇒ ~48–50% del peso): es el promedio de muchas
+estimaciones independientes y, por la ley de los grandes números, se
+acerca al valor real más que cualquier modelo propio. El DCF sobre
+flujos reportados es el CONTRAPESO conservador designado y pesa más
+que los múltiplos (calidades 0,65/0,55/0,40/0,35/0,30 según la serie),
+porque el múltiplo sobre EPS forward es el insumo más exuberante de
+los tres. Caso típico de cobertura completa: ~50% target / ~30% DCF /
+~20% múltiplos. Sin target, DCF y múltiplos se reparten como antes,
+con el DCF arriba.
+
+**Desapilado (esta sección).** La primera versión del pase correctivo
+(§12) cobraba la prudencia dos y tres veces: FV encogido + convergencia
+al piso del rango para todo Baja + topes de RE angostos; el RE
+geométrico de cartera cayó de 11,8% a 8,3% (8,7 años a duplicar) y la
+propuesta se escaló mecánicamente a vender posiciones sanas. Con los
+FV ya anclados en la realidad, la capa de RE vuelve a una sola capa de
+prudencia, por honestidad de calibración:
+
+- Convergencia: al FV encogido por confianza (Alta ×1,0 / Media ×0,7 /
+  Baja ×0,4), como en el diseño profesional original.
+- El piso del rango SOLO gobierna cuando el tripwire `modelSuspect`
+  disparó (FV > 2× target o > 2,5× precio): ahí el número puntual
+  demostró ser increíble y se converge al escenario conservador que
+  el propio motor publica como rango.
+- Topes de RE por confianza en una sola capa: Alta +35% / Media +30% /
+  Baja +25%.
+- Se mantienen de §12: el castigo al DCF emergente (haircut ×0,75 y
+  calidad 0,30) y el desacuerdo de signo del EPS (un escalón menos de
+  confianza para RE y GK sin crecimiento de EPS).
+
+**Sin mandato de años en el sistema.** El usuario declaró su objetivo
+personal de duplicación (≤5 años) y corrigió explícitamente que es un
+mandato PARA ÉL, no para la aplicación: FolioProspect la puede usar
+cualquiera, cada usuario con sus propios tiempos según su análisis
+riesgo/beneficio y su aversión al riesgo. El Optimizador NO lleva
+ninguna meta de años embebida: el tiempo a duplicar es un resultado
+calculado que se reporta como hecho, sin veredicto contra ninguna
+meta fija. (Si algún día existe, será una preferencia configurable
+por usuario; fuera de alcance.)

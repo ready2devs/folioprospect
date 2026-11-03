@@ -22,16 +22,20 @@
  * brecha): una valuación frágil no puede liderar el ranking ni recibir
  * fondos como si fuera sólida.
  *
- * Pase correctivo de la capa de RE (2026-11-03, docs §12): el shrinkage
- * lineal no alcanzaba para brechas extremas de confianza Baja — VIST
- * conservaba +139% de brecha encogida y NBIS el RE más alto de la
- * cartera con valuaciones Baja. Ahora: (A) con confianza Baja la
- * convergencia apunta al PISO del rango de valuación (no a un % del
- * número puntual); (B) el RE final tiene tope por confianza
- * (Alta +35% · Media +28% · Baja +18%); (D) si las fuentes del EPS
- * forward discrepan en el signo, la confianza que usa ESTA capa baja un
- * escalón más y Grinold-Kroner no puede usar crecimiento de EPS. El FV
- * titular no cambia (R0): cambia la estimación de retorno que se deriva.
+ * Pase correctivo de la capa de RE (2026-11-03, docs §12) y su
+ * recalibración por desapilado (docs §13): la primera versión cobraba
+ * la prudencia dos y tres veces (FV encogido + convergencia al piso
+ * para todo Baja + topes angostos) y hundía el RE de cartera a 8,3%.
+ * Con los FV anclados en la realidad (adenda R9 de valuación: target
+ * líder acotado a su consenso, DCF contrapeso, múltiplo con tope
+ * sectorial), la prudencia vive UNA SOLA VEZ: (A) la convergencia usa
+ * el FV encogido por confianza, y el PISO del rango solo gobierna
+ * cuando el tripwire `modelSuspect` de la valuación disparó; (B) el RE
+ * final tiene tope por confianza en una sola capa (Alta +35% · Media
+ * +30% · Baja +25%); (D) si las fuentes del EPS forward discrepan en
+ * el signo, la confianza que usa ESTA capa baja un escalón más y
+ * Grinold-Kroner no puede usar crecimiento de EPS. El FV titular no
+ * cambia por esta capa (R0): cambia la estimación de retorno derivada.
  * A nivel cartera el RE es GEOMÉTRICO: se
  * resta el arrastre de volatilidad σ²/2 (Invesco CMA). El riesgo usa
  * matriz de correlaciones por bloques (aproximación documentada) y
@@ -107,11 +111,16 @@ export interface OptimizerAssetInput {
   /** EPS de mitad de ciclo usado en la normalización (trazabilidad). */
   midCycleEps?: number | null;
   /** Rango [piso, techo] de los componentes del FV (motor de valuación,
-   *  valores crudos). Con confianza Baja la convergencia apunta al piso:
-   *  un profesional no anualiza un % del número puntual de una valuación
-   *  frágil, converge a su escenario conservador (pase correctivo A). */
+   *  valores crudos). Su piso solo gobierna la convergencia cuando el
+   *  tripwire `modelSuspect` de la valuación disparó (desapilado 2026-11-03,
+   *  §13 del doc profesional): la prudencia vive una sola vez, en el FV. */
   fvRangeLow?: number | null;
   fvRangeHigh?: number | null;
+  /** El motor de valuación marcó el FV como sospechoso (FV > 2× el
+   *  target de consenso o > 2,5× el precio, R9): solo entonces la
+   *  convergencia del RE apunta al piso del rango en vez del FV
+   *  encogido por confianza. */
+  fvModelSuspect?: boolean;
   /** Las fuentes directas del EPS forward discrepan en el signo en el
    *  mismo refresco (consenso ≈ break-even): la confianza de la capa de
    *  RE baja un escalón adicional y GK pierde el crecimiento de EPS
@@ -203,9 +212,12 @@ export interface AssetScore {
   earningsGate: { date: string; businessDays: number } | null;
   cyclicalNormalized: boolean;
   dilutionPct: number | null;
-  /** La convergencia usó el destino conservador de confianza Baja
-   *  (piso del rango, o respaldo k=0,25 sin rango): pase correctivo A. */
+  /** La convergencia usó el destino conservador (piso del rango, o
+   *  respaldo k=0,25 sin rango) porque el FV está marcado sospechoso
+   *  por el tripwire de plausibilidad (desapilado §13). */
   conservativeConvergence: boolean;
+  /** El FV trae la marca `modelSuspect` del motor de valuación (R9). */
+  modelSuspect: boolean;
   /** Desacuerdo de signo entre fuentes del EPS forward (pase D). */
   epsSignDisagreement: boolean;
 }
@@ -417,37 +429,39 @@ export function reConfidenceFor(a: OptimizerAssetInput): ValuationConfidence {
 }
 
 /** Tope del retorno esperado final según la confianza de la capa de RE
- *  (pase correctivo B). Calibración profesional: el conservadurismo
- *  crece con la incertidumbre de la valuación — ningún RE de confianza
- *  Baja supera +18% anual, por alto que sea el blend crudo; el +35% de
- *  Alta es el techo histórico del motor. */
+ *  (pase correctivo B, recalibrado en el desapilado §13). Calibración
+ *  profesional: el conservadurismo crece con la incertidumbre de la
+ *  valuación, pero vive en UNA sola capa — los FV ya nacen prudentes
+ *  (target líder acotado a su consenso, DCF contrapeso, múltiplo con
+ *  tope sectorial), así que los topes son amplios: Alta +35%, Media
+ *  +30%, Baja +25%. */
 export const RE_CONFIDENCE_CAP_PCT: Record<ValuationConfidence, number> = {
   Alta: 35,
-  Media: 28,
-  Baja: 18,
+  Media: 30,
+  Baja: 25,
 };
 
 /** Destino al que converge el componente de convergencia del RE
- *  (pase correctivo A):
- *  - Alta: el FV encogido actual (k=1,0 — el FV pelado).
- *  - Media: el FV encogido (k=0,7).
- *  - Baja: el MENOR entre el FV encogido (k=0,4) y el PISO del rango de
- *    valuación: ante una valuación frágil no se anualiza un % del
- *    número puntual, se converge al escenario conservador que el propio
- *    motor publicó como rango. Sin rango disponible, respaldo k=0,25.
- *  `conservative` marca cuándo gobernó la regla de Baja. */
+ *  (desapilado §13 — la prudencia vive una sola vez, dentro del FV):
+ *  - Regla general: el FV encogido por confianza (Alta k=1,0; Media
+ *    k=0,7; Baja k=0,4), como en el diseño profesional original.
+ *  - SOLO si el tripwire `modelSuspect` de la valuación disparó
+ *    (FV > 2× target o > 2,5× precio): el MENOR entre ese encogido y el
+ *    PISO del rango de valuación — ahí sí el número puntual demostró
+ *    ser increíble y se converge al escenario conservador que el
+ *    propio motor publicó como rango. Sin rango, respaldo k=0,25.
+ *  `conservative` marca cuándo gobernó el tripwire. */
 export function convergenceTargetFor(
   price: number,
   fvBase: number | null | undefined,
   reConf: ValuationConfidence,
-  fvRangeLow: number | null | undefined
+  fvRangeLow: number | null | undefined,
+  modelSuspect?: boolean
 ): { target: number; conservative: boolean } | null {
   if (fvBase == null || !(fvBase > 0) || !(price > 0)) return null;
-  if (reConf !== 'Baja') {
-    const t = shrunkFairValue(price, fvBase, reConf);
-    return t != null ? { target: t, conservative: false } : null;
-  }
-  const shrunk = price + (fvBase - price) * FV_CONFIDENCE_SHRINK.Baja;
+  const shrunk = shrunkFairValue(price, fvBase, reConf);
+  if (shrunk == null) return null;
+  if (!modelSuspect) return { target: shrunk, conservative: false };
   if (fvRangeLow != null && fvRangeLow > 0) {
     return { target: Math.min(shrunk, fvRangeLow), conservative: true };
   }
@@ -552,10 +566,16 @@ export function scoreAsset(
   } else {
     gk = grinoldKroner(a);
     // La convergencia cree la brecha solo en proporción a la confianza
-    // de la valuación (shrinkage): el FV crudo queda para la ficha. Con
-    // confianza de capa RE = Baja, el destino deja de ser un % del
-    // número puntual y pasa a ser el piso del rango (pase correctivo A).
-    const convTarget = convergenceTargetFor(a.price, a.fvBase, reConf, a.fvRangeLow);
+    // de la valuación (shrinkage): el FV crudo queda para la ficha.
+    // Solo con el FV marcado sospechoso (tripwire R9) el destino baja
+    // al piso del rango (desapilado §13).
+    const convTarget = convergenceTargetFor(
+      a.price,
+      a.fvBase,
+      reConf,
+      a.fvRangeLow,
+      a.fvModelSuspect ?? false
+    );
     conservativeConvergence = convTarget?.conservative ?? false;
     fv =
       convTarget != null
@@ -670,6 +690,7 @@ export function scoreAsset(
     cyclicalNormalized: !!a.cyclicalNormalized,
     dilutionPct: a.dilutionPct ?? null,
     conservativeConvergence,
+    modelSuspect: !!a.fvModelSuspect,
     epsSignDisagreement: !!a.epsSignDisagreement,
   };
 }
@@ -1165,7 +1186,7 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
-        conservativeConvergence: false, epsSignDisagreement: false,
+        conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
       });
     }
     const finalAssets = [...finalMap.values()].sort(
@@ -1187,7 +1208,7 @@ export function optimizePortfolio(
         fvRaw: null, fvEffective: null, fvConfidence: null, fvComponentCount: null,
         fvToPrice: null, destinationEligible: false, thesisSignals: [],
         earningsGate: null, cyclicalNormalized: false, dilutionPct: null,
-        conservativeConvergence: false, epsSignDisagreement: false,
+        conservativeConvergence: false, modelSuspect: false, epsSignDisagreement: false,
       });
     }
     finalAssets.forEach((a) => {

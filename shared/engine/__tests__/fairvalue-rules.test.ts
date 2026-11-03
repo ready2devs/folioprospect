@@ -31,25 +31,39 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       trailingEps: 6.1,
       earningsGrowth: 0.08,
       moatMultiple: 26,
+      // Prima Wide que computeFairValue pasa para un moat de 26× (R9).
+      moatPremium: 1.5,
     });
     // Fuentes plausibles: 6,70 (Finviz) y 6,588 (trailing × crecimiento).
     expect(ev.epsUsed).toBeCloseTo(6.644, 2);
-    expect(ev.value).toBeCloseTo(172.74, 1);
+    // Tope sectorial (R9): el P/E propio recomputado es 67/6,644 = 10,08;
+    // con prima Wide 1,5 el múltiplo aplicado es 15,13 (no 26) y el
+    // componente queda en la zona del mercado (~100, no 172,74).
+    expect(ev.multipleCap).toBeCloseTo(15.13, 1);
+    expect(ev.value).toBeCloseTo(100.5, 0);
+    expect(ev.flags).toContain('sectorCappedMultiple');
     expect(ev.flags).toContain('repairedFromSources');
     expect(ev.excluded).toBeNull();
     expect(ev.provenance.originalEps).toBeCloseTo(216.13, 2);
     expect(ev.provenance.sources).toContain('finvizImpliedEps');
 
     // Y el FV resultante nunca es el 409,90 del régimen anterior: el DCF
-    // gigante entra winsorizado y el target se levanta al borde inferior.
+    // gigante entra winsorizado, y el target YA NO se levanta — la
+    // referencia robusta excluye al DCF extremo del cálculo de bandas
+    // ajenas (R9). El tripwire marca el modelo sospechoso (FV > 2,5×
+    // precio) con el DCF como componente dominante.
     const agg = aggregateFairValue(
       [C('dcf', 724.3), C('multiples', ev.value ?? 0), C('target', 95.44)],
       { currentPrice: 67 }
     );
     expect(agg.fairValue).not.toBeCloseTo(409.9, 0);
-    expect(agg.fairValue).toBeCloseTo(251.4, 0);
     expect(agg.excluded).toHaveLength(0);
-    expect(agg.winsorized.map((w) => w.component).sort()).toEqual(['dcf', 'target']);
+    expect(agg.winsorized.map((w) => w.component)).toEqual(['dcf']);
+    expect(agg.components.find((c) => c.key === 'target')?.value).toBe(95.44);
+    expect(agg.referenceOutliers).toEqual(['dcf']);
+    expect(agg.flags).toContain('modelSuspect');
+    expect(agg.modelSuspectDominant).toBe('dcf');
+    expect(agg.confidence).toBe('Baja');
   });
 
   it('VIST sin primitiva: el EPS derivado del ratio publicado también se repara', () => {
@@ -62,8 +76,9 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       trailingEps: 6.1,
       earningsGrowth: 0.08,
       moatMultiple: 26,
+      moatPremium: 1.5,
     });
-    expect(ev.value).toBeCloseTo(172.74, 1);
+    expect(ev.value).toBeCloseTo(100.5, 0);
     expect(ev.flags).toContain('unconfirmedEps');
     expect(ev.flags).toContain('repairedFromSources');
   });
@@ -82,7 +97,12 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
     expect(ev.flags).toContain('extremeYieldConfirmed');
     expect(ev.excluded).toBeNull();
     expect(ev.epsUsed).toBeCloseTo(5.52, 2);
-    expect(ev.value).toBeCloseTo(82.8, 1);
+    // Tope sectorial (R9): el P/E propio recomputado es 12,29/5,52 =
+    // 2,23 — un múltiplo de tabla de 15× sobre ese papel es indefendible;
+    // sin prima declarada el componente queda en el precio (×1).
+    expect(ev.flags).toContain('sectorCappedMultiple');
+    expect(ev.multipleUsed).toBeCloseTo(2.23, 1);
+    expect(ev.value).toBeCloseTo(12.29, 1);
   });
 
   it('MU: desacuerdo entre fuentes ⇒ mediana de fuentes; el componente entra (no se rechaza)', () => {
@@ -98,7 +118,12 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       moatMultiple: 26,
     });
     expect(ev.epsUsed).toBeCloseTo(190, 6);
-    expect(ev.value).toBeCloseTo(4940, 6);
+    // Tope sectorial (R9): P/E propio 833,59/190 = 4,39; crecimiento
+    // 50% ⇒ prima de crecimiento máxima (+40%): múltiplo aplicado
+    // 6,14 y componente 1.167 (no los 4.940 del múltiplo de tabla 26×).
+    expect(ev.flags).toContain('sectorCappedMultiple');
+    expect(ev.multipleUsed).toBeCloseTo(6.14, 1);
+    expect(ev.value).toBeCloseTo(1167.03, 1);
     expect(ev.flags).toContain('repairedFromSources');
     expect(ev.excluded).toBeNull();
   });
@@ -110,7 +135,11 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       forwardEps: 207.8,
       moatMultiple: 26,
     });
-    expect(ev.value).toBeCloseTo(5402.8, 1);
+    // Con el tope sectorial (R9) el componente queda en el propio
+    // precio: el mercado paga 4,01× y ningún múltiplo de tabla lo
+    // multiplica por 6,5 sin referencia sectorial que lo sostenga.
+    expect(ev.value).toBeCloseTo(833.59, 1);
+    expect(ev.flags).toContain('sectorCappedMultiple');
     expect(ev.flags).toContain('extremeYieldCaution');
     expect(ev.excluded).toBeNull();
   });
@@ -123,7 +152,11 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       forwardEpsAltSource: 'finviz',
       moatMultiple: 15,
     });
-    expect(ev.value).toBeCloseTo(292.5, 6);
+    // EPS 19,5 a precio 50 ⇒ P/E propio 2,56: el tope sectorial (R9)
+    // deja el componente en el precio (el yield extremo queda
+    // documentado por el flag, no amplificado por el múltiplo).
+    expect(ev.value).toBeCloseTo(50, 6);
+    expect(ev.flags).toContain('sectorCappedMultiple');
     expect(ev.flags).toContain('extremeYieldConfirmed');
     expect(ev.excluded).toBeNull();
   });
@@ -167,7 +200,9 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
       forwardEps: 16,
       moatMultiple: 20,
     });
-    expect(ev.value).toBe(320);
+    // P/E propio 6,25 ⇒ tope sectorial (R9): componente = precio.
+    expect(ev.value).toBe(100);
+    expect(ev.flags).toContain('sectorCappedMultiple');
     expect(ev.flags).toContain('extremeYieldCaution');
   });
 
@@ -180,7 +215,10 @@ describe('reparación del EPS forward (cadena multifuente)', () => {
     });
     // EPS derivado: 4 × 1,25 = 5 (último EPS anual auditado × crecimiento).
     expect(ev.epsUsed).toBeCloseTo(5, 6);
-    expect(ev.value).toBeCloseTo(100, 6);
+    // Tope sectorial (R9): P/E propio 10 × prima de crecimiento (25%
+    // ⇒ +15%) = 11,5 ⇒ componente 57,5 (no 5 × 20 de tabla).
+    expect(ev.value).toBeCloseTo(57.5, 6);
+    expect(ev.flags).toContain('sectorCappedMultiple');
     expect(ev.flags).toContain('derivedFromFilings');
     expect(ev.flags).toContain('singleSource');
     expect(ev.excluded).toBeNull();
@@ -240,11 +278,18 @@ describe('agregación por promedio winsorizado', () => {
       { currentPrice: 1900 }
     );
     expect(agg.excluded).toHaveLength(0);
-    expect(agg.winsorized.map((w) => w.component).sort()).toEqual(['dcf', 'multiples']);
+    // Referencia robusta (R9): el DCF es un outlier contra la mediana
+    // (9.758 > 3,5 × 2.272) y ya NO arrastra el piso que recortaba a
+    // los múltiplos sanos — estos entran con su valor, sin levantarse.
+    // Solo el propio DCF se winsoriza contra los otros dos.
+    expect(agg.referenceOutliers).toEqual(['dcf']);
+    expect(agg.flags).toContain('referenceOutlierExcluded');
+    expect(agg.winsorized.map((w) => w.component)).toEqual(['dcf']);
     const dcfW = agg.winsorized.find((w) => w.component === 'dcf');
     expect(dcfW?.originalValue).toBe(9758.77);
     expect(dcfW?.clippedValue).toBeCloseTo(5932.19, 1);
-    expect(agg.fairValue).toBeCloseTo(3235.99, 1);
+    expect(agg.components.find((c) => c.key === 'multiples')?.value).toBe(1117.89);
+    expect(agg.fairValue).toBeCloseTo(3107.34, 1);
     expect(Number.isFinite(agg.fairValue ?? NaN)).toBe(true);
   });
 
@@ -286,9 +331,13 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
   };
 
   it('con ≥3 años, la base es la mediana de la serie (no el TTM inflado)', () => {
-    const ttm = computeFairValue({ ...baseInput, freeCashflow: 500 });
+    // sharesOutstanding amplio: el yield TTM queda en 5% y no dispara
+    // la normalización cíclica de la base (R9) — este test compara
+    // mediana contra TTM pelado.
+    const ttm = computeFairValue({ ...baseInput, sharesOutstanding: 100, freeCashflow: 500 });
     const withHistory = computeFairValue({
       ...baseInput,
+      sharesOutstanding: 100,
       freeCashflow: 999,
       fcfHistory: [600, 500, 400],
     });
@@ -335,8 +384,10 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
   });
 
   it('serie de menos de 3 años: fallback uniforme a la base TTM, sin flags', () => {
+    // Yield TTM de 5% (sin pico de ciclo): la base entra pelada.
     const r = computeFairValue({
       ...baseInput,
+      sharesOutstanding: 100,
       freeCashflow: 500,
       fcfHistory: [700],
     });
@@ -344,6 +395,7 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
     expect(prov?.usedValue).toBe(500);
     expect(prov?.sources).toEqual(['ttm']);
     expect(r.fvFlags).not.toContain('normalizedBase');
+    expect(r.fvFlags).not.toContain('cyclicalBaseHaircut');
   });
 
   it('target: promedia las fuentes disponibles (Yahoo + Finviz)', () => {

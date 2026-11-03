@@ -51,14 +51,15 @@ describe('DCF emergente castigado (C)', () => {
     expect(emerging.dcfValue!).toBeCloseTo(0.75 * fullBase.dcfValue!, 4);
   });
 
-  it('la calidad del DCF emergente baja al piso del sistema (peso efectivo < 0,19 con 3 componentes)', () => {
+  it('la calidad del DCF emergente es el piso de la escala de ponderación (R9)', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 100,
       fcfHistory: [100, -50, -200],
-      // Múltiplos con 2 grupos directos independientes (calidad 1) y
-      // target de una sola fuente (calidad 0,8): con calidad DCF 0,30 el
-      // peso normalizado del DCF queda ≈0,163; con la vieja 0,45 sería 0,20.
+      // Escala de ponderación vigente (directivas 2026-11-03): múltiplos
+      // con 2 grupos directos → 0,45; target de una fuente sin conteo
+      // de analistas → 0,45; DCF emergente → 0,30 (el piso). Pesos
+      // resultantes: [0,25, 0,375, 0,375] — el emergente es el menor.
       forwardEps: 5,
       forwardEpsAlt: 5,
       forwardEpsAltSource: 'finviz' as const,
@@ -68,8 +69,8 @@ describe('DCF emergente castigado (C)', () => {
     const w = r.fvComponentWeights ?? [];
     expect(w).toHaveLength(3);
     // Orden del pool: dcf, múltiplos, target.
-    expect(w[0]).toBeLessThan(0.19);
-    expect(w[0]).toBeGreaterThan(0.14);
+    expect(w[0]).toBeCloseTo(0.25, 6);
+    expect(w[0]).toBeLessThan(w[1]);
     expect(w.reduce((s, x) => s + x, 0)).toBeCloseTo(1, 6);
   });
 });

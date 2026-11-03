@@ -1419,6 +1419,12 @@ export async function fetchFundamentals(
             currentPrice: fd.currentPrice?.raw ?? currentPrice,
             targetMeanPrice: fd.targetMeanPrice?.raw ?? null,
             targetMedianPrice: fd.targetMedianPrice?.raw ?? null,
+            // Rango y cobertura del consenso (R9 + ponderación): el
+            // componente target se ancla dentro de [low, high] y su
+            // peso escala con la cantidad de analistas.
+            targetHighPrice: fd.targetHighPrice?.raw ?? null,
+            targetLowPrice: fd.targetLowPrice?.raw ?? null,
+            analystCount: fd.numberOfAnalystOpinions?.raw ?? null,
             freeCashflow: fd.freeCashflow?.raw ?? null,
             operatingCashflow: fd.operatingCashflow?.raw ?? null,
             totalCash: fd.totalCash?.raw ?? null,

@@ -268,3 +268,86 @@ nada por ticker):
   serie más larga») alternaba de fuente entre capturas cuando Yahoo
   variaba su cobertura, y el FV de algunos activos (MELI) oscilaba sin
   que cambiara ningún fundamento.
+
+## R9 — Adenda 2026-11-03 (tarde): anclajes de realidad y ponderación
+
+Disparador: la auditoría del usuario sobre VIST. Sus datos eran reales
+(EPS forward reparado 10,40 ≈ consenso publicado 9,2–12,5; target del
+motor 95,46 ≈ consenso 95,40 de 12 analistas) y sin embargo el FV
+salía 346,24. Tres defectos generales, ninguno del dato:
+
+1. **Múltiplo ciego al sector.** El componente era EPS × 26 (tabla por
+   moat «Wide») para una petrolera E&P que el mercado paga 5–7×.
+   Regla: el múltiplo aplicado queda acotado por una referencia
+   sectorial — el P/E forward de la industria/pares si la capa de
+   datos lo provee (`industryForwardPe`, hoy sin plomería: brecha
+   documentada); si no, el P/E forward RECOMPUTADO del propio activo
+   (precio ÷ EPS reparado). Sobre la referencia se admite una prima
+   por moat (Wide ×1,5 · Narrow ×1,25 · None ×1,0) y una prima por
+   crecimiento documentada en el propio cálculo (crecimiento de
+   ganancias por encima de 10% anual suma hasta +40%). El tope solo
+   baja el múltiplo de tabla, nunca lo sube. Flag
+   `sectorCappedMultiple`; la evaluación expone `multipleUsed` y
+   `multipleCap`. Efecto tipo: VIST ≈ 10,40 × 9,7 ≈ US$100 (antes 270).
+2. **Winsorización que fabricaba valor hacia arriba.** El target de
+   VIST fue recortado HACIA ARRIBA de 97,48 a 124,35 — por encima del
+   máximo de cualquier analista (95) — porque el piso de la banda lo
+   medía contra el promedio de dos componentes fantasía. Doble
+   corrección: (a) el componente target vive SIEMPRE dentro del rango
+   publicado del consenso [low, high] (se recorta en la construcción,
+   flag `targetClampedToConsensus`) y la agregación respeta un techo
+   duro (`clipCeiling` = máximo del consenso): ningún recorte lo
+   levanta por encima de la estimación más optimista que lo compone;
+   (b) la referencia de la banda es ROBUSTA: un componente extremo
+   contra la mediana del pool (>3,5× o <0,25×) sigue entrando al
+   promedio winsorizado como siempre, pero deja de arrastrar el
+   piso/techo que recorta a los demás (flag `referenceOutlierExcluded`
+   y campo `referenceOutliers`). Es el espejo del caso MELI, donde un
+   DCF gigante levantaba el piso y expulsaba a los múltiplos sanos.
+   Nota de doctrina: con estas dos cotas (y el haircut del punto 3)
+   dos componentes pasan a ser relativos al mercado de forma
+   CONTINUA — no hay saltos al cruzar umbrales; la banda en sí sigue
+   midiéndose contra los otros componentes, nunca contra el precio.
+3. **DCF sobre FCF de pico sin normalizar.** El DCF de VIST (724,30)
+   extrapolaba un FCF TTM con yield ~23%. Regla: la normalización
+   cíclica aplica también a la BASE — con serie ≥3 años ya manda la
+   mediana; sin serie, la base TTM entra con haircut progresivo y
+   continuo según su yield: factor = min(1, 12/yield) con piso 0,40
+   (a yield 20% ⇒ 0,60; a 30% ⇒ 0,40), flag `cyclicalBaseHaircut`.
+   Además se encontró la causa de que la serie de VIST saliera vacía:
+   Vista reporta 20-F en IFRS y su capex se etiqueta
+   `PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities`,
+   un nombre de concepto que el parser no conocía (idem la variante
+   sin «Plant»; y el EPS IFRS `DilutedEarningsLossPerShare` /
+   `BasicEarningsLossPerShare`). Agregados como conceptos generales:
+   la serie auditada de VIST es [−93,5 · +23,6 · +210,7 · +80,1 ·
+   −59,5] US$M (2024→2020) y su DCF pasa a anclarse en la mediana real
+   — chica, porque la empresa reinvirtió todo su flujo hasta 2024: el
+   DCF cumple así su rol de contrapeso conservador (ver ponderación).
+4. **Tripwire de plausibilidad `modelSuspect`.** Si el FV final supera
+   2× el target de consenso del pool o 2,5× el precio: flag
+   `modelSuspect`, confianza forzada a Baja y constancia en la
+   procedencia del componente que domina la desviación
+   (`dominantDeviation`, campo `modelSuspectDominant`). No cambia el
+   número: lo señala. La capa de RE lo consume convergiendo al piso
+   del rango (único caso en que el piso gobierna: ver
+   OPTIMIZER-PROFESSIONAL.md §13).
+
+**Ponderación (directivas del usuario, 2026-11-03).** «Dale más bola
+al estimado promedio de analistas, que tan malos no son»: el TARGET es
+el componente de mayor peso cuando su cobertura es razonable, porque
+es el promedio de muchas estimaciones independientes — la misma
+doctrina R0 de ampliar la muestra aplicada a la ponderación. Escala de
+calidades vigente: target ≥5 analistas y dispersión (high−low)/media
+≤ 0,6 ⇒ 1,0 (dispersión alta ⇒ 0,85); 3–4 analistas ⇒ 0,8; 1–2
+analistas o fuente única sin conteo ⇒ 0,45 (nunca dominante); 2+
+fuentes sin conteo ⇒ 0,8. DCF (contrapeso conservador designado:
+flujos de períodos reportados, base mediana, sin consenso): serie
+≥5 años ⇒ 0,65; 3–4 ⇒ 0,55; foto TTM ⇒ 0,40; derivado de estados
+anuales ⇒ 0,35; emergente ⇒ 0,30. Múltiplos (el insumo más
+exuberante: EPS forward × múltiplo): 2 proveedores directos ⇒ 0,45;
+1 ⇒ 0,35; solo derivado ⇒ 0,30. Caso típico de cobertura completa:
+~50% target / ~30% DCF / ~20% múltiplos. Sin target en ninguna
+fuente, DCF y múltiplos se reparten el total como siempre (R0).
+La frescura del target no está disponible en las fuentes actuales:
+escala por cobertura y dispersión solamente (brecha documentada).

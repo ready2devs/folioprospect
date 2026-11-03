@@ -260,10 +260,13 @@ async function buildAssetInput(
       analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
       fvConfidence: fvConfidenceUsed,
       fvComponentCount: fvComponentCountUsed,
-      // Piso del rango del FV: destino conservador de la convergencia
-      // cuando la confianza es Baja (pase correctivo RE, A).
+      // Piso/techo del rango del FV: el piso gobierna la convergencia
+      // solo si el tripwire modelSuspect disparó (desapilado §13).
       fvRangeLow: fvRangeUsed?.[0] ?? null,
       fvRangeHigh: fvRangeUsed?.[1] ?? null,
+      // Tripwire de plausibilidad del FV (R9): FV > 2× target o > 2,5×
+      // precio. La marca vive en los flags de la agregación.
+      fvModelSuspect: (fv.fvFlags ?? []).includes('modelSuspect'),
       // Desacuerdo de signo entre fuentes del EPS forward (pase D).
       epsSignDisagreement: fv.epsSignDisagreement ?? false,
       forwardEpsUsed,

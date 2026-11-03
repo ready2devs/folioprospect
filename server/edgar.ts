@@ -56,7 +56,18 @@ interface FactValue {
 }
 
 const OCF_CONCEPTS = ['NetCashProvidedByUsedInOperatingActivities', 'CashFlowsFromUsedInOperatingActivities'];
-const CAPEX_CONCEPTS = ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets', 'PurchaseOfPropertyAndEquipment'];
+const CAPEX_CONCEPTS = [
+  'PaymentsToAcquirePropertyPlantAndEquipment',
+  'PaymentsToAcquireProductiveAssets',
+  'PurchaseOfPropertyAndEquipment',
+  // Variantes IFRS (emisores 20-F que reportan en ifrs-full): el mismo
+  // concepto con el sufijo de clasificación del estado de flujos. Sin
+  // este nombre, la serie de FCF de emisores IFRS (p. ej. petroleras
+  // latinoamericanas) salía vacía y el DCF caía a la foto TTM sin
+  // normalizar — la serie existe en EDGAR desde 2019 (adenda R9).
+  'PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities',
+  'PurchaseOfPropertyAndEquipmentClassifiedAsInvestingActivities',
+];
 const CASH_CONCEPTS = ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalents'];
 
 /** Último instante de balance en USD + tasa implícita contra la otra moneda. */
@@ -235,7 +246,14 @@ export function parseEdgarSeries(factsJson: any): EdgarSeries | null {
   // unidad equivocada dejaba la serie vacía para todos los emisores
   // (bug detectado al auditar la normalización cíclica del Optimizador:
   // sin serie de EPS no hay EPS de mitad de ciclo posible).
-  const EPS_CONCEPTS = ['EarningsPerShareDiluted', 'EarningsPerShareBasic'];
+  // US-GAAP e IFRS: los emisores 20-F nombran el EPS «EarningsLossPerShare»
+  // (la taxonomía IFRS no distingue ganancia/pérdida en el nombre corto).
+  const EPS_CONCEPTS = [
+    'EarningsPerShareDiluted',
+    'EarningsPerShareBasic',
+    'DilutedEarningsLossPerShare',
+    'BasicEarningsLossPerShare',
+  ];
   const epsByShare = annualSeriesUsd(facts, EPS_CONCEPTS, ['us-gaap', 'ifrs-full'], 'USD/shares');
   const epsPts =
     epsByShare.length > 0
