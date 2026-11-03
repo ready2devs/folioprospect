@@ -1361,7 +1361,7 @@ export function optimizePortfolio(
   );
   const cashNote =
     cashHeldUsd >= opts.minTradeUsd
-      ? 'Sin destino que supere el listón (score de al menos 65, valor justo de al menos dos métodos y sin examen de balance próximo): el resto queda en efectivo a la espera de mejores precios o de los exámenes.'
+      ? 'Sin destino que supere el listón (score de al menos 65, valor justo formado por las dos estimaciones —fórmula y consenso— y sin examen de balance próximo): el resto queda en efectivo a la espera de mejores precios o de los exámenes.'
       : null;
 
   // ---------- Veredicto riesgo/beneficio ----------
@@ -1583,7 +1583,7 @@ export function buildNarrative(
         `${a.ticker} (${fmtUsd(a.amountUsd)}${a.isNew ? ', posición nueva' : ''}, score ${a.score ?? '—'})`
     );
     out.push(
-      `El dinero liberado va a los destinos que superan el listón — score de al menos 65, valor justo sostenido por al menos dos métodos y sin balance en puerta: ${parts.join(' · ')}.`
+      `El dinero liberado va a los destinos que superan el listón — score de al menos 65, valor justo formado por las dos estimaciones (fórmula y consenso) y sin balance en puerta: ${parts.join(' · ')}.`
     );
   }
   if (cashHeldUsd >= 250) {
