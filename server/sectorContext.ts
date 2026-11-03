@@ -181,20 +181,26 @@ export async function fetchSectorContext(ticker: string): Promise<SectorContext 
   const slug = await finvizIndustrySlug(t);
   const cacheKey = slug ?? `tv:${t}`;
   const cached = ctxCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < CTX_TTL_MS) return cached.ctx;
+  if (cached && Date.now() - cached.at < (cached.ctx != null && cached.ctx.forwardPe != null ? CTX_TTL_MS : 10 * 60 * 1000)) return cached.ctx;
 
-  let ctx: SectorContext | null = null;
-  try {
-    if (!slug) throw new Error('sin slug de industria');
-    // Finviz rediseñó el screener: la URL canónica pasó a
-    // /screener/stocks con f=industry_<slug> y los tickers vienen en
-    // un JSON embebido ("ticker":"NVDA") en orden de capitalización;
-    // los enlaces pasaron a /quote?t=. Se prueban ambos formatos.
-    const res = await fetch(
-      `https://finviz.com/screener/stocks?v=111&f=industry_${slug}&o=-marketcap`,
-      { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) }
-    );
-    if (res.ok) {
+  // Las dos rutas de descubrimiento corren EN PARALELO: en el hosting
+  // el screener de Finviz puede colgar hasta el timeout y recién ahí
+  // empezaba el respaldo — en instancias frías el contexto llegaba
+  // tarde o no llegaba. Preferencia determinística al armar el
+  // resultado: manda el contexto del screener si trae P/E forward;
+  // si no, el de TradingView; si ninguno trae P/E, el que exista.
+  const finvizRoute = (async (): Promise<SectorContext | null> => {
+    if (!slug) return null;
+    try {
+      // Finviz rediseñó el screener: la URL canónica pasó a
+      // /screener/stocks con f=industry_<slug> y los tickers vienen en
+      // un JSON embebido ("ticker":"NVDA") en orden de capitalización;
+      // los enlaces pasaron a /quote?t=. Se prueban ambos formatos.
+      const res = await fetch(
+        `https://finviz.com/screener/stocks?v=111&f=industry_${slug}&o=-marketcap`,
+        { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(5000) }
+      );
+      if (!res.ok) return null;
       const html = await res.text();
       const tickers: string[] = [];
       const reJson = /"ticker":"([A-Z0-9.\-]{1,12})"/g;
@@ -210,26 +216,25 @@ export async function fetchSectorContext(ticker: string): Promise<SectorContext 
           if (tk !== t && !tickers.includes(tk)) tickers.push(tk);
         }
       }
-      ctx = await contextFromPeerTickers(tickers, slug as string, 'finviz');
+      return await contextFromPeerTickers(tickers, slug, 'finviz');
+    } catch {
+      return null;
     }
-  } catch {
-    ctx = null;
-  }
-  // Respaldo de descubrimiento: si el screener no produjo el P/E del
-  // sector (página no servida al hosting, formato nuevo, etc.), los
-  // pares se descubren por el scanner de TradingView y las medianas
-  // se calculan con las mismas fichas de Finviz.
-  if (ctx == null || ctx.forwardPe == null) {
+  })();
+  const tvRoute = (async (): Promise<SectorContext | null> => {
     try {
       const tvTickers = await discoverPeersViaTradingView(t);
-      if (tvTickers.length > 0) {
-        const tvCtx = await contextFromPeerTickers(tvTickers, slug ?? 'tv', 'tradingview');
-        if (tvCtx != null && (ctx == null || tvCtx.forwardPe != null)) ctx = tvCtx;
-      }
+      if (tvTickers.length === 0) return null;
+      return await contextFromPeerTickers(tvTickers, slug ?? 'tv', 'tradingview');
     } catch {
-      /* sin respaldo: queda el contexto primario (posiblemente null) */
+      return null;
     }
-  }
+  })();
+  const [finCtx, tvCtx] = await Promise.all([finvizRoute, tvRoute]);
+  const ctx =
+    finCtx != null && finCtx.forwardPe != null ? finCtx
+    : tvCtx != null && tvCtx.forwardPe != null ? tvCtx
+    : finCtx ?? tvCtx;
   ctxCache.set(cacheKey, { ctx, at: Date.now() });
   return ctx;
 }
