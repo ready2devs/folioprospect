@@ -1103,3 +1103,13 @@ El término de dilución/recompra del GK (y el buyback del ancla de crecimiento 
 4. **Sin fuentes → null** (`sin-dato`, R0).
 
 La procedencia viaja en el payload (`dilutionPct`, `dilutionSource`, `dilutionSeriesPct`, `dilutionReportedPct`, `dilutionDiscrepancy`, `dilutionGap`), como la del ancla de caja desde R12.3. Ninguna otra regla del motor cambia: es la reparación de UN insumo. Tests: `server/__tests__/dilution.test.ts` (resolución, incluido el fixture NBIS y el conflicto irresoluble → null) y los fixtures de conteos en `server/__tests__/edgar.test.ts` (par comparable, cadencia trimestral, ambigüedad por clase, par no comparable).
+
+## Adenda 2026-11-03 (noche) — Adopción F1b: el score es el rating de tranquilidad
+
+Aprobada por el dueño el 2026-11-03 22:55, tras evaluar en sombra las Fases 1 y 2 (informes `report-fase1.md` y `report-fase2.md` en la carpeta del goal). Reglas nuevas y remapeos (el detalle completo, con el remapeo regla por regla y las migraciones de tests, está en `report-adopcion-f1b.md`):
+
+1. **Score titular = rating de tranquilidad** (`tranquilityRatingFor`): `100 × (certeza)^0,45 × (riesgo de desvío)^0,35 × (Q_caja)^0,20`, Q por régimen {A 100, B 85, C 40, D 20, NA 75, sin-dato 75}; sin tilt; sin M_cash (la caja entra una vez, vía Q); techo 39 si sospechoso. Definición del dueño: estrellas = oportunidad, velocidad = potencial/ritmo, score = tranquilidad (cumplimiento de previsiones, tipo rating crediticio). El multiplicativo de velocidad de las Fases 1–2 deja de ser titular y queda como infraestructura de auditoría (`headlineScoreFor`, sin lectores en producción).
+2. **Listón de destinos: certeza ≥ 65 → rating ≥ 65** (`DESTINATION_MIN_RATING = 65`), con los demás gates intactos y el bloqueo C/D de la Fase 2. El piso de riskSubscale ≥ 40 no se adoptó. La extracción por exceso/riesgo no cambia (nunca leyó el score).
+3. **Estrellas = oportunidad en todas las superficies**: bandas precio/FV por incertidumbre (`opportunityStarsFor`), consistentes con la ficha (test de consistencia en `sistema-f1b.test.ts`). Antes salían del score titular: ese camino quedó cerrado.
+4. **De las fases, en producción**: certeza vF1 (patas 35 / consenso 35 / fuentes 30, sin pata de riesgo, sin −6 de caja), doble horizonte EWMA (λ_vol 0,94 / λ_corr 0,985, n₀=30, prior inter-región 0,22), SBC de EDGAR y regímenes de caja con cascada A → C → B → D.
+5. **FV y RE sin cambios de fórmula**: Δ exacto 0 verificado contra la corrida en sombra sobre el dataset congelado; solo cambian σp y el RE geométrico de cartera por el doble EWMA.

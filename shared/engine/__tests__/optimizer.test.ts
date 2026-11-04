@@ -101,6 +101,11 @@ const portfolio = (): OptimizerAssetInput[] => [
     dividendYieldPct: 1, earningsGrowthTotalPct: 14, forwardPe: 18, industryForwardPe: 20,
     fvBase: 150, fvPesimista: 110, fvOptimista: 190, analystTarget: 140,
     volatilityPct: 25, roicPct: 22, opportunityScore: 85, debtToEquity: 0.3,
+    // FASE 1 (migración vF1): todo input de producción trae la
+    // etiqueta del FV y su conteo — sin ellos la certeza vF1 es
+    // null (la pata de riesgo ya no la garantiza) y ningún
+    // activo sería destino elegible.
+    fvConfidence: 'Alta', fvComponentCount: 2, fvRangeLow: 120, fvRangeHigh: 190,
   }),
   base({
     symbol: 'NASDAQ:BAD', ticker: 'BAD', name: 'Bad Co', industry: 'Software - Application',
@@ -108,6 +113,7 @@ const portfolio = (): OptimizerAssetInput[] => [
     dividendYieldPct: 0, earningsGrowthTotalPct: 1, forwardPe: 40, industryForwardPe: 22,
     fvBase: 80, fvPesimista: 60, fvOptimista: 95, analystTarget: 85,
     volatilityPct: 50, roicPct: 2, opportunityScore: 25, debtToEquity: 1.8,
+    fvConfidence: 'Baja', fvComponentCount: 2, epsSignDisagreement: true,
   }),
   base({
     symbol: 'NASDAQ:MID', ticker: 'MID', name: 'Mid Co', industry: 'Semiconductors',
@@ -115,6 +121,7 @@ const portfolio = (): OptimizerAssetInput[] => [
     dividendYieldPct: 0.5, earningsGrowthTotalPct: 9, forwardPe: 20, industryForwardPe: 20,
     fvBase: 62, fvPesimista: 45, fvOptimista: 80, analystTarget: 60,
     volatilityPct: 30, roicPct: 12, opportunityScore: 68, debtToEquity: 0.5,
+    fvConfidence: 'Media', fvComponentCount: 2,
   }),
   base({
     symbol: 'BINANCE:BTCUSDT', ticker: 'BTC', name: 'Bitcoin', sector: 'Crypto',
@@ -326,7 +333,11 @@ describe('sin shrinkage por confianza (R11: la confianza es etiqueta, no reescal
     // La velocidad de la predicción, en cambio, no se entera.
     expect(alta.certaintyScore!).toBeGreaterThan(baja.certaintyScore!);
     expect(alta.certaintyBand).toBe('alta');
-    expect(baja.certaintyBand).toBe('media');
+    // FASE 1 (migración vF1): sin la pata de riesgo que la
+    // levantaba (la volatilidad 30 daba ~64 y el índice viejo
+    // la promediaba), la etiqueta Baja sola deja la certeza en
+    // 35: banda «a revisar». La etiqueta Alta queda en 90.
+    expect(baja.certaintyBand).toBe('a-revisar');
     expect(alta.score!).toBeGreaterThan(baja.score!);
     expect(baja.scoreVelocity!).toBeCloseTo(alta.scoreVelocity!, 6);
   });

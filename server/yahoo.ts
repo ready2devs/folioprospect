@@ -1435,6 +1435,13 @@ export async function fetchFundamentals(
             .sort((a: any, b: any) => b.end - a.end)
             .slice(0, 5)
             .map((x: any) => x.fcf);
+          // FASE 2: SBC anual del estado de flujos de Yahoo (el más
+          // reciente que lo traiga): respaldo del SBC TTM de EDGAR
+          // para el régimen de caja (server/cashRegime.ts).
+          const yahooSbcAnnual: number | null =
+            cfStmts
+              .map((s: any) => s?.stockBasedCompensation?.raw)
+              .find((v: any) => typeof v === 'number' && Number.isFinite(v)) ?? null;
           const input: FundamentalInput = {
             symbol,
             currentPrice: fd.currentPrice?.raw ?? currentPrice,
@@ -1450,6 +1457,10 @@ export async function fetchFundamentals(
             // TTM crudo preservado antes de la reparación de abajo
             // (R12): el ancla de caja del optimizador lee este signo.
             freeCashflowTtmRaw: fd.freeCashflow?.raw ?? null,
+            // FASE 2: respaldos del régimen de caja (SBC anual e
+            // ingresos TTM de Yahoo; los primarios vienen de EDGAR).
+            sbcAnnualYahoo: yahooSbcAnnual,
+            totalRevenueTtm: fd.totalRevenue?.raw ?? null,
             operatingCashflow: fd.operatingCashflow?.raw ?? null,
             totalCash: fd.totalCash?.raw ?? null,
             totalDebt: fd.totalDebt?.raw ?? null,

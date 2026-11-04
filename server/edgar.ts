@@ -70,6 +70,40 @@ const CAPEX_CONCEPTS = [
 ];
 const CASH_CONCEPTS = ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalents'];
 
+// ── FASE 2 (regímenes de caja): conceptos de los COMPONENTES de
+// la misma ventana TTM/FY que el FCF reportado. El SBC entra
+// porque el FCF «de manual» (OCF − CapEx) lo cuenta como caja
+// generada cuando en realidad se pagó con emisión de acciones:
+// FCF_real = OCF − SBC − CapEx. D&A alimenta el CapEx de
+// mantenimiento e ingresos el FCF estable (steady).
+const SBC_CONCEPTS = [
+  'ShareBasedCompensation',
+  // Equivalente IFRS-full (ajuste por pagos basados en acciones
+  // en el estado de flujos): respondió en NU/TSM/VIST.
+  'AdjustmentsForSharebasedPayments',
+  'ExpenseFromSharebasedPaymentTransactionsWithEmployees',
+  // Subconjunto (solo respaldo): algunos emisores tagean solo
+  // el SBC asignado a líneas de gasto.
+  'AllocatedShareBasedCompensationExpense',
+];
+const DA_COMBINED_CONCEPTS = [
+  'DepreciationDepletionAndAmortization',
+  'DepreciationAmortizationAndAccretion',
+  'DepreciationAndAmortization',
+  'DepreciationAndAmortisation',
+  // Equivalente IFRS-full del ajuste por D&A en el estado de flujos.
+  'AdjustmentsForDepreciationAndAmortisationExpense',
+];
+const DA_DEPRECIATION_CONCEPTS = ['Depreciation', 'DepreciationExpense'];
+const DA_AMORTIZATION_CONCEPTS = ['AmortizationOfIntangibleAssets', 'AmortisationExpense'];
+const REVENUE_CONCEPTS = [
+  'RevenueFromContractWithCustomerExcludingAssessedTax',
+  'SalesRevenueNet',
+  'Revenues',
+  'Revenue',
+  'SalesRevenueGoodsNet',
+];
+
 /** Último instante de balance en USD + tasa implícita contra la otra moneda. */
 function latestCashWithFx(facts: any): { usd: number; fxRate: number | null; ccy: string | null } | null {
   const taxonomies = ['us-gaap', 'ifrs-full'];
@@ -603,6 +637,19 @@ export interface EdgarTtmCashflow {
    *  (rodante reportado o FY+YTD−YTDpy); 'fy' = solo el año fiscal
    *  cerrado, sin puntos intermedios. */
   windowKind: 'ttm' | 'fy';
+  /** FASE 2: SBC de la MISMA ventana derivada (misma moneda,
+   *  ya traducida si la ventana vino en moneda local), con el
+   *  concepto que respondió. null si ningún concepto de SBC
+   *  derivó en la ventana (GAP declarado, R0). */
+  sbc?: number | null;
+  sbcConcept?: string | null;
+  /** FASE 2: depreciación + amortización de la misma ventana
+   *  (concepto combinado; si el emisor las reporta por separado,
+   *  la suma de ambas derivaciones al mismo cierre). null sin
+   *  derivación. */
+  depreciationAmortization?: number | null;
+  /** FASE 2: ingresos de la misma ventana. null sin derivación. */
+  revenue?: number | null;
 }
 
 interface DurationPoint {
@@ -652,6 +699,8 @@ interface FlowDerivation {
   val: number;
   kind: 'rolling' | 'fy-ytd' | 'fy';
   end: string;
+  /** Concepto que efectivamente derivó (procedencia). */
+  concept?: string;
 }
 
 /** FY + YTD − YTDpy con los puntos dados, para la ventana que termina
@@ -703,9 +752,22 @@ function deriveFlow(factsJson: any, concepts: string[], unit: string, targetEnd:
   let best: FlowDerivation | null = null;
   for (const concept of concepts) {
     const d = deriveFlowAt(conceptDurationPoints(factsJson, concept, unit), targetEnd);
-    if (d && (!best || KIND_RANK[d.kind] > KIND_RANK[best.kind])) best = d;
+    if (d && (!best || KIND_RANK[d.kind] > KIND_RANK[best.kind])) best = { ...d, concept };
   }
   return best;
+}
+
+/** FASE 2: D&A de la ventana que termina en targetEnd. Primero el
+ *  concepto combinado; si el emisor reporta depreciación y
+ *  amortización por separado (caso GOOG/MSFT), la suma de ambas
+ *  derivaciones al mismo cierre; si solo una pata deriva, esa. */
+function deriveDaTtm(factsJson: any, unit: string, targetEnd: string): number | null {
+  const combined = deriveFlow(factsJson, DA_COMBINED_CONCEPTS, unit, targetEnd);
+  if (combined) return Math.abs(combined.val);
+  const dep = deriveFlow(factsJson, DA_DEPRECIATION_CONCEPTS, unit, targetEnd);
+  const amo = deriveFlow(factsJson, DA_AMORTIZATION_CONCEPTS, unit, targetEnd);
+  if (!dep && !amo) return null;
+  return Math.abs(dep?.val ?? 0) + Math.abs(amo?.val ?? 0);
 }
 
 /** Fines de ventana candidatos: los fines de cualquier punto
@@ -732,12 +794,21 @@ function deriveTtmInUnit(factsJson: any, unit: string): EdgarTtmCashflow | null 
     if (!ocf || !capex) continue;
     const windowKind: EdgarTtmCashflow['windowKind'] =
       ocf.kind === 'fy' && capex.kind === 'fy' ? 'fy' : 'ttm';
+    // FASE 2: los componentes extra derivan en la MISMA ventana
+    // aceptada (mismo cierre) — si alguno no deriva, queda null
+    // declarado y la ventana no se mueve por él.
+    const sbcD = deriveFlow(factsJson, SBC_CONCEPTS, unit, end);
+    const revD = deriveFlow(factsJson, REVENUE_CONCEPTS, unit, end);
     return {
       operatingCashflow: ocf.val,
       capex: Math.abs(capex.val),
       freeCashflow: ocf.val - Math.abs(capex.val),
       periodEnd: end,
       windowKind,
+      sbc: sbcD ? sbcD.val : null,
+      sbcConcept: sbcD?.concept ?? null,
+      depreciationAmortization: deriveDaTtm(factsJson, unit, end),
+      revenue: revD ? revD.val : null,
     };
   }
   return null;
@@ -761,6 +832,11 @@ export function parseEdgarTtmCashflow(factsJson: any): EdgarTtmCashflow | null {
         freeCashflow: local.freeCashflow / fx,
         periodEnd: local.periodEnd,
         windowKind: local.windowKind,
+        sbc: local.sbc != null ? local.sbc / fx : null,
+        sbcConcept: local.sbcConcept ?? null,
+        depreciationAmortization:
+          local.depreciationAmortization != null ? local.depreciationAmortization / fx : null,
+        revenue: local.revenue != null ? local.revenue / fx : null,
       };
     }
   }
@@ -771,4 +847,13 @@ export async function fetchEdgarTtmCashflow(tickerRaw: string): Promise<EdgarTtm
   const ticker = tickerRaw.toUpperCase().replace(/\./g, '-');
   const facts = await fetchEdgarFacts(ticker);
   return facts ? parseEdgarTtmCashflow(facts) : null;
+}
+
+/** FASE 2: los componentes de caja de la ventana (OCF, CapEx,
+ *  SBC, D&A, ingresos) para el régimen de caja. Es la MISMA
+ *  derivación que el FCF TTM (parseEdgarTtmCashflow ya devuelve
+ *  los componentes extra); este nombre existe para que el
+ *  consumidor (server/cashRegime.ts) pida lo que usa. */
+export async function fetchEdgarTtmComponents(tickerRaw: string): Promise<EdgarTtmCashflow | null> {
+  return fetchEdgarTtmCashflow(tickerRaw);
 }

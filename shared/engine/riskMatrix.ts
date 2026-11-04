@@ -47,12 +47,15 @@
  *
  *  QUÉ SUPONE (cuando no hay datos, y solo ahí):
  *   - Las correlaciones de bloque (industria 0,65 · sector 0,55 ·
- *     resto 0,45 · cripto-cripto 0,70 · cripto-resto 0,25) son
- *     PRIORS: cada correlación medida se encoge hacia su prior
- *     según la muestra efectiva compartida (shrinkage
- *     n_eff/(n_eff+K), K = 60: con n_eff = 60, medición y prior
- *     pesan lo mismo; con menos de 20 días de baja conjuntos
- *     manda el prior puro).
+ *     resto 0,45 · cripto-cripto 0,70 · cripto-resto 0,25 ·
+ *     distinto sector Y distinta región 0,22 desde la Fase 1)
+ *     son PRIORS: cada correlación medida se encoge hacia su
+ *     prior según la muestra efectiva compartida. Desde la
+ *     FASE 1 (doble horizonte) la correlación se pondera con
+ *     memoria larga (λ_corr = 0,985, n_eff hasta ≈132) y el
+ *     shrinkage es n_eff/(n_eff+30); la semivolatilidad sigue
+ *     con memoria corta (λ = 0,94) y su propia escala. Con
+ *     menos de 20 días de baja conjuntos manda el prior puro.
  *   - La volatilidad, si no se puede medir a la baja (menos de
  *     60 cierres o menos de 15 días de baja propios), cae a la
  *     volatilidad de respaldo que traiga el insumo (Finviz),
@@ -74,17 +77,39 @@ export const CORRELATION_PRIORS = {
   other: 0.45,
   cryptoCrypto: 0.7,
   cryptoOther: 0.25,
+  /** FASE 1: distinto sector Y distinta región (p. ej. VIST,
+   *  Energía/México, contra una tecnológica de EE.UU.): la
+   *  descorrelación geográfica+sectorial es estructural y el
+   *  prior genérico 0,45 la tapaba. Solo aplica si AMBOS
+   *  activos traen región confiable y difieren; sin dato de
+   *  región en alguno, manda el prior de siempre (0,45). */
+  crossRegionOther: 0.22,
 } as const;
 
-/** Días de historia compartida para que la medición pese 50%. */
+/** Días de historia compartida para que la medición pese 50%
+ *  (constante histórica de R14 para la volatilidad; las
+ *  correlaciones usan desde la Fase 1 su propia constante,
+ *  SHRINKAGE_K_CORR_DAYS). */
 export const SHRINKAGE_K_DAYS = 60;
 /** Solape mínimo para que la medición exista; debajo, prior puro.
  *  Desde R14 el solape se cuenta en DÍAS DE BAJA conjuntos. */
 export const MIN_OVERLAP_DAYS = 20;
 /** Días de baja propios mínimos para medir una desviación a la baja. */
 export const MIN_DOWNSIDE_DAYS = 15;
-/** Decaimiento EWMA diario (estándar RiskMetrics, R14). */
+/** Decaimiento EWMA diario (estándar RiskMetrics, R14) para las
+ *  SEMIVOLATILIDADES: memoria corta, reacciona rápido. */
 export const EWMA_LAMBDA = 0.94;
+/** Decaimiento EWMA para las CORRELACIONES (FASE 1, doble
+ *  horizonte): memoria larga — las correlaciones estructurales
+ *  no cambian cada 15 días, y con λ=0,94 el n efectivo (≈32)
+ *  dejaba ~⅔ del peso en el prior, tapando la descorrelación
+ *  medida (caso VIST: correlaciones reales 0,03–0,22 contra el
+ *  bloque tech, prior 0,45). Con λ=0,985 el n efectivo sube a
+ *  ≈132 y la medición manda. */
+export const EWMA_LAMBDA_CORR = 0.985;
+/** Shrinkage de las correlaciones con la memoria larga: la
+ *  medición pesa 50% con n_ef = 30 días de baja efectivos. */
+export const SHRINKAGE_K_CORR_DAYS = 30;
 /** Cierres mínimos para medir una volatilidad (1 año ≈ 252). */
 export const MIN_MEASURED_CLOSES = 60;
 export const TRADING_DAYS_YEAR = 252;
@@ -103,6 +128,12 @@ export interface RiskAssetSpec {
   key: string;
   sector?: string | null;
   industry?: string | null;
+  /** País/región del activo (Fase 1: país de la sede según
+   *  Yahoo assetProfile, plumbeado por la capa de datos). Solo
+   *  alimenta el prior cruzado región+sector de
+   *  priorCorrelation; sin dato confiable queda null y el
+   *  prior es el de siempre. */
+  region?: string | null;
   isCrypto?: boolean;
   isCash?: boolean;
   closes?: DatedClose[] | null;
@@ -139,8 +170,14 @@ export interface DownsideConditioning {
   downDays: Set<number>;
   /** Peso EWMA de cada día de retorno de la canasta (λ^edad sin
    *  normalizar; la edad se cuenta en días de retorno, del más
-   *  reciente hacia atrás). */
+   *  reciente hacia atrás). Memoria CORTA (λ = 0,94): alimenta
+   *  las semivolatilidades. */
   dayWeight: Map<number, number>;
+  /** Peso EWMA de cada día con memoria LARGA (λ = 0,985, Fase
+   *  1): alimenta SOLO las correlaciones por pares y su n
+   *  efectivo de shrinkage. Doble horizonte: la volatilidad
+   *  reacciona rápido; la correlación se estima con historia. */
+  dayWeightCorr: Map<number, number>;
   /** Retorno diario de la canasta por timestamp (diagnóstico). */
   basketReturns: Map<number, number>;
 }
@@ -176,14 +213,16 @@ export function buildConditioning(specs: RiskAssetSpec[]): DownsideConditioning 
   }
   const ordered = [...basketReturns.keys()].sort((a, b) => a - b);
   const dayWeight = new Map<number, number>();
+  const dayWeightCorr = new Map<number, number>();
   ordered.forEach((t, i) => {
     dayWeight.set(t, Math.pow(EWMA_LAMBDA, ordered.length - 1 - i));
+    dayWeightCorr.set(t, Math.pow(EWMA_LAMBDA_CORR, ordered.length - 1 - i));
   });
   const downDays = new Set<number>();
   basketReturns.forEach((r, t) => {
     if (r < 0) downDays.add(t);
   });
-  return { downDays, dayWeight, basketReturns };
+  return { downDays, dayWeight, dayWeightCorr, basketReturns };
 }
 
 /** Tamaño de muestra EFECTIVO de unos pesos: (Σw)²/Σw². Con
@@ -253,6 +292,15 @@ export function priorCorrelation(x: RiskAssetSpec, y: RiskAssetSpec): number {
   if (x.isCrypto || y.isCrypto) return CORRELATION_PRIORS.cryptoOther;
   if (x.industry && y.industry && x.industry === y.industry) return CORRELATION_PRIORS.sameIndustry;
   if (x.sector && y.sector && x.sector === y.sector) return CORRELATION_PRIORS.sameSector;
+  // FASE 1: distinto sector Y distinta región (ambas conocidas)
+  // → prior estructural bajo. Si falta la región de alguno o
+  // los sectores no difieren, no aplica.
+  if (
+    x.region && y.region && x.region !== y.region &&
+    x.sector && y.sector && x.sector !== y.sector
+  ) {
+    return CORRELATION_PRIORS.crossRegionOther;
+  }
   return CORRELATION_PRIORS.other;
 }
 
@@ -264,7 +312,9 @@ export interface PairDetail {
   measured: number | null;
   /** Días de BAJA conjuntos entre ambas series (R14). */
   overlapDays: number;
-  /** Tamaño de muestra efectivo EWMA de esos días conjuntos. */
+  /** Tamaño de muestra efectivo EWMA de esos días conjuntos,
+   *  con la memoria de correlaciones (λ = 0,985 desde Fase 1;
+   *  techo ≈132 en series largas). */
   effectiveDays: number;
   prior: number;
 }
@@ -291,7 +341,9 @@ export function pairCorrelation(
   ra.forEach((r, t) => {
     const other = rb.get(t);
     if (other != null && conditioning.downDays.has(t)) {
-      pairs.push({ a: r, b: other, w: conditioning.dayWeight.get(t) ?? 0 });
+      // FASE 1 (doble horizonte): la correlación pondera con la
+      // memoria LARGA (λ_corr = 0,985), no con la de volatilidad.
+      pairs.push({ a: r, b: other, w: conditioning.dayWeightCorr.get(t) ?? 0 });
     }
   });
   const n = pairs.length;
@@ -315,7 +367,9 @@ export function pairCorrelation(
     return { rho: prior, measured: null, overlapDays: n, effectiveDays: nEff, prior };
   }
   const measured = clamp(cov / Math.sqrt(va * vb), -1, 1);
-  const w = nEff / (nEff + SHRINKAGE_K_DAYS);
+  // FASE 1: shrinkage con la constante de correlaciones
+  // (n_0 = 30 sobre el n efectivo de la memoria larga).
+  const w = nEff / (nEff + SHRINKAGE_K_CORR_DAYS);
   return {
     rho: clamp(w * measured + (1 - w) * prior, -1, 1),
     measured,

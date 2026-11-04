@@ -76,7 +76,21 @@ export interface FundamentalInput {
     freeCashflow: number;
     periodEnd: string;
     windowKind: 'ttm' | 'fy';
+    /** FASE 2: componentes extra de la MISMA ventana (SBC, D&A,
+     *  ingresos) para el régimen de caja (server/cashRegime.ts).
+     *  null = GAP declarado del concepto en esa ventana. */
+    sbc?: number | null;
+    sbcConcept?: string | null;
+    depreciationAmortization?: number | null;
+    revenue?: number | null;
   } | null;
+  /** FASE 2: SBC anual del estado de flujos de Yahoo (respaldo del
+   *  SBC de EDGAR cuando este no deriva; es ANUAL, no TTM: la
+   *  mezcla queda declarada en la procedencia del régimen). */
+  sbcAnnualYahoo?: number | null;
+  /** FASE 2: ingresos TTM de Yahoo financialData (respaldo de los
+   *  ingresos de la ventana EDGAR). */
+  totalRevenueTtm?: number | null;
   operatingCashflow?: number | null;
   totalCash?: number | null;
   totalDebt?: number | null;

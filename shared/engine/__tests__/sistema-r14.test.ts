@@ -12,13 +12,23 @@
  *  4. El listón de destinos lee la CERTEZA, no el score titular:
  *     un activo rápido pero incierto NO es destino; uno lento
  *     pero cierto SÍ puede serlo.
+ *
+ * ADOPCIÓN F1b (2026-11-03): el titular pasó a ser el RATING
+ * DE TRANQUILIDAD. Las propiedades 2 y 4 se migraron a la
+ * semántica nueva (el momentum ya no toca el titular; el
+ * listón lee el rating) y la 3 se reescribió como composición
+ * del rating — cada migración está declarada en su test. La
+ * fórmula multiplicativa de R14/Fase 1 sigue cubierta a nivel
+ * función (headlineScoreFor) como infraestructura.
  */
 import { describe, expect, it } from 'vitest';
 import {
   headlineScoreFor,
   momentumTiltFor,
+  ratingBandFor,
   scoreAsset,
   scoreVelocityFor,
+  tranquilityRatingFor,
   type OptimizerAssetInput,
 } from '../optimizer.js';
 
@@ -70,21 +80,29 @@ describe('R14 · tilt de momentum: acotado, solo positivo, con freno de euforia'
     expect(con.tiltPts).toBeCloseTo(sin.tiltPts / 2, 1);
   });
 
-  it('solo revisiones (sin precio): la pata de confirmación computa sola', () => {
+  it('solo revisiones (sin precio): la pata de confirmación computa, pero el tilt queda TOPADO (Fase 1)', () => {
     const t = momentumTiltFor(base({ epsRevisionUp30: 6, epsRevisionDown30: 2 }));
     expect(t.priceLeg).toBeNull();
     expect(t.revisionLeg).toBeCloseTo(0.75, 9);
-    expect(t.tiltPts).toBeCloseTo(3.8, 1); // 5 × 0,75
+    // FASE 1 (corrección pendiente de R14 §9.6): sin pata de
+    // precio, las revisiones solas NO pueden dar el tilt alto:
+    // 5 × 0,75 = 3,75 queda topado a +1,5.
+    expect(t.tiltPts).toBe(1.5);
   });
 });
 
-describe('R14 · el momentum toca SOLO el score (recomposición)', () => {
+describe('R14 · el momentum tocaba SOLO el score (histórico) → ADOPCIÓN F1b: ya no toca el titular', () => {
   const comun = {
     price: 100, fvBase: 200, fvConfidence: 'Media' as const, fvComponentCount: 2,
     fvRangeLow: 170, fvRangeHigh: 240, earningsGrowthTotalPct: 12,
     analystTarget: 180, volatilityPct: 30,
   };
-  it('FV y RE idénticos con tilt activo o anulado; el score difiere solo por el tilt', () => {
+  it('MIGRADO (adopción F1b): FV, RE, certeza y RATING idénticos con tilt activo o anulado — el rating no lleva tilt', () => {
+    // Motivo de la migración: en R14/Fase 1 el titular era la
+    // velocidad cobrada (con tilt de momentum sumado al final).
+    // El paquete aprobado define el rating SIN tilt: el
+    // momentum es ritmo, no tranquilidad. El tilt sigue
+    // existiendo como dato de auditoría en el payload.
     const sin = scoreAsset(base({ ...comun }), 1000, OPTS);
     const con = scoreAsset(base({
       ...comun, sma50DistPct: 10, sma200DistPct: 20, perfYearPct: 70, rsi14: 50,
@@ -96,60 +114,117 @@ describe('R14 · el momentum toca SOLO el score (recomposición)', () => {
     expect(con.momentum).not.toBeNull();
     expect(con.momentum!.tiltPts).toBeGreaterThan(0);
     expect(sin.momentum).toBeNull();
-    // La diferencia de score es el tilt (salvo redondeo de enteros).
-    expect(Math.abs((con.score! - sin.score!) - con.momentum!.tiltPts)).toBeLessThanOrEqual(1);
+    // El RATING no se mueve con el momentum.
+    expect(con.score).toBe(sin.score);
   });
 });
 
-describe('R14 · composición del score titular (recomposición a mano)', () => {
-  it('velocidad − 0,35×riesgo − 0,30×incertidumbre − caja + tilt, con techo 39 si sospechoso', () => {
+describe('ADOPCIÓN F1b · composición del RATING titular (recomposición a mano)', () => {
+  it('rating = 100 × (certeza)^0,45 × (riesgo)^0,35 × (Q)^0,20, sin tilt y sin M_cash; techo 39 si sospechoso', () => {
+    // MIGRADO desde «FASE 1 · composición del score titular»:
+    // ese test fijaba el multiplicativo de velocidad como
+    // titular; el paquete aprobado lo reemplaza por el rating
+    // de tranquilidad. La fórmula del multiplicativo sigue
+    // cubierta a nivel función (headlineScoreFor) más abajo.
     const s = scoreAsset(base({
       price: 100, fvBase: 200, fvConfidence: 'Media', fvComponentCount: 2,
       fvRangeLow: 160, fvRangeHigh: 260, earningsGrowthTotalPct: 10,
       analystTarget: 190, volatilityPct: 30,
     }), 1000, OPTS);
     const b = s.scoreBreakdown!;
-    expect(b.velocity).toBeCloseTo(scoreVelocityFor(s.expectedReturnPct!), 0);
-    const dispersion = (s.certaintyComponents!.legs! * 35 + s.certaintyComponents!.sources! * 30) / 65;
-    expect(b.riskRestrictionPts).toBeCloseTo((100 - s.certaintyComponents!.risk!) * 0.35, 0);
-    expect(b.uncertaintyRestrictionPts).toBeCloseTo((100 - dispersion) * 0.3, 0);
-    const recomp = headlineScoreFor({
-      rePct: s.expectedReturnPct,
-      certaintyComponents: s.certaintyComponents,
-      cashPenaltyPts: s.cashAnchorPenaltyPts,
-      momentumTiltPts: s.momentum?.tiltPts ?? 0,
+    expect(b.certaintyScore).toBe(s.certaintyScore);
+    expect(b.riskSubscale).toBe(s.riskSubscale);
+    expect(b.cashRegime).toBe('sin-dato'); // sin componentes de caja
+    expect(b.cashQualityQ).toBe(75);
+    expect(b.certaintyExponent).toBe(0.45);
+    expect(b.riskExponent).toBe(0.35);
+    expect(b.cashExponent).toBe(0.2);
+    const recomp = tranquilityRatingFor({
+      certaintyScore: s.certaintyScore,
+      riskSubscale: s.riskSubscale,
+      cashRegime: s.cashRegime?.regime ?? null,
       modelSuspect: s.modelSuspect,
     });
-    expect(recomp.score).toBe(s.score);
+    expect(recomp.rating).toBe(s.score);
     expect(s.score).toBe(
-      Math.max(0, Math.min(100, Math.round(
-        scoreVelocityFor(s.expectedReturnPct!) - b.riskRestrictionPts - b.uncertaintyRestrictionPts +
-        b.cashPenaltyPts + b.momentumTiltPts
-      )))
+      Math.round(100 *
+        Math.pow(s.certaintyScore! / 100, 0.45) *
+        Math.pow(s.riskSubscale! / 100, 0.35) *
+        Math.pow(75 / 100, 0.2))
     );
+    expect(s.ratingBand).toBe(ratingBandFor(s.score));
+    // Techo 39 si el modelo es sospechoso.
+    const susp = scoreAsset(base({
+      price: 100, fvBase: 200, fvConfidence: 'Media', fvComponentCount: 2,
+      fvRangeLow: 160, fvRangeHigh: 260, earningsGrowthTotalPct: 10,
+      analystTarget: 190, volatilityPct: 30, fvModelSuspect: true,
+    }), 1000, OPTS);
+    expect(susp.score!).toBeLessThanOrEqual(39);
+  });
+
+  it('la fórmula del multiplicativo de velocidad (Fases 1–2) sigue viva como infraestructura de auditoría', () => {
+    const h = headlineScoreFor({
+      rePct: 30, certaintyScore: 80, riskSubscale: 60,
+      cashPenaltyPts: 0, cashMultiplier: 0.72, cashRegime: 'D',
+      momentumTiltPts: 2, modelSuspect: false,
+    });
+    const manual = Math.round(
+      scoreVelocityFor(30) * Math.pow(0.8, 0.6) * Math.pow(0.6, 0.4) * 0.72 + 2
+    );
+    expect(h.score).toBe(Math.max(0, Math.min(100, manual)));
+    expect(h.breakdown?.cashMultiplier).toBe(0.72);
+    expect(h.breakdown?.cashRegime).toBe('D');
   });
 });
 
-describe('R14 · el listón de destinos lee la CERTEZA, no el score titular', () => {
-  it('rápido pero incierto: NO es destino aunque su velocidad sea alta', () => {
+describe('ADOPCIÓN F1b · el listón de destinos lee el RATING (antes leía la certeza)', () => {
+  it('rápido pero incierto: NO es destino (certeza baja ⇒ rating bajo)', () => {
+    // El fixture es incierto en los términos de la certeza vF1 —
+    // patas en desacuerdo (etiqueta Baja), fuentes en conflicto
+    // de signo y un consenso de apenas 3 analistas. Con la
+    // certeza baja, el rating (que la lleva con exponente 0,45)
+    // también queda bajo el listón.
     const s = scoreAsset(base({
-      price: 100, fvBase: 250, fvConfidence: 'Media', fvComponentCount: 2,
+      price: 100, fvBase: 250, fvConfidence: 'Baja', fvComponentCount: 2,
       fvRangeLow: 180, fvRangeHigh: 330, earningsGrowthTotalPct: 10,
-      analystTarget: 240, volatilityPct: 55,
+      epsSignDisagreement: true,
+      analystTarget: 240, analystCount: 3, analystTargetLow: 180, analystTargetHigh: 330,
+      volatilityPct: 55,
     }), 1000, OPTS);
     expect(s.certaintyScore!).toBeLessThan(65);
+    expect(s.score!).toBeLessThan(65);
     expect(s.destinationEligible).toBe(false);
   });
 
-  it('lento pero cierto: SÍ es destino (la certeza manda, no el atractivo)', () => {
+  it('lento pero tranquilo: SÍ es destino — por su RATING, no por su velocidad', () => {
+    // MIGRADO desde R14 («la certeza manda»): el activo es
+    // lento (poco upside) pero su predicción es firme, su
+    // riesgo de desvío bajo y su caja neutra: el rating supera
+    // el listón aunque la velocidad sea modesta. Esa es la
+    // semántica aprobada: un destino se elige por tranquilidad.
     const s = scoreAsset(base({
       price: 100, fvBase: 130, fvConfidence: 'Alta', fvComponentCount: 2,
       fvRangeLow: 125, fvRangeHigh: 136, earningsGrowthTotalPct: 6,
       analystTarget: 128, volatilityPct: 15,
     }), 1000, OPTS);
     expect(s.certaintyScore!).toBeGreaterThanOrEqual(65);
+    expect(s.score!).toBeGreaterThanOrEqual(65);
     expect(s.destinationEligible).toBe(true);
-    // Y su score titular es modesto: elegible por fiable, no por rápido.
+  });
+
+  it('certeza ≥ 65 pero rating < 65 (riesgo de desvío alto): NO es destino — el caso CRDO de la evaluación', () => {
+    // NUEVO (adopción F1b): discrimina el gate nuevo del viejo.
+    // Con el listón de certeza (Fase 2) este activo ENTRABA;
+    // con el listón de rating queda fuera sin necesidad del
+    // piso de riskSubscale ≥ 40 que no se adoptó.
+    const s = scoreAsset(base({
+      price: 100, fvBase: 200, fvConfidence: 'Alta', fvComponentCount: 2,
+      fvRangeLow: 190, fvRangeHigh: 215, earningsGrowthTotalPct: 10,
+      analystTarget: 190, volatilityPct: 95,
+    }), 1000, OPTS);
+    expect(s.certaintyScore!).toBeGreaterThanOrEqual(65);
+    expect(s.riskSubscale!).toBeLessThan(45);
     expect(s.score!).toBeLessThan(65);
+    expect(s.destinationEligible).toBe(false);
   });
 });

@@ -138,7 +138,7 @@ describe('riesgo de desvío MARGINAL-PRIMERO (sub-escala del score de confianza)
     expect(confidenceRiskComponent(40, 1, 4)).toBe(80);
   });
 
-  it('a mismas patas, la posición que menos riesgo suma a la cartera tiene más certeza (y mejor score)', () => {
+  it('a mismas patas, la posición que menos riesgo suma a la cartera tiene mejor sub-escala de riesgo y mejor score (la certeza ya no lo cobra: Fase 1)', () => {
     // Factor común de mercado (250 retornos).
     const factor = Array.from({ length: 250 }, (_, i) => Math.sin(i / 9) * 0.012);
     const rnd = lcg(7);
@@ -183,10 +183,13 @@ describe('riesgo de desvío MARGINAL-PRIMERO (sub-escala del score de confianza)
     // …y la desacoplada suma mucho menos riesgo a ESTA cartera:
     expect(decorr.mctrPct!).toBeLessThan(corr.mctrPct!);
     expect(decorr.riskContributionPct!).toBeLessThan(corr.riskContributionPct!);
-    // Y eso — no la volatilidad — es lo que manda en su certeza
-    // (y, vía la restricción de riesgo, también en su score):
-    expect(decorr.certaintyComponents!.risk!).toBeGreaterThan(corr.certaintyComponents!.risk!);
-    expect(decorr.certaintyScore!).toBeGreaterThan(corr.certaintyScore!);
+    // Y eso — no la volatilidad — es lo que manda en su
+    // SUB-ESCALA DE RIESGO (y, vía el factor de riesgo, en su
+    // score). FASE 1: la CERTEZA ya no incluye el riesgo — a
+    // mismas patas/fuentes/consenso, la certeza de ambas es la
+    // misma por construcción; la descorrelación se premia una
+    // sola vez, en el score.
+    expect(decorr.riskSubscale!).toBeGreaterThan(corr.riskSubscale!);
     expect(decorr.score!).toBeGreaterThan(corr.score!);
   });
 

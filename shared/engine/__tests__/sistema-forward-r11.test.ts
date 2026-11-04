@@ -154,7 +154,13 @@ describe('sub-índice de CERTEZA (nació como score de confianza, 2026-11-03 11:
       volatilityPct: 18, ...p,
     });
 
-  it('independencia: la CERTEZA no se mueve si cambia solo el retorno esperado (el score titular, sí)', () => {
+  it('independencia: la CERTEZA no se mueve si cambia solo el retorno esperado — y el RATING tampoco (adopción F1b)', () => {
+    // MIGRADO: en R14 el titular era velocidad cobrada y B
+    // puntuaba más alto por ser más rápida. El RATING DE
+    // TRANQUILIDAD aprobado no compone velocidad: con los
+    // mismos insumos de tranquilidad, el rating es el mismo
+    // aunque la predicción sea mucho más rápida — la velocidad
+    // vive en su propia columna (años a duplicar).
     const comun = {
       price: 100, fvBase: 200, fvConfidence: 'Media' as const, fvComponentCount: 2,
       fvRangeLow: 160, fvRangeHigh: 260,
@@ -167,17 +173,19 @@ describe('sub-índice de CERTEZA (nació como score de confianza, 2026-11-03 11:
     // certeza, aunque la predicción de B sea mucho más rápida.
     expect(b.certaintyScore!).toBe(a.certaintyScore!);
     expect(b.certaintyBand).toBe(a.certaintyBand);
-    // R14: el score TITULAR es velocidad cobrada — B, más rápida
-    // con las mismas restricciones, puntúa más alto.
-    expect(b.score!).toBeGreaterThan(a.score!);
+    expect(b.score!).toBe(a.score!);
   });
 
   it('patas de acuerdo, fuentes tranquilas y vol baja → certeza alta', () => {
     const s = scoreAsset(firme(), 1000, SCORE_OPTS);
-    // (90×35 + 85×30 + 88×25)/90 = 87,8
+    // vF1 (Fase 1): sin consenso computable en el fixture, la
+    // certeza es (90×35 + 85×30)/65 = 87,7 → 88: el mismo índice
+    // que con la fórmula vieja, pero el riesgo (88) YA NO es un
+    // componente — vive en riskSubscale y en el factor del score.
     expect(s.certaintyScore!).toBe(88);
     expect(s.certaintyBand).toBe('alta');
-    expect(s.certaintyComponents).toEqual({ legs: 90, sources: 85, risk: 88 });
+    expect(s.certaintyComponents).toEqual({ legs: 90, sources: 85, consensus: null });
+    expect(s.riskSubscale).toBe(88);
   });
 
   it('fuentes en conflicto, patas lejos y vol alta → estimación a revisar', () => {
@@ -189,7 +197,8 @@ describe('sub-índice de CERTEZA (nació como score de confianza, 2026-11-03 11:
       }),
       1000, SCORE_OPTS
     );
-    // patas 35, fuentes 85−40−35 = 10, vol 14 → índice ≈ 20,8
+    // vF1: patas 35, fuentes 85−40−35 = 10, sin consenso →
+    // (35×35 + 10×30)/65 ≈ 23,5 → «a revisar» igual que antes.
     expect(s.certaintyScore!).toBeLessThan(40);
     expect(s.certaintyBand).toBe('a-revisar');
   });
@@ -201,10 +210,20 @@ describe('sub-índice de CERTEZA (nació como score de confianza, 2026-11-03 11:
     expect(s.certaintyBand).toBe('a-revisar');
   });
 
-  it('quemar caja resta 6 puntos de confianza; generar no suma nada', () => {
+  it('MIGRACIÓN FASE 2: quemar caja ya no resta 6 de confianza — el −6 quedó desapilado y la caja se cobra como M_cash solo con componentes del régimen', () => {
     const genera = scoreAsset(firme({ fcfTtmUsd: 5_000_000 }), 1000, SCORE_OPTS);
     const quema = scoreAsset(firme({ fcfTtmUsd: -5_000_000 }), 1000, SCORE_OPTS);
-    expect(quema.cashAnchorPenaltyPts).toBe(-6);
-    expect(genera.score! - quema.score!).toBe(6);
+    // La MARCA histórica por signo del FCF resuelto no cambia…
+    expect(quema.cashAnchorState).toBe('quema-caja');
+    expect(genera.cashAnchorState).toBe('genera-caja');
+    // …pero el campo de puntos quedó en 0 (desapilado en la
+    // Fase 2) y, sin cashComponents, el régimen es 'sin-dato'
+    // (M = 1): ni la certeza ni el score cobran la caja. El
+    // cobro nuevo (M_C/M_D y bloqueo de destinos) se testea en
+    // sistema-fase2.test.ts con componentes explícitos.
+    expect(quema.cashAnchorPenaltyPts).toBe(0);
+    expect(quema.cashRegime?.regime).toBe('sin-dato');
+    expect(genera.certaintyScore).toBe(quema.certaintyScore);
+    expect(genera.score).toBe(quema.score);
   });
 });

@@ -10,5 +10,6 @@ export * from './nw.js';
 export * from './symbolCatalog.js';
 export * from './finvizParse.js';
 export * from './optimizer.js';
+export * from './cashRegime.js';
 export * from './riskMatrix.js';
 export * from './ledgerSync.js';

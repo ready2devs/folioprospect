@@ -561,3 +561,24 @@ esperado (línea de la vista, no de la tarjeta).
 
 **Addendum R12.3 (mismo día) — el ancla de caja lee los estados reportados.** Corrección de integridad: el ancla tomaba el FCF TTM del campo crudo del proveedor, que marcó a GOOG como quemadora con el signo invertido respecto de sus balances. Desde R12.3 la fuente primaria es la derivación desde los estados reportados ante la SEC (rodante tageado o FY+YTD−YTDpy; un año fiscal solo cuenta como ventana móvil si cerró hace ≤ 135 días), el proveedor queda como chequeo cruzado (discrepancia si difiere en signo o en más de 2,5×, registrada y visible en la ficha) y como respaldo documentado cuando los reportados no reconstruyen la ventana (filers 20-F: SIMO, NBIS y HSAI siguen marcados por esa vía). GOOG pasa a «genera caja» con +US$19.747 M reportados; AMZN sigue marcada porque su TTM reportado también es negativo (−US$46.892 M: su capex TTM supera a su flujo operativo). Detalle y evidencia: `docs/VALUATION-RULES.md` R12.3. Tests: 319/319.
 
+
+## §18 — Fases 1 y 2 en producción + ADOPCIÓN F1b: el score es el RATING DE TRANQUILIDAD (2026-11-03, aprobada por el dueño 22:55)
+
+Definición del dueño (22:22): la oportunidad por subvaluación ya la cubren las estrellas de la ficha (precio vs FV) y la velocidad (potencial y ritmo); el **score mide tranquilidad** — seguridad de que el activo cumpla previsiones, estimaciones y guidance sin contratiempos, como el rating crediticio de un bono. Tres números, un significado cada uno: **estrellas = oportunidad · velocidad/T2× = potencial y ritmo · score = tranquilidad**.
+
+**Rating (score titular, `tranquilityRatingFor`):**
+
+```
+rating = 100 × (certeza/100)^0,45 × (riskSubscale/100)^0,35 × (Q_caja/100)^0,20
+Q: A→100 · B→85 · C→40 · D→20 · NA→75 · sin-dato→75
+```
+
+Sin tilt de momentum (el momentum es ritmo, no tranquilidad). Sin M_cash separado (la caja entra una sola vez, vía Q). Techo 39 si `modelSuspect`, clamp [0,100]. Componente ausente (sin certeza o sin sub-escala de riesgo): su exponente se reparte entre los presentes (media geométrica renormalizada); sin ninguno de los dos, rating null. El rating no depende de la vista: `scorePessimistic` = el mismo rating. Bandas: 85–100 «Tranquilidad alta» · 70–84 «Buena» · 50–69 «Media» · <50 «Especulativo / a revisar» (`ratingBand` en el payload; el desglose — certeza, riesgo, Q, régimen — viaja en `scoreBreakdown`).
+
+**Lo que entró de las fases en sombra:** (Fase 1) doble horizonte EWMA en el módulo de riesgo (λ_vol 0,94 / λ_corr 0,985, n₀=30, prior inter-región 0,22); certeza vF1 sin pata de riesgo y con credibilidad de consenso (N de analistas, dispersión, sticky) solo en certeza; tope de tilt +1,5 sin pata de precio. (Fase 2) SBC TTM desde EDGAR con disciplina de ventanas; regímenes de caja deterministas con cascada **A → C → B → D** (GOOG queda C: lo aprobado, no invertir); M_cash como factor del multiplicativo interno; bloqueo categórico de destinos en C/D; marca «genera caja» derivada del régimen; la certeza perdió el −6 (confianza pura). El score multiplicativo de velocidad (Fases 1–2) quedó **fuera del titular**: `headlineScoreFor` se conserva como infraestructura de auditoría, sin lectores en producción.
+
+**Gate de destinos por rating:** elegible = rating ≥ 65 (`DESTINATION_MIN_RATING`) + gates vigentes (≥2 componentes de FV, FV ≤ 3× precio, no defensivo, puerta de balances ≥5 días hábiles) + no estar en régimen C/D. El piso de riskSubscale ≥ 40 evaluado en sombra **no** se adoptó. La certeza sigue como sub-índice: insumo del rating (exponente 0,45), prosa de firmeza/frágil y análisis del activo.
+
+**Estrellas re-ancladas a oportunidad:** salen de `opportunityStarsFor` (bandas precio/FV por incertidumbre de `opportunity.ts`, la lógica de la ficha) en el Optimizador, en la recomposición y en las posiciones nuevas (el par las trae de su `scoreAsset`); el test de consistencia ficha↔Optimizador (`sistema-f1b.test.ts`) fija que coinciden con `computeOpportunity` sobre el mismo FV. El rating no se filtra a las estrellas por ningún camino.
+
+**Verificación del pase:** Δ FV = 0 y Δ RE = 0 exactos contra la corrida en sombra de la Fase 2 sobre el dataset congelado (solo cambian σp y el RE geométrico de cartera por el doble EWMA, medidos en la Fase 1). Testigos del rating sobre el congelado: AAPL 89 · MSFT 87 · VIST 78 · NBIS 46 · SIMO 35. Tests: 418/418. Respaldo: tag `respaldo-pre-rating-f1b-2026-11-03`. Informe: `report-adopcion-f1b.md` (carpeta del goal).

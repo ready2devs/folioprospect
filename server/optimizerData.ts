@@ -22,6 +22,7 @@ import { fetchFinvizFundamentals } from './finviz.js';
 import { fetchSectorContext, finvizIndustrySlug } from './sectorContext.js';
 import { addDays, fetchNasdaqEarningsDay, todayInNewYork } from './earnings.js';
 import { resolveAnchorFromFundamentals } from './cashAnchor.js';
+import { resolveCashComponents } from './cashRegime.js';
 import { resolveDilutionFromFundamentals } from './dilution.js';
 
 const UA =
@@ -233,6 +234,12 @@ async function buildAssetInput(
     // respaldo el crudo del proveedor. La misma resolución alimenta
     // la ficha del activo (server/routes.ts).
     const anchorFcf = resolveAnchorFromFundamentals(fund);
+    // FASE 2: componentes del RÉGIMEN DE CAJA (OCF, SBC, CapEx,
+    // D&A, ingresos de una ventana) — misma disciplina de
+    // ventanas y de respaldo que el ancla (server/cashRegime.ts).
+    // Solo las posiciones los traen; los pares del optimizador
+    // quedan sin componentes (régimen 'sin-dato', declarado).
+    const cashComponents = resolveCashComponents(fund);
     // ΔS del Grinold-Kroner (reparación 2026-11-03): resolución ÚNICA
     // desde los fundamentales — primario el CONTEO REPORTADO de
     // acciones en circulación (EDGAR), respaldo la serie de promedio
@@ -295,6 +302,8 @@ async function buildAssetInput(
       fcfTtmPeriodEnd: anchorFcf.periodEnd,
       fcfTtmDiscrepancy: anchorFcf.discrepancy,
       fcfTtmEdgarFyOnlyGap: anchorFcf.edgarFyOnlyGap,
+      // FASE 2: componentes del régimen de caja (ver arriba).
+      cashComponents,
       // ΔS RESUELTO (reparación 2026-11-03): manda el conteo reportado
       // de acciones en circulación; la serie de promedio ponderado
       // (antes el insumo directo) queda como respaldo y como cruce —
@@ -313,6 +322,31 @@ async function buildAssetInput(
       fvOptimista: components.length ? Math.max(...components) : fvBaseUsed,
       uncertainty: fv.uncertainty,
       analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
+      // FASE 1: credibilidad del consenso y región — SOLO
+      // alimentan la certeza y el prior de correlación del
+      // módulo de riesgo; jamás el FV ni el RE. El conteo es el
+      // mayor confiable entre las dos lecturas de Yahoo que ya
+      // se hacen (extras y el motor de FV); el rango combina
+      // Yahoo y TradingView (menor mínimo, mayor máximo); la
+      // región es el país de la sede que Yahoo publica en el
+      // perfil (último tramo del HQ «Ciudad · Estado · País»).
+      analystCount: Math.max(extras.analystCount ?? 0, fund.analystCount ?? 0) || null,
+      analystTargetLow: (() => {
+        const lows = [extras.targetLow, fund.targetLowPrice, fund.targetTvLow].filter(
+          (x): x is number => x != null && Number.isFinite(x) && x > 0
+        );
+        return lows.length ? Math.min(...lows) : null;
+      })(),
+      analystTargetHigh: (() => {
+        const highs = [extras.targetHigh, fund.targetHighPrice, fund.targetTvHigh].filter(
+          (x): x is number => x != null && Number.isFinite(x) && x > 0
+        );
+        return highs.length ? Math.max(...highs) : null;
+      })(),
+      region: (() => {
+        const parts = String(extras.hq ?? '').split('·').map((s) => s.trim()).filter(Boolean);
+        return parts.length ? parts[parts.length - 1] : null;
+      })(),
       fvConfidence: fvConfidenceUsed,
       fvComponentCount: fvComponentCountUsed,
       // Piso/techo del rango del FV: información que acompaña al FV
@@ -459,6 +493,25 @@ async function fetchIndustryPeers(
         fvConfidence: fv.fvConfidence ?? null,
         fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0,
         analystTarget: extras?.targetMean ?? fv.analystTarget ?? null,
+        // FASE 1: el par se puntúa con la misma certeza vF1 —
+        // mismos insumos de consenso y región que las posiciones.
+        analystCount: Math.max(extras?.analystCount ?? 0, fundAtPrice.analystCount ?? 0) || null,
+        analystTargetLow: (() => {
+          const lows = [extras?.targetLow, fundAtPrice.targetLowPrice, fundAtPrice.targetTvLow].filter(
+            (x): x is number => x != null && Number.isFinite(x) && x > 0
+          );
+          return lows.length ? Math.min(...lows) : null;
+        })(),
+        analystTargetHigh: (() => {
+          const highs = [extras?.targetHigh, fundAtPrice.targetHighPrice, fundAtPrice.targetTvHigh].filter(
+            (x): x is number => x != null && Number.isFinite(x) && x > 0
+          );
+          return highs.length ? Math.max(...highs) : null;
+        })(),
+        region: (() => {
+          const parts = String(extras?.hq ?? '').split('·').map((s) => s.trim()).filter(Boolean);
+          return parts.length ? parts[parts.length - 1] : null;
+        })(),
         beta: extras?.beta ?? finviz?.beta ?? null,
         priceHistory: peerCloses,
         roicPct: finviz?.roicPct ?? null,
@@ -482,6 +535,7 @@ async function fetchIndustryPeers(
         peers.push({
           symbol, ticker: t, name: t, industry: industryName, price,
           score: scored.score, certaintyScore: scored.certaintyScore,
+          stars: scored.stars,
           expectedReturnPct: scored.expectedReturnPct,
           volatilityPct: scored.volatilityPct,
           priceHistory: peerCloses,

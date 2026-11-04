@@ -100,8 +100,12 @@ describe('módulo de riesgo — medición A LA BAJA desde precios (R14)', () => 
     expect(d.overlapDays).toBeGreaterThan(20);
     expect(d.overlapDays).toBeLessThan(251); // solo cuentan los días de baja
     expect(d.effectiveDays).toBeGreaterThan(0);
-    expect(d.effectiveDays).toBeLessThanOrEqual(32.4); // techo EWMA λ=0,94
-    const w = d.effectiveDays / (d.effectiveDays + 60);
+    // FASE 1 (doble horizonte): el n efectivo de las correlaciones
+    // usa la memoria LARGA (λ_corr = 0,985): el techo viejo de
+    // λ=0,94 (≈32,4) queda SUPERADO y el nuevo es ≈132,3.
+    expect(d.effectiveDays).toBeGreaterThan(32.4);
+    expect(d.effectiveDays).toBeLessThanOrEqual(132.4);
+    const w = d.effectiveDays / (d.effectiveDays + 30); // shrinkage n0 = 30 (Fase 1)
     expect(d.rho).toBeCloseTo(w * 1 + (1 - w) * 0.65, 6);
     expect(d.prior).toBe(0.65);
   });
@@ -119,7 +123,7 @@ describe('módulo de riesgo — medición A LA BAJA desde precios (R14)', () => 
     const cond = buildConditioning([specA, specB, specC]);
     const d = pairCorrelation(specA, specB, cond);
     expect(d.measured).toBeCloseTo(-1, 6);
-    const w = d.effectiveDays / (d.effectiveDays + 60);
+    const w = d.effectiveDays / (d.effectiveDays + 30); // shrinkage n0 = 30 (Fase 1)
     expect(d.rho).toBeCloseTo(w * -1 + (1 - w) * 0.65, 6);
   });
 
@@ -356,18 +360,20 @@ describe('consistencia score ↔ gráfico ↔ ficha (mismo payload, mismos campo
         6
       );
       // (2) El gráfico y la ficha leen mctrPct/riskContributionPct del
-      // mismo payload; el componente de riesgo de la CERTEZA se
-      // recomputa desde ESOS campos con la fórmula documentada y
+      // mismo payload; la SUB-ESCALA DE RIESGO (riskSubscale, §5.1)
+      // se recomputa desde ESOS campos con la fórmula documentada y
       // coincide. Desde R13 la composición es MARGINAL-PRIMERO:
       // aporte relativo (PCTR/peso) 40% + riesgo marginal (MCTR
       // contra la volatilidad de la cartera) 35% + volatilidad 25%.
+      // Desde la Fase 1 esa sub-escala YA NO es un componente de la
+      // certeza: es el insumo del factor de riesgo del score.
       expect(a.mctrPct).not.toBeNull();
       expect(a.riskContributionPct).not.toBeNull();
       const volScore = clamp(100 - Math.max(0, a.volatilityPct - 12) * 2, 0, 100);
       const relScore = clamp(120 - 40 * (a.riskContributionPct! / a.weightPct), 0, 100);
       const mctrScore = clamp(120 - 60 * (a.mctrPct! / result.before.volatilityPct), 0, 100);
       const expectedRisk = Math.round(0.4 * relScore + 0.35 * mctrScore + 0.25 * volScore);
-      expect(a.certaintyComponents?.risk).toBe(expectedRisk);
+      expect(a.riskSubscale).toBe(expectedRisk);
       expect(a.certaintyScore).not.toBeNull();
       expect(a.score).not.toBeNull();
     }

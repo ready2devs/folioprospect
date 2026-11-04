@@ -51,20 +51,21 @@ const DupChipPrudent: React.FC<{ a: AssetScore }> = ({ a }) => (
   </span>
 );
 
-/** Bloque de score de la columna 1: en vista prudente muestra el
- *  score prudente (la misma composición del titular — velocidad
- *  cobrada al riesgo y a la incertidumbre, más el tilt — sobre
- *  el retorno prudente); en la esperada, el titular. UN solo
- *  nombre en toda la app: «Score de revalorización» (R14). */
+/** Bloque de score de la columna 1: el score es el RATING DE
+ *  TRANQUILIDAD (adopción F1b) — qué tan seguro es que el
+ *  activo cumpla sus previsiones; vale lo mismo en la vista
+ *  esperada y en la prudente. Las estrellas que lo acompañan
+ *  son las de OPORTUNIDAD del payload (precio contra valor
+ *  justo): NO salen del rating. UN solo nombre en toda la
+ *  app: «Rating de tranquilidad». */
 const ScoreBlock: React.FC<{ a: AssetScore; prudent: boolean }> = ({ a, prudent }) => {
   const sc = prudent ? a.scorePessimistic : a.score;
   if (sc != null) {
-    const st = Math.min(5, Math.max(1, Math.round(sc / 20)));
     return (
       <div className="opt-score">
-        Score de revalorización
+        Rating de tranquilidad
         <b>{sc}<span>/100</span></b>
-        <Stars n={st} />
+        <Stars n={a.stars} />
       </div>
     );
   }
@@ -327,7 +328,7 @@ export const OptimizerView: React.FC = () => {
             className={sortMode === 'score' ? 'on' : ''}
             onClick={() => setSortMode('score')}
           >
-            Score
+            Rating
           </button>
         </div>
       </div>
@@ -381,11 +382,11 @@ export const OptimizerView: React.FC = () => {
             <h3>Tu cartera hoy</h3>
             <p>
               {sortMode === 'score' ? (
-                <>Ordenada por score · Score de revalorización <InfoTip k="orden" /></>
+                <>Ordenada por rating · Rating de tranquilidad <InfoTip k="orden" /></>
               ) : prudent ? (
-                <>Ordenada por su piso · Score de revalorización <InfoTip k="vistaPrudente" /></>
+                <>Ordenada por su piso · Rating de tranquilidad <InfoTip k="vistaPrudente" /></>
               ) : (
-                <>Ordenada por tiempo a duplicar · Score de revalorización <InfoTip k="score" /></>
+                <>Ordenada por tiempo a duplicar · Rating de tranquilidad <InfoTip k="score" /></>
               )}
             </p>
           </div>
@@ -618,7 +619,7 @@ export const OptimizerView: React.FC = () => {
                   <div className="opt-r2">
                     {a.score != null ? (
                       <div className="opt-score">
-                        Score de revalorización
+                        Rating de tranquilidad
                         <b>{a.score}<span>/100</span></b>
                         <Stars n={a.stars} />
                       </div>

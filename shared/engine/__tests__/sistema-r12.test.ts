@@ -6,8 +6,7 @@ import {
   grinoldKroner,
   consensusPct,
   cashAnchorFor,
-  headlineScoreFor,
-  CASH_ANCHOR_PENALTY_PTS,
+  tranquilityRatingFor,
   type OptimizerAssetInput,
 } from '../optimizer.js';
 import { pePairFor } from '../fairvalue.js';
@@ -38,32 +37,44 @@ const base = (p: Partial<OptimizerAssetInput>): OptimizerAssetInput => ({
  *  oportunidad dada vale 50 y el riesgo calculado vale 50
  *  (vol 46,25 → 100 − 31,25 × 1,6 = 50). El RE sale solo de la pata
  *  de consenso (target), a valor facial. */
+const flatCloses = Array.from({ length: 130 }, (_, i) => ({ t: 1_700_000_000_000 + i * 86_400_000, c: 100 }));
 const neutral = (rePct: number, p: Partial<OptimizerAssetInput> = {}) =>
   base({
     price: 100,
     analystTarget: 100 * (1 + rePct / 100),
     opportunityScore: 50,
     volatilityPct: 46.25,
+    // FASE 1 (migración vF1): la certeza ya no sale de la
+    // volatilidad — el fixture declara los insumos de certeza
+    // que todo input de producción trae (etiqueta del FV, rango
+    // y conteo de analistas) y una historia plana, para que la
+    // pata sticky lea «sin caída» en los nueve casos por igual.
+    fvConfidence: 'Media',
+    fvComponentCount: 2,
+    fvRangeLow: 160,
+    fvRangeHigh: 260,
+    analystCount: 20,
+    priceHistory: flatCloses,
     ...p,
   });
 
 describe('certeza — independencia de la velocidad; score titular — lo contrario (R14)', () => {
   // Retornos esperados en vivo de la tabla R11 (posiciones 1–9).
   const RES = [80, 72.6, 60.5, 49.3, 42.2, 41.8, 35.5, 35.3, 29.9];
-  it('con la MISMA dispersión, nueve retornos distintos dan la MISMA certeza y scores DISTINTOS', () => {
+  it('MIGRADO (adopción F1b): con la MISMA dispersión, nueve retornos distintos dan la MISMA certeza y el MISMO rating', () => {
     // Los RE en vivo de la tabla R11 (29,9% … 80%) con los insumos
     // de dispersión idénticos en los nueve fixtures (sin etiqueta
     // de FV, sin rango de targets, misma volatilidad): el
     // SUB-ÍNDICE DE CERTEZA es UNO solo — la certeza no depende de
     // la velocidad de la predicción (semántica R12.1, conservada).
-    // El SCORE TITULAR de R14, en cambio, SÍ se mueve con la
-    // velocidad: es su núcleo, cobrado por las mismas
-    // restricciones en los nueve casos.
+    // En R14 el SCORE TITULAR se movía con la velocidad (era su
+    // núcleo); el RATING DE TRANQUILIDAD aprobado NO compone
+    // velocidad: con los mismos insumos de tranquilidad, los
+    // nueve ratings son el mismo aunque los retornos difieran.
     const scored = RES.map((re) => scoreAsset(neutral(re), 10_000, OPTS));
     expect(new Set(scored.map((s) => s.certaintyScore)).size).toBe(1);
     const scores = scored.map((s) => s.score!);
-    expect(new Set(scores).size).toBeGreaterThan(1);
-    expect(Math.max(...scores) - Math.min(...scores)).toBeGreaterThan(20);
+    expect(new Set(scores).size).toBe(1);
     const res = scored.map((s) => s.expectedReturnPct!);
     expect(Math.max(...res) - Math.min(...res)).toBeGreaterThan(30);
   });
@@ -74,6 +85,9 @@ describe('R12 · vista prudente (lectura contra el piso del rango)', () => {
     base({
       price: 100, fvBase: 200, fvPesimista: 130, fvOptimista: 260,
       analystTarget: 150, earningsGrowthTotalPct: 20, salesGrowthPct: 30,
+      // FASE 1 (migración vF1): insumos de certeza (la pata de
+      // riesgo ya no garantiza un índice no nulo por sí sola).
+      fvConfidence: 'Media', fvComponentCount: 2, fvRangeLow: 160, fvRangeHigh: 260,
     });
 
   it('el RE prudente usa el piso y el esperado NO se altera (recomposición a mano)', () => {
@@ -90,20 +104,20 @@ describe('R12 · vista prudente (lectura contra el piso del rango)', () => {
     expect(s.prudentFallback).toBe(false);
     expect(s.expectedReturnPessimisticPct!).toBeLessThan(s.expectedReturnPct!);
     expect(s.yearsToDoublePessimistic!).toBeGreaterThan(s.yearsToDouble!);
-    // El score prudente (R14) es la MISMA composición del titular
-    // sobre la velocidad del retorno prudente: como el prudente
-    // es menor, su score es menor. La CERTEZA no depende de la
-    // vista (un solo sub-índice por activo).
+    // MIGRADO (adopción F1b): en R14 el «score prudente» era la
+    // composición del titular sobre la velocidad del retorno
+    // prudente (menor ⇒ score menor). El RATING DE TRANQUILIDAD
+    // no compone velocidad: es EL MISMO en las dos vistas, igual
+    // que la certeza (un solo sub-índice por activo).
     expect(s.certaintyScore).not.toBeNull();
-    expect(s.scorePessimistic!).toBeLessThan(s.score!);
-    expect(s.scorePessimistic!).toBe(
-      headlineScoreFor({
-        rePct: s.expectedReturnPessimisticPct,
-        certaintyComponents: s.certaintyComponents,
-        cashPenaltyPts: s.cashAnchorPenaltyPts,
-        momentumTiltPts: s.momentum?.tiltPts ?? 0,
+    expect(s.scorePessimistic).toBe(s.score);
+    expect(s.scorePessimistic).toBe(
+      tranquilityRatingFor({
+        certaintyScore: s.certaintyScore,
+        riskSubscale: s.riskSubscale,
+        cashRegime: s.cashRegime?.regime ?? null,
         modelSuspect: s.modelSuspect,
-      }).score
+      }).rating
     );
   });
 
@@ -193,7 +207,7 @@ describe('R12 · régimen por ventas futuras y frontera suave', () => {
 });
 
 describe('R12 · ancla de caja real (TTM reportado)', () => {
-  it('TTM negativo → reparo −6 en el score de confianza, aunque el año fiscal haya cerrado positivo', () => {
+  it('TTM negativo → marca quema-caja, aunque el año fiscal haya cerrado positivo (MIGRACIÓN FASE 2: sin componentes no hay cobro)', () => {
     // Caso SIMO (diseño aprobado): su último año FISCAL cerró apenas
     // positivo (~+US$6 M), pero la ventana móvil de 12 meses quema
     // caja. El motor solo recibe el TTM — el año fiscal no es un
@@ -201,10 +215,17 @@ describe('R12 · ancla de caja real (TTM reportado)', () => {
     const plain = scoreAsset(neutral(30), 1000, OPTS);
     const burn = scoreAsset(neutral(30, { fcfTtmUsd: -50_000_000 }), 1000, OPTS);
     expect(burn.cashAnchorState).toBe('quema-caja');
-    expect(burn.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
-    // (El «ajuste ±15» como constructo quedó desapilado por la
-    // redefinición del score: el reparo vive directo en el índice.)
-    expect(burn.score!).toBe(plain.score! - CASH_ANCHOR_PENALTY_PTS);
+    // MIGRACIÓN FASE 2: el reparo −6 quedó DESAPILADO — el campo
+    // cashAnchorPenaltyPts vale 0 y la CERTEZA es confianza pura
+    // (la caja se cobra una sola vez como M_cash del score, y
+    // solo cuando hay componentes reportados del régimen: este
+    // fixture no los trae → régimen 'sin-dato', M = 1, y el
+    // score tampoco se mueve). El cobro nuevo vive en
+    // sistema-fase2.test.ts.
+    expect(burn.cashAnchorPenaltyPts).toBe(0);
+    expect(burn.cashRegime?.regime).toBe('sin-dato');
+    expect(burn.certaintyScore!).toBe(plain.certaintyScore!);
+    expect(burn.score!).toBe(plain.score!);
   });
 
   it('TTM positivo → genera caja, sin reparo', () => {
@@ -247,7 +268,14 @@ describe('R12 · ancla de caja real (TTM reportado)', () => {
     expect(withAnchor.fvConvergencePct).toBe(without.fvConvergencePct);
     expect(withAnchor.consensusPct).toBe(without.consensusPct);
     expect(withAnchor.fvEffective).toBe(without.fvEffective);
-    expect(withAnchor.score!).toBe(without.score! - CASH_ANCHOR_PENALTY_PTS);
+    // MIGRACIÓN FASE 2: la certeza ya no cobra la caja (es
+    // confianza pura) — con y sin ancla, el índice es EL MISMO.
+    // (En la Fase 1 el −6 era exacto acá; el cobro se mudó al
+    // M_cash del score, que sin componentes vale 1.)
+    if (without.certaintyScore != null && withAnchor.certaintyScore != null) {
+      expect(withAnchor.certaintyScore).toBe(without.certaintyScore);
+    }
+    expect(withAnchor.score!).toBeLessThanOrEqual(without.score!);
   });
 
   it('el medidor es puro: mismas primitivas, mismo par, sin mutar la entrada', () => {
@@ -339,7 +367,7 @@ describe('R12.3 · ancla de caja: fuente reportada primaria, proveedor respaldo'
     expect(s.score).toBe(scoreAsset(neutral(30), 1000, OPTS).score);
   });
 
-  it('quemador real con reportado negativo consistente → reparo intacto (caso AMZN reportado)', () => {
+  it('quemador real con reportado negativo consistente → marca y procedencia intactas (caso AMZN reportado; MIGRACIÓN FASE 2: el campo de puntos quedó en 0)', () => {
     const s = scoreAsset(
       neutral(30, {
         fcfTtmUsd: -34_731_700_000,
@@ -351,7 +379,10 @@ describe('R12.3 · ancla de caja: fuente reportada primaria, proveedor respaldo'
       1000, OPTS
     );
     expect(s.cashAnchorState).toBe('quema-caja');
-    expect(s.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
+    // FASE 2: cashAnchorPenaltyPts desapilado (= 0 siempre); el
+    // cobro de caja es el M_cash del régimen, que exige
+    // componentes — este fixture no los trae.
+    expect(s.cashAnchorPenaltyPts).toBe(0);
     expect(s.cashAnchorSource).toBe('reportado');
     expect(s.cashAnchorDiscrepancy).toBe(false);
   });
@@ -367,7 +398,8 @@ describe('R12.3 · ancla de caja: fuente reportada primaria, proveedor respaldo'
       1000, OPTS
     );
     expect(s.cashAnchorState).toBe('quema-caja');
-    expect(s.cashAnchorPenaltyPts).toBe(-CASH_ANCHOR_PENALTY_PTS);
+    // FASE 2: campo de puntos desapilado (= 0); ver el caso AMZN.
+    expect(s.cashAnchorPenaltyPts).toBe(0);
     expect(s.cashAnchorSource).toBe('proveedor');
     expect(s.cashAnchorEdgarFyOnlyGap).toBe(true);
   });
