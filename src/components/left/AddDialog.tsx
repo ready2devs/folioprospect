@@ -12,8 +12,22 @@ import type { AssetMeta } from '@shared/engine/types';
 import {
   applySaleProceeds,
   netSaleProceeds,
+  SALE_DESTINATION_ANNOTATIONS,
   type SaleProceedsDestination,
 } from '@shared/engine/saleProceeds';
+import {
+  applyPurchaseFunds,
+  purchaseCost,
+  PURCHASE_SOURCE_ANNOTATIONS,
+  type PurchaseFundsSource,
+} from '@shared/engine/purchaseFunds';
+import {
+  applyMoneyDelta,
+  purchaseSourceFromComment,
+  saleDestinationFromComment,
+  stripFundsAnnotation,
+  tradeMoneyEffect,
+} from '@shared/engine/tradeMoney';
 import {
   X,
   Plus,
@@ -717,6 +731,7 @@ export const AddDialog: React.FC = () => {
     cashModalTarget,
     addModalSymbol,
     addModalPrefill,
+    addModalEditingTrade,
     setCashModalTarget,
     openAddModal,
     closeAddModal,
@@ -765,6 +780,12 @@ export const AddDialog: React.FC = () => {
   // al guardar — no hay que agregarlo a mano (pedido del dueño, 2026-11-10).
   const [saleDestination, setSaleDestination] =
     useState<SaleProceedsDestination>('broker');
+  // Origen de los fondos si es COMPRA. Default 'broker': el dinero sale
+  // del efectivo líquido en el broker (Cash Comitente) y se descuenta
+  // solo al guardar — espejo del destino de venta (pedido del dueño,
+  // 2026-11-10, tras tener que descontar a mano la compra de NVDA).
+  const [purchaseSource, setPurchaseSource] =
+    useState<PurchaseFundsSource>('broker');
   const [qty, setQty] = useState('5');
   const [price, setPrice] = useState('201.68');
   const [priceManuallyEdited, setPriceManuallyEdited] = useState(false);
@@ -808,6 +829,25 @@ export const AddDialog: React.FC = () => {
     if (!addModalOpen) return;
     setStatusMsg('');
     setSaleDestination('broker');
+    setPurchaseSource('broker');
+    if (addModalEditingTrade) {
+      // MODIFICACIÓN de una transacción existente (desde el Libro
+      // Mayor): todos los campos precargados con sus datos, incluido el
+      // destino/origen de fondos leído de su anotación.
+      const t = addModalEditingTrade;
+      setSymbol(normalizeTradingViewSymbol(t.symbol));
+      setDivSymbol(normalizeTradingViewSymbol(t.symbol));
+      setSide(t.isBuy ? 'BUY' : 'SELL');
+      setQty(String(t.qty));
+      setPrice(String(t.price));
+      setPriceManuallyEdited(true);
+      setCommission(String(t.commission || 0));
+      setDateStr(new Date(t.time).toISOString().slice(0, 10));
+      setComment(stripFundsAnnotation(t.comment));
+      setSaleDestination(saleDestinationFromComment(t.comment) ?? 'broker');
+      setPurchaseSource(purchaseSourceFromComment(t.comment) ?? 'broker');
+      return;
+    }
     if (addModalPrefill?.side) {
       setSide(addModalPrefill.side);
     } else {
@@ -827,7 +867,7 @@ export const AddDialog: React.FC = () => {
         setPriceManuallyEdited(false);
       }
     }
-  }, [addModalOpen, addModalSymbol, addModalPrefill]);
+  }, [addModalOpen, addModalSymbol, addModalPrefill, addModalEditingTrade]);
 
   useEffect(() => {
     if (!addModalOpen || addModalTab !== 'cash') return;
@@ -870,7 +910,7 @@ export const AddDialog: React.FC = () => {
     const parsed = Date.parse(dateStr + 'T14:30:00Z');
     if (!Number.isFinite(parsed)) return null;
     const symTrades = (evaluation?.portfolio.trades || []).filter(
-      (t) => t.symbol === norm
+      (t) => t.symbol === norm && t.id !== addModalEditingTrade?.id
     );
     const firstOf = (buys: boolean): number | null =>
       symTrades
@@ -904,26 +944,56 @@ export const AddDialog: React.FC = () => {
     }
     const finalComment =
       side === 'SELL'
-        ? [
-            comment,
-            saleDestination === 'broker'
-              ? 'Destino venta: efectivo líquido en el broker'
-              : saleDestination === 'reserve'
-              ? 'Destino venta: reserva de efectivo'
-              : 'Destino venta: sale del portafolio',
-          ]
+        ? [comment, SALE_DESTINATION_ANNOTATIONS[saleDestination]]
             .filter(Boolean)
             .join(' · ')
-        : comment;
-    await api.addTrade(portfolioId, {
-      symbol: normSymbol,
-      isBuy: side === 'BUY',
-      qty: Number(qty),
-      price: Number(price),
-      commission: Number(commission),
-      time: parsedTime,
-      comment: finalComment,
-    });
+        : [comment, PURCHASE_SOURCE_ANNOTATIONS[purchaseSource]]
+            .filter(Boolean)
+            .join(' · ');
+    const balances = () => {
+      const s = useAppStore.getState().nwSettings;
+      return {
+        brokerCashUsd: s.brokerCashUsd || 0,
+        cashReserveUsd: s.cashReserveUsd || 0,
+      };
+    };
+    const editing = addModalEditingTrade;
+    if (editing) {
+      // MODIFICACIÓN: primero se da de alta la versión corregida y de
+      // baja la original (en ese orden, para no perder la operación si
+      // algo falla), y después se revierte el efecto monetario viejo y
+      // se aplica el nuevo. Así corregir un dato no deja los saldos
+      // descuadrados.
+      await api.addTrade(portfolioId, {
+        symbol: normSymbol,
+        isBuy: side === 'BUY',
+        qty: Number(qty),
+        price: Number(price),
+        commission: Number(commission),
+        time: parsedTime,
+        comment: finalComment,
+      });
+      await api.deleteTrade(portfolioId, editing.id);
+      const oldEffect = tradeMoneyEffect(editing);
+      if (oldEffect) {
+        setNwSettings(
+          applyMoneyDelta(balances(), {
+            account: oldEffect.account,
+            delta: -oldEffect.delta,
+          })
+        );
+      }
+    } else {
+      await api.addTrade(portfolioId, {
+        symbol: normSymbol,
+        isBuy: side === 'BUY',
+        qty: Number(qty),
+        price: Number(price),
+        commission: Number(commission),
+        time: parsedTime,
+        comment: finalComment,
+      });
+    }
     // VENTA: el producido neto se suma solo al destino elegido (Cash
     // Comitente del broker por defecto, o Reserva). Si sale del
     // portafolio, no se suma a ningún saldo. Así el dueño no tiene que
@@ -931,15 +1001,16 @@ export const AddDialog: React.FC = () => {
     if (side === 'SELL' && saleDestination !== 'exit') {
       const net = netSaleProceeds(Number(qty), Number(price), Number(commission));
       if (net > 0) {
-        const next = applySaleProceeds(
-          {
-            brokerCashUsd: nwSettings.brokerCashUsd || 0,
-            cashReserveUsd: nwSettings.cashReserveUsd || 0,
-          },
-          saleDestination,
-          net
-        );
-        setNwSettings(next);
+        setNwSettings(applySaleProceeds(balances(), saleDestination, net));
+      }
+    }
+    // COMPRA: el costo total se descuenta solo del origen elegido
+    // (efectivo líquido en el broker por defecto, o Reserva). Si los
+    // fondos vienen de fuera del portafolio, no se descuenta nada.
+    if (side === 'BUY' && purchaseSource !== 'external') {
+      const cost = purchaseCost(Number(qty), Number(price), Number(commission));
+      if (cost > 0) {
+        setNwSettings(applyPurchaseFunds(balances(), purchaseSource, cost));
       }
     }
     await refreshAll();
@@ -1092,6 +1163,26 @@ export const AddDialog: React.FC = () => {
 
         {addModalTab === 'trade' && (
           <form onSubmit={handleAddTrade}>
+            {addModalEditingTrade && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: 'var(--text-secondary)',
+                  padding: '7px 9px',
+                  borderRadius: 8,
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  marginBottom: 12,
+                }}
+              >
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  Modificando una transacción
+                </strong>{' '}
+                — al guardar, la operación original se reemplaza por esta y los
+                saldos vinculados (destino de la venta / origen de la compra) se
+                revierten y se reaplican con los datos nuevos.
+              </div>
+            )}
             <div className="form-row">
               <SymbolAutocompleteInput
                 label="Símbolo (Autocompletado estilo TradingView)"
@@ -1314,6 +1405,93 @@ export const AddDialog: React.FC = () => {
                 </div>
               </div>
             )}
+            {side === 'BUY' && (
+              <div className="form-field" style={{ marginBottom: 14 }}>
+                <label>¿De dónde sale el dinero de la compra?</label>
+                <div
+                  className="seg-group"
+                  style={{ display: 'flex', flexWrap: 'wrap', width: '100%', gap: 2 }}
+                >
+                  {(
+                    [
+                      ['broker', 'Efectivo líquido en el broker'],
+                      ['reserve', 'Reserva de efectivo'],
+                      ['external', 'Fondos de fuera del portafolio'],
+                    ] as [PurchaseFundsSource, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`seg-btn ${purchaseSource === key ? 'active' : ''}`}
+                      style={{ flex: '1 1 auto' }}
+                      onClick={() => setPurchaseSource(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-secondary)',
+                    padding: '7px 9px',
+                    borderRadius: 8,
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  {(() => {
+                    const cost = purchaseCost(
+                      Number(qty) || 0,
+                      Number(price) || 0,
+                      Number(commission) || 0
+                    );
+                    if (purchaseSource === 'broker') {
+                      const after = (nwSettings.brokerCashUsd || 0) - cost;
+                      return (
+                        <span>
+                          Costo total{' '}
+                          <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                            ${formatNumber(cost, 2)} USD
+                          </strong>{' '}
+                          → se descuenta solo del Cash Comitente al guardar (de $
+                          {formatNumber(nwSettings.brokerCashUsd || 0, 2)} a $
+                          {formatNumber(after, 2)}).
+                          {after < 0 &&
+                            ' Queda en negativo: la compra supera el líquido registrado en el broker.'}
+                        </span>
+                      );
+                    }
+                    if (purchaseSource === 'reserve') {
+                      const after = (nwSettings.cashReserveUsd || 0) - cost;
+                      return (
+                        <span>
+                          Costo total{' '}
+                          <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                            ${formatNumber(cost, 2)} USD
+                          </strong>{' '}
+                          → se descuenta solo de la Reserva de efectivo al guardar (de $
+                          {formatNumber(nwSettings.cashReserveUsd || 0, 2)} a $
+                          {formatNumber(after, 2)}).
+                          {after < 0 &&
+                            ' Queda en negativo: la compra supera la reserva registrada.'}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span>
+                        Costo total{' '}
+                        <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                          ${formatNumber(cost, 2)} USD
+                        </strong>{' '}
+                        → ingresa de fuera del portafolio: no se descuenta ni del Cash
+                        Comitente ni de la Reserva.
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
             <div className="form-field" style={{ marginBottom: 14 }}>
               <label>Nota / Comentario</label>
               <input
@@ -1335,7 +1513,8 @@ export const AddDialog: React.FC = () => {
                 <RotateCcw size={13} /> Restaurar Semilla TV (30 trades)
               </button>
               <button type="submit" className="btn btn-primary">
-                <Plus size={14} /> Guardar Transacción
+                <Plus size={14} />{' '}
+                {addModalEditingTrade ? 'Guardar cambios' : 'Guardar Transacción'}
               </button>
             </div>
           </form>

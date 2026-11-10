@@ -4,6 +4,7 @@ import type {
   ArgFxResponse,
   CurrencyCode,
   NwSettings,
+  Trade,
 } from '@shared/engine/types';
 import { normalizeTradingViewSymbol } from '@shared/engine';
 import {
@@ -139,6 +140,9 @@ export interface AppState {
   cashModalTarget: CashModalTarget;
   addModalSymbol: string;
   addModalPrefill: TradePrefill | null;
+  /** Transacción que se está MODIFICANDO desde el Libro Mayor, o null si
+   *  la pantalla de operación está cargando una nueva. */
+  addModalEditingTrade: Trade | null;
   /** Símbolo cuyo menú de acciones (Análisis / Agregar / Venta) está abierto, o null. */
   holdingMenuSymbol: string | null;
   loading: boolean;
@@ -193,6 +197,7 @@ export interface AppState {
     symbol?: string,
     prefill?: TradePrefill | null
   ) => void;
+  openEditTrade: (trade: Trade) => void;
   openHoldingMenu: (symbol: string) => void;
   closeHoldingMenu: () => void;
   setCashModalTarget: (target: CashModalTarget) => void;
@@ -221,6 +226,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cashModalTarget: 'ledger',
   addModalSymbol: '',
   addModalPrefill: null,
+  addModalEditingTrade: null,
   holdingMenuSymbol: null,
   loading: false,
   evaluation: null,
@@ -442,6 +448,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       cashModalTarget: cashTarget,
       addModalSymbol: symbol ? normalizeTradingViewSymbol(symbol) : '',
       addModalPrefill: tab === 'trade' ? (prefill ?? null) : null,
+      addModalEditingTrade: null,
+      holdingMenuSymbol: null,
+    }),
+  openEditTrade: (trade) =>
+    set({
+      addModalOpen: true,
+      addModalTab: 'trade',
+      cashModalTarget: 'ledger',
+      addModalSymbol: normalizeTradingViewSymbol(trade.symbol),
+      addModalPrefill: null,
+      addModalEditingTrade: trade,
       holdingMenuSymbol: null,
     }),
   openHoldingMenu: (symbol) =>
@@ -449,7 +466,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeHoldingMenu: () => set({ holdingMenuSymbol: null }),
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
   closeAddModal: () =>
-    set({ addModalOpen: false, addModalSymbol: '', addModalPrefill: null }),
+    set({
+      addModalOpen: false,
+      addModalSymbol: '',
+      addModalPrefill: null,
+      addModalEditingTrade: null,
+    }),
   refreshAll: async (background = false) => {
     if (!background) set({ loading: true });
     try {

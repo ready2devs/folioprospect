@@ -14,6 +14,15 @@
  */
 export type SaleProceedsDestination = 'broker' | 'reserve' | 'exit';
 
+/** Anotación que la pantalla de operación deja en el comentario de una
+ *  venta para que editarla o eliminarla después pueda revertir la suma
+ *  exacta (tradeMoney.ts la lee). */
+export const SALE_DESTINATION_ANNOTATIONS: Record<SaleProceedsDestination, string> = {
+  broker: 'Destino venta: efectivo líquido en el broker',
+  reserve: 'Destino venta: reserva de efectivo',
+  exit: 'Destino venta: sale del portafolio',
+};
+
 export function netSaleProceeds(qty: number, price: number, commission: number): number {
   const net = (Number(qty) || 0) * (Number(price) || 0) - (Number(commission) || 0);
   return Math.max(0, net);

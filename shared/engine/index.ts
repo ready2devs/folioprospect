@@ -14,3 +14,5 @@ export * from './cashRegime.js';
 export * from './riskMatrix.js';
 export * from './ledgerSync.js';
 export * from './saleProceeds.js';
+export * from './purchaseFunds.js';
+export * from './tradeMoney.js';

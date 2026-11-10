@@ -3,6 +3,7 @@ import { useAppStore } from '@/store';
 import { api } from '@/api';
 import { Donut } from '@/components/ui/Donut';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
+import { applyMoneyDelta, tradeMoneyEffect } from '@shared/engine/tradeMoney';
 import type { ProjectionResult } from '@shared/engine/types';
 import {
   Plus,
@@ -11,6 +12,7 @@ import {
   Sun,
   Moon,
   Trash2,
+  Pencil,
   ShieldAlert,
   Sparkles,
   Upload,
@@ -1455,16 +1457,55 @@ export const PortfolioView: React.FC = () => {
                       </td>
                       <td className="num-col" style={{ whiteSpace: 'nowrap' }}>{formatNumber(t.commission, 2)} USD</td>
                       <td>
-                        <button
-                          className="btn btn-ghost"
-                          onClick={async () => {
-                            await api.deleteTrade(portfolio.id, t.id);
-                            await refreshAll();
-                          }}
-                          title="Eliminar transacción"
-                        >
-                          <Trash2 size={13} color="var(--neg-bright)" />
-                        </button>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => store.openEditTrade(t)}
+                            title="Modificar transacción"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              // Si la operación tenía fondos vinculados
+                              // (destino de venta / origen de compra),
+                              // eliminar también revierte ese efecto
+                              // sobre el saldo: borrar un dato mal
+                              // cargado no debe dejar la plata corrida.
+                              const effect = tradeMoneyEffect(t);
+                              const reversal = effect
+                                ? { account: effect.account, delta: -effect.delta }
+                                : null;
+                              const accountLabel =
+                                effect?.account === 'broker'
+                                  ? 'Cash Comitente'
+                                  : 'Reserva de efectivo';
+                              const msg = reversal
+                                ? `¿Eliminar esta transacción?\n\n${t.isBuy ? 'Compra' : 'Venta'} de ${t.symbol} (${formatNumber(t.qty, 6)} a US$${formatNumber(t.price, 2)}).\nTambién se revierte su efecto en ${accountLabel}: ${reversal.delta >= 0 ? '+' : '−'}US$${formatNumber(Math.abs(reversal.delta), 2)}.`
+                                : `¿Eliminar esta transacción?\n\n${t.isBuy ? 'Compra' : 'Venta'} de ${t.symbol} (${formatNumber(t.qty, 6)} a US$${formatNumber(t.price, 2)}).\nNo tiene fondos vinculados: no se toca ningún saldo.`;
+                              if (!window.confirm(msg)) return;
+                              await api.deleteTrade(portfolio.id, t.id);
+                              if (reversal) {
+                                store.setNwSettings(
+                                  applyMoneyDelta(
+                                    {
+                                      brokerCashUsd:
+                                        Number(store.nwSettings?.brokerCashUsd) || 0,
+                                      cashReserveUsd:
+                                        Number(store.nwSettings?.cashReserveUsd) || 0,
+                                    },
+                                    reversal
+                                  )
+                                );
+                              }
+                              await refreshAll();
+                            }}
+                            title="Eliminar transacción"
+                          >
+                            <Trash2 size={13} color="var(--neg-bright)" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
