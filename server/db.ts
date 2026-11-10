@@ -25,18 +25,24 @@ let hydratedDb: DatabaseSchema | null = null;
 
 async function kvGetDb(): Promise<DatabaseSchema | null> {
   if (!kvConfigured()) return null;
-  try {
-    const res = await fetch(`${KV_URL}/get/${encodeURIComponent(KV_KEY)}`, {
-      headers: { Authorization: `Bearer ${KV_TOKEN}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    if (!data?.result) return null;
-    const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-    if (parsed && Array.isArray(parsed.portfolios)) return parsed as DatabaseSchema;
-  } catch {
-    // KV unreachable: fall back to local sources
+  // Dos intentos: un fallo transitorio de red no debe tratarse como «KV
+  // vacío», porque el arranque sin hidratación siembra la base local sobre
+  // la durable y una relectura fallida deja a la instancia con su foto vieja.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${KV_URL}/get/${encodeURIComponent(KV_KEY)}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) continue;
+      const data: any = await res.json();
+      if (!data?.result) return null;
+      const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+      if (parsed && Array.isArray(parsed.portfolios)) return parsed as DatabaseSchema;
+      return null;
+    } catch {
+      // KV unreachable this attempt: retry once, then fall back to local
+    }
   }
   return null;
 }
@@ -204,11 +210,13 @@ export function initDatabase(): DatabaseSchema {
   return db;
 }
 
-export function saveDatabase(db: DatabaseSchema): void {
+export function saveDatabase(db: DatabaseSchema): Promise<void> {
   db.updatedAt = new Date().toISOString();
   hydratedDb = db;
-  // Durable write (fire-and-forget; local copies below stay synchronous)
-  void kvSetDb(db);
+  // Durable write: las escrituras de la API la esperan (await) para que la
+  // respuesta no vuelva antes de que el estado nuevo sea el durable; los
+  // demás llamadores pueden ignorar la promesa como hasta ahora.
+  const durable = kvSetDb(db);
   try {
     const tmp = DB_PATH + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
@@ -221,4 +229,32 @@ export function saveDatabase(db: DatabaseSchema): void {
       // In-memory persistence
     }
   }
+  return durable;
+}
+
+/**
+ * Relee la base durable (KV) y, si su `updatedAt` es más nuevo que el de la
+ * copia en memoria, la adopta EN EL LUGAR (misma referencia de objeto: los
+ * handlers capturaron `db` al registrar las rutas).
+ *
+ * Por qué existe: cada instancia serverless hidrata su foto al arrancar y
+ * nunca la refrescaba, así que una instancia vieja que recibía una escritura
+ * guardaba su foto entera y pisaba el estado vigente (operaciones ya
+ * corregidas resucitaban, saldos acreditados volvían a cero). Releer antes
+ * de leer/escribir hace que todas las instancias converjan a la durable.
+ * Sin KV configurado (desarrollo local) es un no-op. Devuelve true si
+ * adoptó una versión más nueva.
+ */
+export async function refreshDatabase(db: DatabaseSchema): Promise<boolean> {
+  const remote = await kvGetDb();
+  if (!remote) return false;
+  const fresh = normalizeDatabase(remote);
+  if (!fresh.updatedAt || fresh.updatedAt <= db.updatedAt) return false;
+  db.portfolios = fresh.portfolios;
+  db.assetMeta = fresh.assetMeta;
+  db.tombstones = fresh.tombstones;
+  db.nwSettings = fresh.nwSettings;
+  db.updatedAt = fresh.updatedAt;
+  hydratedDb = db;
+  return true;
 }

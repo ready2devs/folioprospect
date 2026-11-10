@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import {
   initDatabase,
   saveDatabase,
+  refreshDatabase,
   hydrateDatabase,
   kvConfigured,
   loadSeedHistory,
@@ -108,7 +109,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     res.json(argFx);
   });
 
-  app.get('/api/portfolios', (_req: Request, res: Response) => {
+  app.get('/api/portfolios', async (_req: Request, res: Response) => {
+    await refreshDatabase(db);
     res.json(
       db.portfolios.map((p) => ({
         id: p.id,
@@ -125,22 +127,27 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Ajustes de patrimonio neto compartidos entre dispositivos (Reserva,
   // cash de broker, overrides de FX). Gana la modificación más reciente
   // (updatedAt); el cliente los cachea en localStorage y se hidrata de acá.
-  app.get('/api/settings/nw', (_req: Request, res: Response) => {
+  app.get('/api/settings/nw', async (_req: Request, res: Response) => {
+    await refreshDatabase(db);
     res.json(db.nwSettings ?? null);
   });
 
-  app.put('/api/settings/nw', (req: Request, res: Response) => {
+  app.put('/api/settings/nw', async (req: Request, res: Response) => {
+    // Releer antes de comparar updatedAt: con la foto vieja de otra
+    // instancia, un PUT válido parecía «anterior» y se descartaba.
+    await refreshDatabase(db);
     const clean = sanitizeNwSettings(req.body?.data);
     const ts = Number(req.body?.updatedAt) || 0;
     if (clean && (!db.nwSettings || ts >= db.nwSettings.updatedAt)) {
       db.nwSettings = { data: clean, updatedAt: ts };
-      saveDatabase(db);
+      await saveDatabase(db);
     }
     res.json(db.nwSettings ?? null);
   });
 
   // Full portfolio evaluation (Left Panel + State 2 TradingView Dashboard + 10/20Y Prospectiva)
   app.get('/api/portfolios/:id/evaluate', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const { id } = req.params;
     const benchmark = (req.query.benchmark as string) || 'SP:SPX';
     const mode = (req.query.mode as string) || 'live'; // 'live' | 'tv_snapshot'
@@ -307,6 +314,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Optimizador de cartera (SPEC-004): scores, extracciones, reaplicación,
   // riesgo/beneficio y narrativa. Cacheado 15 min en el servidor.
   app.get('/api/portfolios/:id/optimizer', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const { id } = req.params;
     const portfolio =
       id === 'overview'
@@ -348,16 +356,24 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Add unlimited trade transaction(s)
-  app.post('/api/portfolios/:id/trades', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/trades', async (req: Request, res: Response) => {
+    // Releer la durable antes de tocar nada: aplicar el alta sobre la foto
+    // vieja de una instancia pisaba operaciones y saldos más nuevos.
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const items = Array.isArray(req.body) ? req.body : [req.body];
 
+    // Ids ya presentes en el portafolio: un reenvío de la sincronización
+    // (reintento, segundo dispositivo) no debe duplicar la operación. Se
+    // actualiza al agregar, así también deduplica dentro del mismo lote.
+    const knownIds = new Set(portfolio.trades.map((t) => String(t.id)));
     const added: Trade[] = [];
     for (const raw of items) {
       // Un id marcado como borrado (tombstone) no resucita: lo subió una
       // copia local vieja que todavía no convergió.
       if (raw.id != null && db.tombstones?.[String(raw.id)]) continue;
+      if (raw.id != null && knownIds.has(String(raw.id))) continue;
       const sym = String(raw.symbol || 'NASDAQ:NVDA').toUpperCase();
       const fullSym = sym.includes(':') ? sym : `NASDAQ:${sym}`;
       const tx: Trade = {
@@ -371,6 +387,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         comment: raw.comment || '',
       };
       portfolio.trades.push(tx);
+      knownIds.add(String(tx.id));
       if (!db.assetMeta[fullSym]) {
         db.assetMeta[fullSym] = resolveAssetMeta(fullSym, db.assetMeta);
         if (raw.name) db.assetMeta[fullSym].name = raw.name;
@@ -380,23 +397,25 @@ export async function registerRoutes(app: Express): Promise<void> {
       added.push(tx);
     }
     portfolio.trades.sort((a, b) => b.time - a.time);
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, added, totalTrades: portfolio.trades.length });
   });
 
   // Delete trade transaction
-  app.delete('/api/portfolios/:id/trades/:txId', (req: Request, res: Response) => {
+  app.delete('/api/portfolios/:id/trades/:txId', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const { txId } = req.params;
     portfolio.trades = portfolio.trades.filter((t) => String(t.id) !== String(txId));
     db.tombstones[String(txId)] = Date.now();
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, totalTrades: portfolio.trades.length });
   });
 
   // Add cash transaction (deposit / withdrawal / income / taxes)
-  app.post('/api/portfolios/:id/cash', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/cash', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const raw = req.body || {};
@@ -409,21 +428,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       comment: raw.comment || '',
     };
     portfolio.cash.push(tx);
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, tx, cashCount: portfolio.cash.length });
   });
 
-  app.delete('/api/portfolios/:id/cash/:cashId', (req: Request, res: Response) => {
+  app.delete('/api/portfolios/:id/cash/:cashId', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     portfolio.cash = portfolio.cash.filter((c) => c.id !== req.params.cashId);
     db.tombstones[String(req.params.cashId)] = Date.now();
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true });
   });
 
   // Add dividend transaction
-  app.post('/api/portfolios/:id/dividends', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/dividends', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const raw = req.body || {};
@@ -436,12 +457,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       comment: raw.comment || '',
     };
     portfolio.dividends.push(tx);
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, tx });
   });
 
   // Add illiquid asset (inmuebles, fondos privados, plazos fijos, bonos)
-  app.post('/api/portfolios/:id/illiquid', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/illiquid', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const raw = req.body || {};
@@ -457,21 +479,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       notes: raw.notes || '',
     };
     portfolio.illiquid.push(asset);
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, asset, illiquidCount: portfolio.illiquid.length });
   });
 
-  app.delete('/api/portfolios/:id/illiquid/:assetId', (req: Request, res: Response) => {
+  app.delete('/api/portfolios/:id/illiquid/:assetId', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     portfolio.illiquid = portfolio.illiquid.filter((a) => a.id !== req.params.assetId);
     db.tombstones[String(req.params.assetId)] = Date.now();
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true });
   });
 
   // Import CSV (TradingView export format or generic Symbol,Side,Qty,Price,Commission,Date)
-  app.post('/api/portfolios/:id/import', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/import', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     const csvText = String(req.body?.csv || '');
@@ -522,12 +546,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       imported++;
     }
     portfolio.trades.sort((a, b) => b.time - a.time);
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true, imported, totalTrades: portfolio.trades.length });
   });
 
   // Reset portfolio to clean REA TradingView seed
-  app.post('/api/portfolios/:id/reset', (req: Request, res: Response) => {
+  app.post('/api/portfolios/:id/reset', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const portfolio =
       db.portfolios.find((p) => p.id === req.params.id) || db.portfolios[0];
     portfolio.trades = (seedExtract.trades || []).map((t: any) => ({
@@ -543,12 +568,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     portfolio.cash = [];
     portfolio.dividends = [];
     portfolio.illiquid = [];
-    saveDatabase(db);
+    await saveDatabase(db);
     res.json({ ok: true });
   });
 
   // State 1 — Google Finance Market Overview (Left + Center 2/3, no 3rd column)
   app.get('/api/market', async (_req: Request, res: Response) => {
+    await refreshDatabase(db);
     const indexDefs = [
       { symbol: 'SP:SPX', ticker: 'S&P 500', name: 'Standard & Poor’s 500', region: 'US' },
       { symbol: 'NASDAQ:NDX', ticker: 'NASDAQ 100', name: 'Nasdaq-100 Index', region: 'US' },
@@ -635,6 +661,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // State 3 — Individual Asset Analysis, Live Fair Value & 10/20Y Asset Projector
   app.get('/api/asset/:symbol', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const rawSym = decodeURIComponent(String(req.params.symbol)).toUpperCase();
     const range = (req.query.range as string) || '1Y';
     const portfolio = db.portfolios[0];
@@ -851,6 +878,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.get('/api/search', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
     const q = String(req.query.q || '').trim();
     const category = String(req.query.category || 'ALL') as any;
 
