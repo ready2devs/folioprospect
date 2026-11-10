@@ -30,7 +30,7 @@ export const LeftPanel: React.FC = () => {
     rightState,
     setRightState,
     selectedSymbol,
-    selectAsset,
+    openHoldingMenu,
     openAddModal,
     netOrGrossMode,
     setNetOrGrossMode,
@@ -421,8 +421,8 @@ export const LeftPanel: React.FC = () => {
                 gridTemplateColumns: gridTemplate,
                 padding: isCompactRow ? '8px 10px' : '7px 12px',
               }}
-              onClick={() => selectAsset(h.symbol)}
-              title={`Ver análisis de ${h.name}, Fair Value y Proyección 10/20 años`}
+              onClick={() => openHoldingMenu(h.symbol)}
+              title={`${h.name}: Análisis del activo, Agregar, Venta parcial o Venta total`}
             >
               {/* COLUMNA 1 — Posición: Fila 1 = Ticker + badge AssetType. Fila 2 = MarketClock + Nombre */}
               <div style={{ minWidth: 0 }}>

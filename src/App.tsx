@@ -7,6 +7,7 @@ import { MobileNav } from './components/layout/MobileNav';
 import { SearchModal } from './components/layout/SearchModal';
 import { LeftPanel } from './components/left/LeftPanel';
 import { AddDialog } from './components/left/AddDialog';
+import { HoldingActionMenu } from './components/left/HoldingActionMenu';
 import { MarketView } from './components/market/MarketView';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { AssetView } from './components/asset/AssetView';
@@ -99,6 +100,7 @@ export const App: React.FC = () => {
         <MobileNav />
         <SearchModal />
         <AddDialog />
+        <HoldingActionMenu />
       </div>
     );
   }
@@ -119,6 +121,7 @@ export const App: React.FC = () => {
       </div>
       <SearchModal />
       <AddDialog />
+      <HoldingActionMenu />
     </div>
   );
 };

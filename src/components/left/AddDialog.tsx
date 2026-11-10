@@ -10,6 +10,11 @@ import {
 } from '@shared/engine/symbolCatalog';
 import type { AssetMeta } from '@shared/engine/types';
 import {
+  applySaleProceeds,
+  netSaleProceeds,
+  type SaleProceedsDestination,
+} from '@shared/engine/saleProceeds';
+import {
   X,
   Plus,
   Upload,
@@ -711,6 +716,7 @@ export const AddDialog: React.FC = () => {
     addModalTab,
     cashModalTarget,
     addModalSymbol,
+    addModalPrefill,
     setCashModalTarget,
     openAddModal,
     closeAddModal,
@@ -754,6 +760,11 @@ export const AddDialog: React.FC = () => {
   // Trade state
   const [symbol, setSymbol] = useState('NASDAQ:NVDA');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+  // Destino del producido si es VENTA. Default 'broker': el dinero queda
+  // como efectivo líquido en el broker y se suma solo al Cash Comitente
+  // al guardar — no hay que agregarlo a mano (pedido del dueño, 2026-11-10).
+  const [saleDestination, setSaleDestination] =
+    useState<SaleProceedsDestination>('broker');
   const [qty, setQty] = useState('5');
   const [price, setPrice] = useState('201.68');
   const [priceManuallyEdited, setPriceManuallyEdited] = useState(false);
@@ -789,10 +800,22 @@ export const AddDialog: React.FC = () => {
   const [statusMsg, setStatusMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Pre-fill symbol and suggested price when opening from AssetView or SearchModal
+  // Pre-fill symbol and suggested price when opening from AssetView or SearchModal.
+  // Desde el menú de un activo en cartera (HoldingActionMenu) también llega la
+  // precarga de la operación: lado COMPRA/VENTA y, en Venta total, la cantidad
+  // completa de la posición existente.
   useEffect(() => {
     if (!addModalOpen) return;
     setStatusMsg('');
+    setSaleDestination('broker');
+    if (addModalPrefill?.side) {
+      setSide(addModalPrefill.side);
+    } else {
+      setSide('BUY');
+    }
+    if (addModalPrefill?.qty != null) {
+      setQty(String(addModalPrefill.qty));
+    }
     if (addModalSymbol) {
       const norm = normalizeTradingViewSymbol(addModalSymbol);
       setSymbol(norm);
@@ -804,7 +827,7 @@ export const AddDialog: React.FC = () => {
         setPriceManuallyEdited(false);
       }
     }
-  }, [addModalOpen, addModalSymbol]);
+  }, [addModalOpen, addModalSymbol, addModalPrefill]);
 
   useEffect(() => {
     if (!addModalOpen || addModalTab !== 'cash') return;
@@ -841,6 +864,19 @@ export const AddDialog: React.FC = () => {
     e.preventDefault();
     const normSymbol = normalizeTradingViewSymbol(symbol);
     const parsedTime = Date.parse(dateStr + 'T14:30:00Z') || Date.now();
+    const finalComment =
+      side === 'SELL'
+        ? [
+            comment,
+            saleDestination === 'broker'
+              ? 'Destino venta: efectivo líquido en el broker'
+              : saleDestination === 'reserve'
+              ? 'Destino venta: reserva de efectivo'
+              : 'Destino venta: sale del portafolio',
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : comment;
     await api.addTrade(portfolioId, {
       symbol: normSymbol,
       isBuy: side === 'BUY',
@@ -848,8 +884,26 @@ export const AddDialog: React.FC = () => {
       price: Number(price),
       commission: Number(commission),
       time: parsedTime,
-      comment,
+      comment: finalComment,
     });
+    // VENTA: el producido neto se suma solo al destino elegido (Cash
+    // Comitente del broker por defecto, o Reserva). Si sale del
+    // portafolio, no se suma a ningún saldo. Así el dueño no tiene que
+    // agregar el dinero a mano después de cargar la venta.
+    if (side === 'SELL' && saleDestination !== 'exit') {
+      const net = netSaleProceeds(Number(qty), Number(price), Number(commission));
+      if (net > 0) {
+        const next = applySaleProceeds(
+          {
+            brokerCashUsd: nwSettings.brokerCashUsd || 0,
+            cashReserveUsd: nwSettings.cashReserveUsd || 0,
+          },
+          saleDestination,
+          net
+        );
+        setNwSettings(next);
+      }
+    }
     await refreshAll();
     closeAddModal();
   };
@@ -1078,6 +1132,139 @@ export const AddDialog: React.FC = () => {
                 onChangeIso={setDateStr}
               />
             </div>
+            {side === 'SELL' &&
+              (() => {
+                const held = (evaluation?.holdings || []).find(
+                  (h: any) => h.symbol === normalizeTradingViewSymbol(symbol)
+                );
+                if (!held) {
+                  return (
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: 'var(--neg-bright)',
+                        marginBottom: 10,
+                      }}
+                    >
+                      Atención: {normalizeTradingViewSymbol(symbol)} no figura como
+                      posición abierta en tu portafolio.
+                    </div>
+                  );
+                }
+                if ((Number(qty) || 0) > held.qty + 1e-9) {
+                  return (
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: 'var(--neg-bright)',
+                        marginBottom: 10,
+                      }}
+                    >
+                      Atención: estás vendiendo {qty} pero tu posición es de{' '}
+                      {formatNumber(held.qty, 4)} — revisá la cantidad antes de guardar.
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: 'var(--text-secondary)',
+                      marginBottom: 10,
+                    }}
+                  >
+                    Posición actual: {formatNumber(held.qty, 4)} unidades
+                    {(Number(qty) || 0) >= held.qty - 1e-9
+                      ? ' — esta es la VENTA TOTAL de la posición.'
+                      : ` — tras la venta te quedan ${formatNumber(
+                          held.qty - (Number(qty) || 0),
+                          4
+                        )}.`}
+                  </div>
+                );
+              })()}
+            {side === 'SELL' && (
+              <div className="form-field" style={{ marginBottom: 14 }}>
+                <label>¿Dónde queda el dinero de la venta?</label>
+                <div
+                  className="seg-group"
+                  style={{ display: 'flex', flexWrap: 'wrap', width: '100%', gap: 2 }}
+                >
+                  {(
+                    [
+                      ['broker', 'Efectivo líquido en el broker'],
+                      ['reserve', 'Reserva de efectivo'],
+                      ['exit', 'Sale del portafolio'],
+                    ] as [SaleProceedsDestination, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`seg-btn ${saleDestination === key ? 'active' : ''}`}
+                      style={{ flex: '1 1 auto' }}
+                      onClick={() => setSaleDestination(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-secondary)',
+                    padding: '7px 9px',
+                    borderRadius: 8,
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  {(() => {
+                    const net = netSaleProceeds(
+                      Number(qty) || 0,
+                      Number(price) || 0,
+                      Number(commission) || 0
+                    );
+                    if (saleDestination === 'broker') {
+                      return (
+                        <span>
+                          Producido neto{' '}
+                          <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                            ${formatNumber(net, 2)} USD
+                          </strong>{' '}
+                          → se suma solo al Cash Comitente al guardar (de $
+                          {formatNumber(nwSettings.brokerCashUsd || 0, 2)} a $
+                          {formatNumber((nwSettings.brokerCashUsd || 0) + net, 2)}). No
+                          tenés que agregarlo a mano.
+                        </span>
+                      );
+                    }
+                    if (saleDestination === 'reserve') {
+                      return (
+                        <span>
+                          Producido neto{' '}
+                          <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                            ${formatNumber(net, 2)} USD
+                          </strong>{' '}
+                          → se suma solo a la Reserva de efectivo al guardar (de $
+                          {formatNumber(nwSettings.cashReserveUsd || 0, 2)} a $
+                          {formatNumber((nwSettings.cashReserveUsd || 0) + net, 2)}).
+                        </span>
+                      );
+                    }
+                    return (
+                      <span>
+                        Producido neto{' '}
+                        <strong className="mono" style={{ color: 'var(--text-primary)' }}>
+                          ${formatNumber(net, 2)} USD
+                        </strong>{' '}
+                        → sale del portafolio: no se suma ni al Cash Comitente ni a la
+                        Reserva.
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
             <div className="form-field" style={{ marginBottom: 14 }}>
               <label>Nota / Comentario</label>
               <input

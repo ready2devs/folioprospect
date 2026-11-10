@@ -66,6 +66,7 @@ export const PortfolioView: React.FC = () => {
     netOrGrossMode,
     setNetOrGrossMode,
     selectAsset,
+    openHoldingMenu,
     openAddModal,
     refreshAll,
   } = store;
@@ -487,7 +488,7 @@ export const PortfolioView: React.FC = () => {
     return (
       <tr
         key={e.symbol + '_' + e.date}
-        onClick={() => selectAsset(`NASDAQ:${e.symbol}`)}
+        onClick={() => openHoldingMenu(`NASDAQ:${e.symbol}`)}
         style={{ cursor: 'pointer' }}
       >
         <td>
@@ -884,7 +885,7 @@ export const PortfolioView: React.FC = () => {
                   return (
                     <div
                       key={g.symbol}
-                      onClick={() => selectAsset(g.symbol)}
+                      onClick={() => openHoldingMenu(g.symbol)}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: isMobile ? '92px 1fr 64px' : '110px 1fr 72px',
@@ -934,7 +935,7 @@ export const PortfolioView: React.FC = () => {
                   return (
                     <div
                       key={l.symbol}
-                      onClick={() => selectAsset(l.symbol)}
+                      onClick={() => openHoldingMenu(l.symbol)}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: isMobile ? '92px 1fr 64px' : '110px 1fr 72px',
@@ -1167,7 +1168,7 @@ export const PortfolioView: React.FC = () => {
                   {calendar.dividends.map((d: any) => (
                     <tr
                       key={d.symbol}
-                      onClick={() => selectAsset(`NASDAQ:${d.symbol}`)}
+                      onClick={() => openHoldingMenu(`NASDAQ:${d.symbol}`)}
                       style={{ cursor: 'pointer' }}
                     >
                       <td>
@@ -1217,7 +1218,7 @@ export const PortfolioView: React.FC = () => {
                   {calendar.news.map((n: any, idx: number) => (
                     <tr
                       key={idx}
-                      onClick={() => selectAsset(n.symbol)}
+                      onClick={() => openHoldingMenu(n.symbol)}
                       style={{ cursor: 'pointer' }}
                     >
                       <td className="mono" style={{ color: 'var(--text-muted)', width: 90, whiteSpace: 'nowrap' }}>
@@ -1300,7 +1301,7 @@ export const PortfolioView: React.FC = () => {
                     return (
                       <tr
                         key={h.symbol}
-                        onClick={() => selectAsset(h.symbol)}
+                        onClick={() => openHoldingMenu(h.symbol)}
                         style={{ cursor: 'pointer' }}
                       >
                         <td>

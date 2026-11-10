@@ -29,6 +29,13 @@ export interface ManualFund {
 }
 export type AddModalTab = 'trade' | 'cash' | 'illiquid' | 'dividend' | 'csv';
 export type CashModalTarget = 'ledger' | 'brokerCash' | 'reserveUsd';
+/** Precarga de la pantalla de operación al venir del menú de un activo en cartera. */
+export interface TradePrefill {
+  side?: 'BUY' | 'SELL';
+  /** Cantidad precargada (en Venta total = total de la posición existente). */
+  qty?: number;
+}
+/** Destino del producido de una venta: ver `SaleProceedsDestination` en shared/engine/saleProceeds. */
 
 const NW_STORAGE_KEY = 'fp.nwSettings.v1';
 
@@ -131,6 +138,9 @@ export interface AppState {
   addModalTab: AddModalTab;
   cashModalTarget: CashModalTarget;
   addModalSymbol: string;
+  addModalPrefill: TradePrefill | null;
+  /** Símbolo cuyo menú de acciones (Análisis / Agregar / Venta) está abierto, o null. */
+  holdingMenuSymbol: string | null;
   loading: boolean;
   evaluation: PortfolioEvaluationResponse | null;
   optimizerData: import('./api').OptimizerResponse | null;
@@ -177,7 +187,14 @@ export interface AppState {
   hydrateNwSettings: () => Promise<void>;
   syncNwSettingsToServer: (data: NwSettings, updatedAt: number) => Promise<void>;
   setSearchOpen: (open: boolean) => void;
-  openAddModal: (tab?: AddModalTab, cashTarget?: CashModalTarget, symbol?: string) => void;
+  openAddModal: (
+    tab?: AddModalTab,
+    cashTarget?: CashModalTarget,
+    symbol?: string,
+    prefill?: TradePrefill | null
+  ) => void;
+  openHoldingMenu: (symbol: string) => void;
+  closeHoldingMenu: () => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -203,6 +220,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addModalTab: 'trade',
   cashModalTarget: 'ledger',
   addModalSymbol: '',
+  addModalPrefill: null,
+  holdingMenuSymbol: null,
   loading: false,
   evaluation: null,
   optimizerData: null,
@@ -416,15 +435,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setSearchOpen: (searchOpen) => set({ searchOpen }),
-  openAddModal: (tab = 'trade', cashTarget = 'ledger', symbol) =>
+  openAddModal: (tab = 'trade', cashTarget = 'ledger', symbol, prefill) =>
     set({
       addModalOpen: true,
       addModalTab: tab,
       cashModalTarget: cashTarget,
       addModalSymbol: symbol ? normalizeTradingViewSymbol(symbol) : '',
+      addModalPrefill: tab === 'trade' ? (prefill ?? null) : null,
+      holdingMenuSymbol: null,
     }),
+  openHoldingMenu: (symbol) =>
+    set({ holdingMenuSymbol: normalizeTradingViewSymbol(symbol) }),
+  closeHoldingMenu: () => set({ holdingMenuSymbol: null }),
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
-  closeAddModal: () => set({ addModalOpen: false, addModalSymbol: '' }),
+  closeAddModal: () =>
+    set({ addModalOpen: false, addModalSymbol: '', addModalPrefill: null }),
   refreshAll: async (background = false) => {
     if (!background) set({ loading: true });
     try {

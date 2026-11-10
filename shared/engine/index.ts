@@ -13,3 +13,4 @@ export * from './optimizer.js';
 export * from './cashRegime.js';
 export * from './riskMatrix.js';
 export * from './ledgerSync.js';
+export * from './saleProceeds.js';
