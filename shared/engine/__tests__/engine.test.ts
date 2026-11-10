@@ -104,6 +104,51 @@ describe('FolioProspect Financial Engine — TradingView REA Parity', () => {
     expect(risk.sortinoRatio.user).toBeGreaterThan(0.65);
   });
 
+  it('ignores a sell dated before the first buy (no phantom realized, position opens cleanly)', () => {
+    // Caso real HSAI (2026-11-10): la venta se cargó con fecha «hace 1
+    // año» y quedó ANTES de la compra. El motor generaba un realizado
+    // fantasma por el producido total y la compra reabría la posición.
+    const t0 = 1_700_000_000_000;
+    const portfolio: Portfolio = {
+      ...buildSeedPortfolio(),
+      trades: [
+        { id: 1, time: t0, symbol: 'NASDAQ:HSAI', isBuy: false, qty: 150, price: 14.28, commission: 4.29, comment: '' },
+        { id: 2, time: t0 + 15 * 86400000, symbol: 'NASDAQ:HSAI', isBuy: true, qty: 150, price: 19.98, commission: 0, comment: '' },
+      ],
+    };
+    const res = evaluateLedger(portfolio, metaMap, {});
+    const hsai = res.holdings.find((h) => h.symbol === 'NASDAQ:HSAI');
+    expect(hsai).toBeDefined();
+    expect(hsai!.qty).toBe(150);
+    expect(hsai!.realizedGain).toBe(0);
+    expect(hsai!.firstBuyTime).toBe(t0 + 15 * 86400000);
+    expect(res.closedHoldings.find((h) => h.symbol === 'NASDAQ:HSAI')).toBeUndefined();
+    expect(res.kpis.realizedGain.v).toBe(0);
+  });
+
+  it('closes the position when the sell qty slightly exceeds the recorded position (basis capped)', () => {
+    // Venta de 150,016796 contra una posición registrada de 150 (la
+    // fracción real del broker): cierra igual y el costo removido no
+    // supera la base invertida.
+    const t0 = 1_700_000_000_000;
+    const portfolio: Portfolio = {
+      ...buildSeedPortfolio(),
+      trades: [
+        { id: 1, time: t0, symbol: 'NASDAQ:HSAI', isBuy: true, qty: 150, price: 19.98, commission: 0, comment: '' },
+        { id: 2, time: t0 + 300 * 86400000, symbol: 'NASDAQ:HSAI', isBuy: false, qty: 150.016796, price: 14.28, commission: 4.29, comment: '' },
+      ],
+    };
+    const res = evaluateLedger(portfolio, metaMap, {});
+    expect(res.holdings.find((h) => h.symbol === 'NASDAQ:HSAI')).toBeUndefined();
+    const closed = res.closedHoldings.find((h) => h.symbol === 'NASDAQ:HSAI');
+    expect(closed).toBeDefined();
+    // Realizado = producido neto (150,016796 × 14,28 − 4,29) − base (150 ×
+    // 19,98) − comisión ya incluida en el producido según convención del
+    // motor (closedHolding descuenta comisiones del estado una vez más).
+    const expected = 150.016796 * 14.28 - 4.29 - 150 * 19.98 - 4.29;
+    expect(closed!.realizedGain).toBeCloseTo(expected, 2);
+  });
+
   it('computes Morningstar-style Fair Value and 10/20Y Monte Carlo projections', () => {
     const fv = computeFairValue({
       symbol: 'NASDAQ:NVDA',

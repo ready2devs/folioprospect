@@ -59,6 +59,7 @@ export function evaluateLedger(
     commissions: number;
     dividends: number;
     firstBuyTime: number;
+    hasBuy: boolean;
   }
 
   const posMap = new Map<string, PosState>();
@@ -82,19 +83,30 @@ export function evaluateLedger(
         commissions: 0,
         dividends: 0,
         firstBuyTime: t.time,
+        hasBuy: false,
       };
       posMap.set(sym, st);
     }
 
     if (t.isBuy) {
+      // La primera COMPRA marca el inicio de la posición (una venta
+      // huérfana anterior no debe correr esa fecha).
+      if (!st.hasBuy) {
+        st.firstBuyTime = t.time;
+        st.hasBuy = true;
+      }
       st.qty += t.qty;
       st.invested += grossUsd;
       st.commissions += comm;
       totalBuyCashOut += grossUsd + comm;
       totalCommissions += comm;
-    } else {
-      const avgCost = st.qty > 1e-9 ? st.invested / st.qty : 0;
-      const costRemoved = avgCost * t.qty;
+    } else if (st.qty > 1e-9) {
+      // Venta con posición abierta. El costo removido nunca supera la base
+      // invertida: vender una fracción apenas mayor que la posición
+      // registrada (redondeos del broker) cierra la posición sin inventar
+      // base negativa.
+      const avgCost = st.invested / st.qty;
+      const costRemoved = Math.min(avgCost * t.qty, st.invested);
       const saleProceeds = grossUsd - comm;
       st.realized += saleProceeds - costRemoved;
       st.invested = Math.max(0, st.invested - costRemoved);
@@ -103,6 +115,13 @@ export function evaluateLedger(
       totalSellCashIn += saleProceeds;
       totalCommissions += comm;
     }
+    // Venta SIN posición abierta en su fecha (qty = 0): es un error de
+    // carga —típicamente una fecha anterior a la primera compra— y no debe
+    // mover números. Antes generaba un «realizado» fantasma por el total
+    // del producido y la compra posterior reabría la posición como si la
+    // venta nunca hubiera existido (caso HSAI, 2026-11-10). La operación
+    // queda en el historial, pero sin efecto en posición, realizado ni
+    // caja hasta que se corrija su fecha.
   }
 
   let totalDividends = 0;

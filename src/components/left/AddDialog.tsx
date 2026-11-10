@@ -860,10 +860,48 @@ export const AddDialog: React.FC = () => {
     }
   };
 
+  // Orden cronológico de la operación contra el historial del activo:
+  // una venta fechada antes de la primera compra (o una compra antes de
+  // la primera venta) se procesa fuera de orden y rompe la posición.
+  // Caso real 2026-11-10: venta de HSAI fechada «hace 1 año» por el atajo
+  // del calendario — quedó antes de su compra y la posición nunca cerró.
+  const dateOrderIssue = ((): string | null => {
+    const norm = normalizeTradingViewSymbol(symbol);
+    const parsed = Date.parse(dateStr + 'T14:30:00Z');
+    if (!Number.isFinite(parsed)) return null;
+    const symTrades = (evaluation?.portfolio.trades || []).filter(
+      (t) => t.symbol === norm
+    );
+    const firstOf = (buys: boolean): number | null =>
+      symTrades
+        .filter((t) => t.isBuy === buys)
+        .reduce<number | null>(
+          (acc, t) => (acc == null || t.time < acc ? t.time : acc),
+          null
+        );
+    const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    if (side === 'SELL') {
+      const fb = firstOf(true);
+      if (fb != null && parsed < fb) {
+        return `La fecha de la venta (${dateStr}) es anterior a la primera compra de ${norm} (${fmt(fb)}). Con esa fecha la venta se procesa antes que la compra y la posición no cierra. Corregí la fecha de ejecución.`;
+      }
+    } else {
+      const fs = firstOf(false);
+      if (fs != null && parsed < fs) {
+        return `La fecha de la compra (${dateStr}) es anterior a la primera venta registrada de ${norm} (${fmt(fs)}). Con esa fecha la compra se procesa fuera de orden. Corregí la fecha de ejecución.`;
+      }
+    }
+    return null;
+  })();
+
   const handleAddTrade = async (e: React.FormEvent) => {
     e.preventDefault();
     const normSymbol = normalizeTradingViewSymbol(symbol);
     const parsedTime = Date.parse(dateStr + 'T14:30:00Z') || Date.now();
+    if (dateOrderIssue) {
+      setStatusMsg(`No se guardó la operación. ${dateOrderIssue}`);
+      return;
+    }
     const finalComment =
       side === 'SELL'
         ? [
@@ -1132,6 +1170,17 @@ export const AddDialog: React.FC = () => {
                 onChangeIso={setDateStr}
               />
             </div>
+            {dateOrderIssue && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: 'var(--neg-bright)',
+                  marginBottom: 10,
+                }}
+              >
+                Atención: {dateOrderIssue}
+              </div>
+            )}
             {side === 'SELL' &&
               (() => {
                 const held = (evaluation?.holdings || []).find(
