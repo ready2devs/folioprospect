@@ -209,6 +209,28 @@ export function evaluateFxFormula(
   }
 }
 
+/**
+ * Composición del Portafolio Financiero líquido: qué porcentaje del total
+ * (tenencias brutas + cash comitente) representa cada componente. Se calcula
+ * desde los valores USD subyacentes, así que es invariante a la moneda de
+ * visualización. Devuelve null si la base no es positiva y finita: sin total
+ * no hay porcentaje que mostrar.
+ */
+export function financialCompositionShares(
+  grossHoldingsUsd: number,
+  brokerCashUsd: number
+): { grossPct: number; cashPct: number } | null {
+  if (!Number.isFinite(grossHoldingsUsd) || !Number.isFinite(brokerCashUsd)) {
+    return null;
+  }
+  const total = grossHoldingsUsd + brokerCashUsd;
+  if (!(total > 0)) return null;
+  return {
+    grossPct: (grossHoldingsUsd / total) * 100,
+    cashPct: (brokerCashUsd / total) * 100,
+  };
+}
+
 export function computeNwPatrimony(params: {
   holdings: { value: number; assetType: string }[];
   grossHoldingsUsd: number;

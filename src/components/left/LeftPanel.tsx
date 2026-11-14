@@ -12,7 +12,7 @@ import {
   resolveSubPortfolioConfig,
 } from '@shared/engine/subPortfolios';
 import { NwLiquidCard } from '@/components/left/NwLiquidCard';
-import { computeNwPatrimony } from '@shared/engine/nw';
+import { computeNwPatrimony, financialCompositionShares } from '@shared/engine/nw';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
   Plus,
@@ -114,6 +114,11 @@ export const LeftPanel: React.FC = () => {
     mepLive: argFx?.mepRate ?? 1553.6,
     settings: nwSettings,
   });
+
+  // % de cada componente sobre el Portafolio Financiero líquido total
+  // (tenencias brutas + cash comitente), desde los USD subyacentes.
+  const compShares = financialCompositionShares(kpis.grossHoldingsValue, nw.brokerCashUsd);
+  const formatSharePct = (pct: number) => `(${pct.toFixed(1).replace('.', ',')}%)`;
 
   const isTvLabel = nwSettings?.labelStyle === 'tv';
   const financialLedgerNetUsd = kpis.grossHoldingsValue + kpis.freeCash;
@@ -335,10 +340,11 @@ export const LeftPanel: React.FC = () => {
             justifyContent: 'space-between',
             fontSize: 10.5,
             color: 'var(--text-secondary)',
-            paddingTop: 6,
+            paddingTop: 11,
+            marginBottom: 4,
             borderTop: '1px solid var(--border-subtle)',
             flexWrap: 'wrap',
-            gap: 6,
+            gap: '12px 6px',
           }}
         >
           <div
@@ -357,6 +363,12 @@ export const LeftPanel: React.FC = () => {
                   decimals: 0,
                 })}
               </strong>
+              {compShares && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                  {' '}
+                  {formatSharePct(compShares.grossPct)}
+                </span>
+              )}
             </span>
             <span>·</span>
             <span
@@ -368,6 +380,12 @@ export const LeftPanel: React.FC = () => {
               <strong style={{ color: 'var(--text-primary)' }}>
                 {formatMoney(nw.brokerCashUsd, currency, fxRates, { decimals: 0 })}
               </strong>
+              {compShares && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                  {' '}
+                  {formatSharePct(compShares.cashPct)}
+                </span>
+              )}
             </span>
             <span>·</span>
             <span title="Saldo contable de caja en el registro histórico de operaciones">
