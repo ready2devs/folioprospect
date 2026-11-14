@@ -34,8 +34,10 @@ import {
  * servidor (/api/quotes, el mismo de Mercado/cartera) con la cadencia
  * Live de la app (15 s). Las siglas de veredicto las calcula el
  * servidor con la regla de la ficha sobre el pipeline de Fair Value
- * del motor y las cachea por día (/api/watchlist/verdicts): acá se
- * piden en lotes progresivos solo para las ACCIONES; cripto, el par
+ * del motor, con caché en memoria de 15 min en el servidor
+ * (/api/watchlist/verdicts; enmienda v10: mismo snapshot que la
+ * ficha): acá se piden en lotes progresivos solo para las ACCIONES;
+ * cripto, el par
  * ETH/BTC y los ETFs no tienen evaluación del motor («—» definitivo).
  *
  * Enmienda v8: filtro por veredicto (chips Todos/CF/C/M/V), alta de

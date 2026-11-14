@@ -47,7 +47,7 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
 
 - **Persistencia**: la lista (símbolos, etiqueta y orden) se guarda en el servidor con el mismo mecanismo que los demás ajustes del usuario (nace sembrada con la lista de §2; si el servidor ya tiene una guardada, manda la guardada). Debe sobrevivir a recargas y cambios de dispositivo, igual que las subcarteras.
 - **Precios y % del día**: del pipeline de cotizaciones existente de la app (el mismo que alimenta Mercado/cartera), en lote para los 84 símbolos; refresco con la cadencia habitual de la app (Live 15 s) sin bloquear la vista.
-- **Siglas de veredicto**: se calculan con la **misma regla de la ficha** (`computeOpportunity` sobre los escenarios del motor: pesimista/base/optimista + incertidumbre del motor, escenario Base) a partir del mismo pipeline de Fair Value que usa `/api/asset/:symbol`. Como son ~79 evaluaciones, van **cacheadas por símbolo con vencimiento diario** (persistidas en el servidor) y se resuelven **en lotes progresivos**: la fila muestra la sigla cuando está; mientras tanto, un marcador tenue «··». Cripto, el par ETH/BTC y los ETFs no tienen evaluación del motor: sigla «—» con title «Sin evaluación de oportunidad».
+- **Siglas de veredicto**: se calculan con la **misma regla de la ficha** (`computeOpportunity` sobre los escenarios del motor: pesimista/base/optimista + incertidumbre del motor, escenario Base) a partir del mismo pipeline de Fair Value que usa `/api/asset/:symbol`. Como son ~79 evaluaciones, van **cacheadas por símbolo** y se resuelven **en lotes progresivos**: la fila muestra la sigla cuando está; mientras tanto, un marcador tenue «··». (La caché era persistida con vencimiento diario en el diseño original; la enmienda v10, §9, la reemplazó por una caché en memoria de 15 min para que la sigla no contradiga a la ficha.) Cripto, el par ETH/BTC y los ETFs no tienen evaluación del motor: sigla «—» con title «Sin evaluación de oportunidad».
 - Nada de siglas inventadas: si el motor no puede valuar un activo (sin patas), la sigla es «—».
 
 ## 4. Fuera de alcance
@@ -98,7 +98,10 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
   **vencimiento diario por día de Nueva York** (`todayInNewYork`, el
   criterio del resto de la app); al persistir se podan los días viejos.
   Sin FV del motor (cripto, par ETH/BTC, ETFs, fuentes caídas) la sigla
-  es «—» definitiva y también se cachea. El cliente pide solo las
+  es «—» definitiva y también se cachea. (**La caché persistida por
+  día descripta en este párrafo quedó SUPERADA por la enmienda v10,
+  §9: salió del camino de servicio y fue reemplazada por una caché
+  en memoria de 15 min.**) El cliente pide solo las
   ACCIONES, en lotes progresivos de 6 con control de generación (una
   tanda cancelada nunca marca símbolos como resueltos).
 - **Layout**: la grilla vive en `AssetView` (izquierda `WatchlistPanel`
@@ -276,3 +279,65 @@ con persistencia tras recargar y sin desbordes; × de quitar y
 filtro por veredicto intactos; bloque «Tu Posición en Cartera» de
 un activo sin posición (FSLR) con los botones ya sin el «+»
 duplicado.
+
+## 9. Enmienda v10 (2026-11-14) — la sigla sale del mismo snapshot que la ficha (fuera la caché persistida por día)
+
+Defecto detectado por el dueño en producción: TMDX mostraba «V»
+(VENDER) en la watchlist mientras el veredicto de su ficha era
+MANTENER (precio 91,38, FV base 96,94, upside +6,1%).
+
+- **Causa**: dos snapshots distintos del mismo cálculo.
+  `GET /api/watchlist/verdicts` servía desde `db.verdictCache`, una
+  caché **persistida con vencimiento por día de Nueva York**: la
+  sigla se calculaba una vez y quedaba congelada hasta el día
+  siguiente. La ficha (`/api/asset/:symbol` → `optimizerFv`), en
+  cambio, recalcula sobre las cachés en memoria de las fuentes y del
+  optimizador (ventana de ~15 min). Si el precio o el FV se movían
+  después del primer cálculo del día — o ese primer cálculo salió
+  con una añada distinta —, la sigla contradecía a la ficha durante
+  todo el día.
+- **Decisión del dueño**: «que coincida siempre con la ficha».
+- **Corrección**:
+  - El endpoint ya **no lee ni escribe** `db.verdictCache`: cada
+    sigla se calcula con `computeWatchlistVerdict` — el mismo camino
+    de la ficha (`buildAssetOptimizerFv` + `computeOpportunity`,
+    escenario Base) — y se guarda en una **caché en memoria del
+    proceso** (`VerdictMemoryCache`, `server/verdictCache.ts`) con
+    TTL de **15 minutos**, la ventana de `CACHE_MS` del optimizador.
+    Sigla y ficha salen así del mismo snapshot y no pueden
+    contradecirse más allá de esa ventana compartida. Se mantiene la
+    re-derivación de la sigla desde el veredicto al servir
+    (enmienda v8) sobre lo calculado en la ventana.
+  - `db.verdictCache` salió también del esquema de la base: se
+    retiraron el campo de `DatabaseSchema`, la interfaz
+    `VerdictCacheEntry`, su siembra y la fusión especial en
+    `refreshDatabase`. `normalizeDatabase` descarta el campo si una
+    base persistida anterior lo trae, para que no quede estado
+    muerto ni vuelva a guardarse. Ningún otro consumidor lo usaba.
+  - El contrato del endpoint no cambia: mismo formato de respuesta,
+    tope de 24 símbolos por pedido, pool de concurrencia de 3 y «—»
+    definitivo para cripto, ETFs y activos sin FV del motor (que
+    también se cachea en memoria por la ventana). El cliente no
+    cambia: sigue pidiendo en lotes progresivos de 6 con «··»
+    mientras carga (solo se actualizaron los comentarios que
+    describían la caché por día).
+  - **Rendimiento** (QA local, datos reales): la tanda de 6 en frío
+    — primera tras el arranque, con las cachés de las fuentes
+    también vacías — costó ~26 s: es el cálculo de 6 FV del motor
+    con pool de 3, el mismo costo que la v7 pagaba en la primera
+    tanda de cada día; la tanda en caliente (caché en memoria)
+    responde en ~10 ms. La carga progresiva por lotes hace que ese
+    costo en frío se pague por tanda y con «··» en el resto, igual
+    que antes.
+
+**QA v10** (registro en `v10-qa-result.json`, carpeta
+`qa-subcarteras-2026-11-13`): (a) regresión — con una `verdictCache`
+sembrada en el `db.json` local con V/VENDER y fecha de hoy para
+TMDX, NU, GOOG y AAPL, el endpoint **no sirvió ninguna semilla**;
+(b) consistencia — en la misma ventana, el veredicto del endpoint
+coincidió **exactamente** con el de la ficha (optimizerFv +
+`computeOpportunity`) en los 4 símbolos, incluido TMDX con el mismo
+caso de producción (91,38 / FV 96,94 → MANTENER en ambos lados);
+(c) tiempos frío/caliente de la tanda de 6 (arriba). Tests nuevos de
+la caché en memoria y del descarte del campo heredado en
+`server/__tests__/verdictCache.test.ts`.

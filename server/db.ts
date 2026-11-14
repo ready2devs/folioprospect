@@ -102,19 +102,6 @@ export interface DatabaseSchema {
   /** Ajustes de patrimonio neto (Reserva, cash de broker, overrides de FX)
    *  sincronizados entre dispositivos; gana la modificación más reciente. */
   nwSettings: { data: NwSettings; updatedAt: number } | null;
-  /** Caché persistida de siglas de veredicto de la watchlist (SPEC-006):
-   *  símbolo → sigla/veredicto calculados con el pipeline de Fair Value
-   *  del motor, con vencimiento diario (`day` = fecha en Nueva York). */
-  verdictCache: Record<string, VerdictCacheEntry>;
-}
-
-/** Una sigla de veredicto cacheada (SPEC-006). `verdict: null` y
- *  `sigla: '—'` = el motor no produce evaluación para el activo. */
-export interface VerdictCacheEntry {
-  sigla: string;
-  verdict: string | null;
-  at: number;
-  day: string;
 }
 
 /** Completa los campos que una base persistida anterior a esta versión no
@@ -122,9 +109,12 @@ export interface VerdictCacheEntry {
 export function normalizeDatabase(db: DatabaseSchema): DatabaseSchema {
   if (!db.tombstones || typeof db.tombstones !== 'object') db.tombstones = {};
   if (db.nwSettings === undefined) db.nwSettings = null;
-  if (!db.verdictCache || typeof db.verdictCache !== 'object' || Array.isArray(db.verdictCache)) {
-    db.verdictCache = {};
-  }
+  // Enmienda v10 de la SPEC-006: la caché persistida de veredictos de
+  // la watchlist salió del camino de servicio (el endpoint calcula
+  // con una caché en memoria de 15 min) y del esquema; si una base
+  // persistida anterior la trae, se descarta para que no quede
+  // estado muerto rondando ni vuelva a guardarse.
+  if ('verdictCache' in db) delete (db as any).verdictCache;
   return db;
 }
 
@@ -321,7 +311,6 @@ export function initDatabase(): DatabaseSchema {
     updatedAt: new Date().toISOString(),
     tombstones: {},
     nwSettings: null,
-    verdictCache: {},
   };
   saveDatabase(db);
   return db;
@@ -371,16 +360,6 @@ export async function refreshDatabase(db: DatabaseSchema): Promise<boolean> {
   db.assetMeta = fresh.assetMeta;
   db.tombstones = fresh.tombstones;
   db.nwSettings = fresh.nwSettings;
-  // La caché de veredictos se FUSIONA por símbolo (gana la entrada más
-  // reciente de cada una): es una caché, no un estado del usuario, y
-  // reemplazarla en bloque perdería siglas recién calculadas acá.
-  const mergedCache: Record<string, VerdictCacheEntry> = { ...(fresh.verdictCache || {}) };
-  for (const [sym, entry] of Object.entries(db.verdictCache || {})) {
-    if (!mergedCache[sym] || (entry?.at ?? 0) > (mergedCache[sym]?.at ?? 0)) {
-      mergedCache[sym] = entry;
-    }
-  }
-  db.verdictCache = mergedCache;
   db.updatedAt = fresh.updatedAt;
   hydratedDb = db;
   return true;

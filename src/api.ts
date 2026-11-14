@@ -974,8 +974,10 @@ export const api = {
   /**
    * Siglas de veredicto de la watchlist (SPEC-006): el servidor las
    * calcula con la regla de la ficha sobre el pipeline de Fair Value
-   * del motor y las cachea por día. Ante cualquier fallo devuelve {}
-   * (la fila sigue en «··» y se reintenta en la próxima tanda).
+   * del motor, con caché en memoria de 15 min (enmienda v10: la sigla
+   * sale del mismo snapshot que la ficha). Ante cualquier fallo
+   * devuelve {} (la fila sigue en «··» y se reintenta en la próxima
+   * tanda).
    */
   async getWatchlistVerdicts(
     symbols: string[]

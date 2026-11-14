@@ -51,6 +51,7 @@ import {
   findCatalogEntry,
 } from '../shared/engine/index.js';
 import { buildAssetOptimizerFv, buildOptimizerResult } from './optimizerData.js';
+import { VerdictMemoryCache } from './verdictCache.js';
 import { resolveAnchorFromFundamentals } from './cashAnchor.js';
 import type {
   CashTx,
@@ -999,53 +1000,50 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   };
 
-  // Siglas de veredicto de la watchlist (SPEC-006): caché PERSISTIDA
-  // por símbolo con vencimiento diario (día de Nueva York, como el
-  // resto de la app). Lo fresco se responde al instante; lo vencido o
-  // ausente se calcula con concurrencia acotada (3 en paralelo — el
-  // detalle de un activo tarda ~1-2 s) y se persiste.
+  // Siglas de veredicto de la watchlist (SPEC-006, enmienda v10):
+  // SIN caché persistida. Cada sigla sale del MISMO camino de cálculo
+  // que la ficha (computeWatchlistVerdict, arriba) y se guarda en una
+  // caché EN MEMORIA de 15 min — la ventana de la caché del
+  // optimizador — para que sigla y ficha salgan del mismo snapshot y
+  // no puedan contradecirse más allá de esa ventana compartida. La
+  // vieja caché persistida por día (db.verdictCache) congelaba la
+  // sigla en el primer cálculo del día y contradijo a la ficha en
+  // vivo (TMDX «V» con la ficha en MANTENER): salió del camino de
+  // servicio y del esquema de la base. Lo ausente o vencido se
+  // calcula con concurrencia acotada (3 en paralelo — el detalle de
+  // un activo tarda ~1-2 s).
+  const verdictMemoryCache = new VerdictMemoryCache();
   app.get('/api/watchlist/verdicts', async (req: Request, res: Response) => {
-    await refreshDatabase(db);
     const symbols = String(req.query.symbols || '')
       .split(',')
       .map((s) => normalizeTradingViewSymbol(s.trim()))
       .filter(Boolean)
       .slice(0, 24);
-    const today = todayInNewYork();
-    if (!db.verdictCache || typeof db.verdictCache !== 'object') db.verdictCache = {};
     const out: Record<string, { sigla: string; verdict: string | null }> = {};
-    const stale: string[] = [];
+    const missing: string[] = [];
     for (const sym of symbols) {
-      const c = db.verdictCache[sym];
-      if (c && c.day === today && typeof c.sigla === 'string') {
-        // La sigla se RE-DERIVA del veredicto guardado al servir
-        // (enmienda v8 de la SPEC-006): una entrada cacheada con una
-        // sigla de una versión anterior («CM» para Compra Fuerte) se
-        // sirve con la vigente («CF») sin esperar al vencimiento.
+      const c = verdictMemoryCache.get(sym);
+      if (c) {
+        // La sigla se RE-DERIVA del veredicto al servir (enmienda v8
+        // de la SPEC-006): si una sigla cambiara de nombre, lo ya
+        // calculado en esta ventana se sirve con la vigente.
         const fresh = rederiveVerdictSigla(c);
         out[sym] = { sigla: fresh.sigla, verdict: fresh.verdict ?? null };
       } else {
-        stale.push(sym);
+        missing.push(sym);
       }
     }
-    if (stale.length > 0) {
-      const queue = [...stale];
+    if (missing.length > 0) {
+      const queue = [...missing];
       const workers = Array.from({ length: 3 }, async () => {
         while (queue.length) {
           const sym = queue.shift()!;
-          out[sym] = await computeWatchlistVerdict(sym);
+          const v = await computeWatchlistVerdict(sym);
+          verdictMemoryCache.set(sym, v);
+          out[sym] = v;
         }
       });
       await Promise.all(workers);
-      // Podar lo de otros días (vencido por definición) y persistir.
-      for (const sym of Object.keys(db.verdictCache)) {
-        if (db.verdictCache[sym]?.day !== today) delete db.verdictCache[sym];
-      }
-      const at = Date.now();
-      for (const sym of stale) {
-        db.verdictCache[sym] = { ...out[sym], at, day: today };
-      }
-      await saveDatabase(db);
     }
     res.json({ verdicts: out });
   });
