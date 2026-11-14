@@ -360,6 +360,12 @@ export interface SubPortfolioDef {
 export interface SubPortfolioConfig {
   defs: SubPortfolioDef[]; // máx. 8
   assignments: Record<string, string>; // symbol completo (ej. 'NASDAQ:GOOG') -> defId
+  /** v3: el usuario ya vio el modal de «Distribución por defecto» y eligió.
+   *  Si no es `true`, el modal se ofrece cuando hay contenido derivado. */
+  defaultsConfirmed?: boolean;
+  /** v3: habilita la regla derivada cripto → def «Cripto». Ausente = true
+   *  (comportamiento histórico); `false` = el usuario etiqueta todo a mano. */
+  autoDefaults?: boolean;
 }
 
 export interface NwSettings {

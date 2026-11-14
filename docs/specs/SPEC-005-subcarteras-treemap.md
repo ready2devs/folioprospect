@@ -60,10 +60,12 @@
    leen como «sin configurar» y el sanitizador del servidor lo valida.
 3. **Siembra inicial (solo definiciones, no asignaciones inventadas):** la
    primera vez se ofrecen las tres que el dueño ya nombró — **Núcleo**,
-   **Especulativa** y **Cripto** — creadas pero vacías. Única asignación
+   **Especulativas** (renombrada en la v3, §10) y **Cripto** — creadas pero
+   vacías. Única asignación
    automática: los activos de tipo Crypto caen en «Cripto» *mientras no tengan
    asignación manual* (regla derivada, no dato guardado: si el dueño mueve un
-   cripto a otra subcartera, manda su elección). Núcleo vs. Especulativa es un
+   cripto a otra subcartera, manda su elección; y desde la v3 la regla solo
+   corre con su OK, ver §10). Núcleo vs. Especulativas es un
    juicio suyo: **ningún activo se clasifica solo** ahí.
 4. **Colores de activos: «aleatorios» pero estables.** La paleta de segmentos
    se asigna por hash estable del ticker: cada activo tiene siempre el mismo
@@ -248,3 +250,27 @@ export interface SubPortfolioConfig {
    escritorio 1440 px. Sin desbordes ni etiquetas cortadas.
 6. Nada se publica a producción sin la orden explícita del dueño sobre esta
    spec + las capturas.
+
+## 10. Nota v3 (feedback del dueño en vivo, 2026-11-14 00:20)
+
+El dueño etiquetó GOOG a Núcleo y vio aparecer sola la división en Núcleo y
+Cripto: le gustó, **pero el usuario tiene que poder elegir** esa distribución
+«por defecto». Tres cambios:
+
+1. **Confirmación de la distribución por defecto.** Nuevos campos opcionales
+   en `SubPortfolioConfig`: `defaultsConfirmed` y `autoDefaults` (ausente =
+   `true`). Cuando el treemap va a mostrar contenido derivado (al menos un
+   activo que «Cripto» recibe solo por la regla automática) y
+   `defaultsConfirmed !== true`, se muestra **una sola vez** el modal
+   «Distribución por defecto»: «Usar esta distribución»
+   (`defaultsConfirmed=true, autoDefaults=true`) o «No, etiqueto todo a mano»
+   (`defaultsConfirmed=true, autoDefaults=false`; con `autoDefaults=false` la
+   regla derivada no corre y los cripto quedan sin etiquetar, en «General»,
+   hasta que el usuario los asigne). La decisión se persiste en `NwSettings`
+   como el resto de la config (el sanitizador del servidor solo preserva los
+   campos si son boolean) y el modal no vuelve a aparecer.
+2. **Renombre de siembra:** la def `especulativa` pasa a llamarse
+   **«Especulativas»** (el id no cambia; las configs ya guardadas no se
+   tocan desde el código).
+3. **Margen inferior:** la fila de mini-treemaps gana ~14 px de aire bajo los
+   treemaps, antes del bloque «Tenencias Brutas…», que se veía pegado.

@@ -12,6 +12,7 @@ import {
   removeDef as removeSubPortfolioDefFromConfig,
   resolveSubPortfolioConfig,
   setAssignment as setSubPortfolioAssignment,
+  setDefaultsDecision as setSubPortfolioDefaultsInConfig,
   upsertDef as upsertSubPortfolioDefInConfig,
 } from '@shared/engine/subPortfolios';
 import {
@@ -217,6 +218,8 @@ export interface AppState {
   setHoldingSubPortfolio: (symbol: string, defId: string | null) => void;
   upsertSubPortfolioDef: (def: SubPortfolioDef) => void;
   removeSubPortfolioDef: (defId: string) => void;
+  /** v3: guarda la decisión del modal «Distribución por defecto». */
+  setSubPortfolioDefaults: (defaultsConfirmed: boolean, autoDefaults: boolean) => void;
   setSubPortfolioFilter: (filter: string | null) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
@@ -510,6 +513,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       subPortfolios: removeSubPortfolioDefFromConfig(config, defId),
     });
     if (get().subPortfolioFilter === defId) set({ subPortfolioFilter: null });
+  },
+  setSubPortfolioDefaults: (defaultsConfirmed, autoDefaults) => {
+    const config = resolveSubPortfolioConfig(get().nwSettings);
+    get().setNwSettings({
+      subPortfolios: setSubPortfolioDefaultsInConfig(config, {
+        defaultsConfirmed,
+        autoDefaults,
+      }),
+    });
   },
   setSubPortfolioFilter: (subPortfolioFilter) => set({ subPortfolioFilter }),
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),

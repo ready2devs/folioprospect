@@ -11,9 +11,12 @@ import type {
  * El etiquetado vive en `NwSettings.subPortfolios` (defs + asignaciones
  * manuales por símbolo). Dos reglas derivadas, nunca datos guardados:
  *  - Si el campo no existe, se siembran las tres definiciones que el dueño
- *    nombró (Núcleo / Especulativa / Cripto), vacías.
+ *    nombró (Núcleo / Especulativas / Cripto), vacías.
  *  - Un holding cripto sin asignación manual cae en la def «Cripto» si
- *    existe; la asignación manual siempre gana.
+ *    existe; la asignación manual siempre gana. Desde la v3 esta regla solo
+ *    corre si `autoDefaults !== false`: la primera vez que va a mostrar
+ *    contenido derivado, la UI pide el OK del usuario («Distribución por
+ *    defecto») y guarda su decisión en `defaultsConfirmed`/`autoDefaults`.
  */
 
 /** Paleta de subcarteras (8 colores pensados para fondo oscuro). */
@@ -69,7 +72,7 @@ export const MAX_SUBPORTFOLIO_ASSIGNMENTS = 300;
 export function seedSubPortfolioDefs(): SubPortfolioDef[] {
   return [
     { id: 'nucleo', name: 'Núcleo', color: SUBPORTFOLIO_COLORS[0] },
-    { id: 'especulativa', name: 'Especulativa', color: SUBPORTFOLIO_COLORS[1] },
+    { id: 'especulativa', name: 'Especulativas', color: SUBPORTFOLIO_COLORS[1] },
     { id: CRYPTO_DEF_ID, name: 'Cripto', color: SUBPORTFOLIO_COLORS[2] },
   ];
 }
@@ -102,7 +105,16 @@ export function resolveSubPortfolioConfig(
       }
     }
   }
-  return { defs, assignments };
+  const resolved: SubPortfolioConfig = { defs, assignments };
+  // v3: la decisión sobre la distribución por defecto se preserva tal cual;
+  // cualquier valor que no sea boolean se descarta (vuelve a «sin decidir»).
+  if (typeof raw.defaultsConfirmed === 'boolean') {
+    resolved.defaultsConfirmed = raw.defaultsConfirmed;
+  }
+  if (typeof raw.autoDefaults === 'boolean') {
+    resolved.autoDefaults = raw.autoDefaults;
+  }
+  return resolved;
 }
 
 function isValidDefShape(d: any): d is SubPortfolioDef {
@@ -140,7 +152,9 @@ export function findDef(
 
 /**
  * Def efectiva de un holding: la asignación manual manda; sin ella, un
- * cripto cae en la def «Cripto» si existe; si no, queda sin etiquetar (null).
+ * cripto cae en la def «Cripto» si existe Y la distribución por defecto
+ * está habilitada (`autoDefaults !== false`, v3); si no, queda sin
+ * etiquetar (null).
  */
 export function effectiveDefId(
   h: { assetType?: AssetType | string; symbol: string },
@@ -148,11 +162,49 @@ export function effectiveDefId(
 ): string | null {
   const manual = config.assignments[h.symbol];
   if (manual && findDef(config, manual)) return manual;
-  if (isCryptoHolding(h) && findDef(config, CRYPTO_DEF_ID)) return CRYPTO_DEF_ID;
+  if (
+    config.autoDefaults !== false &&
+    isCryptoHolding(h) &&
+    findDef(config, CRYPTO_DEF_ID)
+  ) {
+    return CRYPTO_DEF_ID;
+  }
   return null;
 }
 
-/** Asigna (o desasigna con defId null) un símbolo. Devuelve config nueva. */
+/**
+ * Activos que la subcartera «Cripto» recibe SOLO por la regla derivada (no
+ * por asignación manual). Si hay al menos uno, el treemap está mostrando
+ * contenido que el usuario no eligió activo por activo: es el disparador
+ * del modal «Distribución por defecto» (v3). Con `autoDefaults === false`
+ * la regla no corre, así que devuelve 0.
+ */
+export function countDerivedCrypto(
+  holdings: SubPortfolioHoldingLike[],
+  config: SubPortfolioConfig
+): number {
+  if (config.autoDefaults === false) return 0;
+  return holdings.filter(
+    (h) =>
+      effectiveDefId(h, config) === CRYPTO_DEF_ID &&
+      config.assignments[h.symbol] !== CRYPTO_DEF_ID
+  ).length;
+}
+
+/** Guarda la decisión del modal «Distribución por defecto» (v3). */
+export function setDefaultsDecision(
+  config: SubPortfolioConfig,
+  decision: { defaultsConfirmed: boolean; autoDefaults: boolean }
+): SubPortfolioConfig {
+  return {
+    ...config,
+    defaultsConfirmed: decision.defaultsConfirmed,
+    autoDefaults: decision.autoDefaults,
+  };
+}
+
+/** Asigna (o desasigna con defId null) un símbolo. Devuelve config nueva,
+ *  preservando el resto de la config (p. ej. la decisión v3 de defaults). */
 export function setAssignment(
   config: SubPortfolioConfig,
   symbol: string,
@@ -164,7 +216,7 @@ export function setAssignment(
   } else {
     assignments[symbol] = defId;
   }
-  return { defs: config.defs, assignments };
+  return { ...config, assignments };
 }
 
 /** Crea o actualiza una def (por id). Respeta el tope de 8 defs. */
@@ -175,12 +227,12 @@ export function upsertDef(
   const exists = config.defs.some((d) => d.id === def.id);
   if (exists) {
     return {
+      ...config,
       defs: config.defs.map((d) => (d.id === def.id ? { ...def } : d)),
-      assignments: config.assignments,
     };
   }
   if (config.defs.length >= MAX_SUBPORTFOLIO_DEFS) return config;
-  return { defs: [...config.defs, { ...def }], assignments: config.assignments };
+  return { ...config, defs: [...config.defs, { ...def }] };
 }
 
 /** Borra una def: sus activos quedan sin etiquetar (nunca toca posiciones). */
@@ -192,7 +244,11 @@ export function removeDef(
   for (const [symbol, id] of Object.entries(config.assignments)) {
     if (id !== defId) assignments[symbol] = id;
   }
-  return { defs: config.defs.filter((d) => d.id !== defId), assignments };
+  return {
+    ...config,
+    defs: config.defs.filter((d) => d.id !== defId),
+    assignments,
+  };
 }
 
 /** Slug estable para una def nueva a partir de su nombre. */

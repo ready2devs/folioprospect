@@ -183,7 +183,16 @@ export function sanitizeSubPortfolios(raw: any): SubPortfolioConfig | undefined 
         if (typeof defId === 'string' && seenIds.has(defId)) assignments[symbol] = defId;
       }
     }
-    return { defs, assignments };
+    const out: SubPortfolioConfig = { defs, assignments };
+    // v3: la decisión sobre la distribución por defecto solo se preserva si
+    // viene como boolean; cualquier otra cosa se descarta.
+    if (typeof raw.defaultsConfirmed === 'boolean') {
+      out.defaultsConfirmed = raw.defaultsConfirmed;
+    }
+    if (typeof raw.autoDefaults === 'boolean') {
+      out.autoDefaults = raw.autoDefaults;
+    }
+    return out;
   } catch {
     return empty;
   }

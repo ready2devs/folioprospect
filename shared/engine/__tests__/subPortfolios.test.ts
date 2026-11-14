@@ -5,6 +5,7 @@ import {
   SEGMENT_COLORS,
   UNTAGGED_PANEL_ID,
   colorForTicker,
+  countDerivedCrypto,
   effectiveDefId,
   groupHoldingsBySubPortfolio,
   isCryptoHolding,
@@ -14,6 +15,7 @@ import {
   seedSubPortfolioDefs,
   selectTreemapPanels,
   setAssignment,
+  setDefaultsDecision,
   stableHash,
   upsertDef,
   type SubPortfolioHoldingLike,
@@ -32,10 +34,10 @@ const H = (
 });
 
 describe('SPEC-005 · siembra y resolución de config', () => {
-  it('sin campo guardado siembra Núcleo / Especulativa / Cripto con los colores de la spec', () => {
+  it('sin campo guardado siembra Núcleo / Especulativas / Cripto con los colores de la spec', () => {
     const cfg = resolveSubPortfolioConfig({});
     expect(cfg.defs.map((d) => d.id)).toEqual(['nucleo', 'especulativa', 'cripto']);
-    expect(cfg.defs.map((d) => d.name)).toEqual(['Núcleo', 'Especulativa', 'Cripto']);
+    expect(cfg.defs.map((d) => d.name)).toEqual(['Núcleo', 'Especulativas', 'Cripto']);
     expect(cfg.defs[0].color).toBe('#10b981');
     expect(cfg.defs[1].color).toBe('#8b5cf6');
     expect(cfg.defs[2].color).toBe('#f59e0b');
@@ -241,6 +243,93 @@ describe('SPEC-005 · CRUD de definiciones y asignaciones', () => {
     expect(makeDefId('Núcleo', [])).toBe('nucleo');
     expect(makeDefId('Caja Fuerte', ['caja-fuerte'])).toBe('caja-fuerte-2');
     expect(makeDefId('!!!', [])).toBe('cartera');
+  });
+});
+
+describe('SPEC-005 v3 · confirmación de la distribución por defecto', () => {
+  const holdings = [
+    H('NASDAQ:GOOG', 20000),
+    H('BINANCE:BTCUSDT', 3000, 'Crypto'),
+    H('BINANCE:ETHUSDT', 2000, 'Crypto'),
+  ];
+
+  it('sin decisión (campos ausentes) la regla derivada está activa y hay contenido derivado', () => {
+    const cfg = resolveSubPortfolioConfig({});
+    expect(cfg.defaultsConfirmed).toBeUndefined();
+    expect(cfg.autoDefaults).toBeUndefined();
+    expect(effectiveDefId(holdings[1], cfg)).toBe('cripto');
+    expect(countDerivedCrypto(holdings, cfg)).toBe(2);
+  });
+
+  it('con autoDefaults=true explícito la regla sigue activa', () => {
+    const cfg = setDefaultsDecision(resolveSubPortfolioConfig({}), {
+      defaultsConfirmed: true,
+      autoDefaults: true,
+    });
+    expect(effectiveDefId(holdings[1], cfg)).toBe('cripto');
+    expect(countDerivedCrypto(holdings, cfg)).toBe(2);
+  });
+
+  it('con autoDefaults=false la regla NO corre: el cripto queda sin etiquetar, en «General»', () => {
+    const cfg = setDefaultsDecision(resolveSubPortfolioConfig({}), {
+      defaultsConfirmed: true,
+      autoDefaults: false,
+    });
+    expect(effectiveDefId(holdings[1], cfg)).toBeNull();
+    expect(countDerivedCrypto(holdings, cfg)).toBe(0);
+    const { panels } = groupHoldingsBySubPortfolio(holdings, cfg);
+    expect(panels.map((p) => p.id)).toEqual([GENERAL_PANEL_ID]);
+    expect(panels[0].holdings.map((h) => h.ticker)).toEqual([
+      'GOOG',
+      'BTCUSDT',
+      'ETHUSDT',
+    ]);
+    // La asignación manual sigue funcionando con la regla apagada
+    const manual = setAssignment(cfg, 'BINANCE:BTCUSDT', 'cripto');
+    expect(effectiveDefId(holdings[1], manual)).toBe('cripto');
+  });
+
+  it('el contenido derivado no cuenta lo asignado a mano a «Cripto» ni a otra def', () => {
+    let cfg = resolveSubPortfolioConfig({});
+    cfg = setAssignment(cfg, 'BINANCE:BTCUSDT', 'cripto');
+    cfg = setAssignment(cfg, 'BINANCE:ETHUSDT', 'nucleo');
+    expect(countDerivedCrypto(holdings, cfg)).toBe(0);
+  });
+
+  it('resolve preserva los booleanos v3 y descarta valores que no lo son', () => {
+    const ok = resolveSubPortfolioConfig({
+      subPortfolios: {
+        defs: seedSubPortfolioDefs(),
+        assignments: {},
+        defaultsConfirmed: true,
+        autoDefaults: false,
+      },
+    });
+    expect(ok.defaultsConfirmed).toBe(true);
+    expect(ok.autoDefaults).toBe(false);
+    const basura = resolveSubPortfolioConfig({
+      subPortfolios: {
+        defs: seedSubPortfolioDefs(),
+        assignments: {},
+        defaultsConfirmed: 'si',
+        autoDefaults: 0,
+      } as any,
+    });
+    expect(basura.defaultsConfirmed).toBeUndefined();
+    expect(basura.autoDefaults).toBeUndefined();
+  });
+
+  it('la decisión sobrevive a etiquetar, crear y borrar defs (los helpers preservan la config)', () => {
+    let cfg = setDefaultsDecision(resolveSubPortfolioConfig({}), {
+      defaultsConfirmed: true,
+      autoDefaults: false,
+    });
+    cfg = setAssignment(cfg, 'NASDAQ:GOOG', 'nucleo');
+    cfg = upsertDef(cfg, { id: 'renta', name: 'Renta', color: '#38bdf8' });
+    cfg = removeDef(cfg, 'renta');
+    expect(cfg.defaultsConfirmed).toBe(true);
+    expect(cfg.autoDefaults).toBe(false);
+    expect(cfg.assignments).toEqual({ 'NASDAQ:GOOG': 'nucleo' });
   });
 });
 

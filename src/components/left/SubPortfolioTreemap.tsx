@@ -5,6 +5,7 @@ import {
   GENERAL_PANEL_ID,
   SUBPORTFOLIO_COLORS,
   colorForTicker,
+  countDerivedCrypto,
   groupHoldingsBySubPortfolio,
   resolveSubPortfolioConfig,
   selectTreemapPanels,
@@ -83,6 +84,7 @@ export const SubPortfolioTreemap: React.FC<{
     setSubPortfolioFilter,
     upsertSubPortfolioDef,
     removeSubPortfolioDef,
+    setSubPortfolioDefaults,
   } = useAppStore();
 
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
@@ -105,6 +107,13 @@ export const SubPortfolioTreemap: React.FC<{
   }, []);
 
   const config = resolveSubPortfolioConfig(nwSettings);
+  // v3: contenido derivado = activos que «Cripto» recibe solo por la regla
+  // automática. Si hay al menos uno y el usuario todavía no dio su OK a la
+  // distribución por defecto, se le pide la decisión una única vez (la
+  // persistencia en NwSettings manda: confirmado, no vuelve a aparecer).
+  const derivedCryptoCount = countDerivedCrypto(holdings as any, config);
+  const showDefaultsPrompt =
+    derivedCryptoCount > 0 && config.defaultsConfirmed !== true;
   const grouping = groupHoldingsBySubPortfolio(holdings as any, config);
   const panels = grouping.panels;
   // Mini-treemaps a renderizar: defs con activos + «General» (o solo
@@ -438,7 +447,9 @@ export const SubPortfolioTreemap: React.FC<{
 
   return (
     <div data-testid="subportfolio-treemap">
-      <div ref={wrapRef} style={{ width: '100%', marginTop: 8 }}>
+      {/* Margen inferior (v3, pedido del dueño): ~14px de aire bajo la fila
+          de mini-treemaps antes del bloque «Tenencias Brutas…». */}
+      <div ref={wrapRef} style={{ width: '100%', marginTop: 8, marginBottom: 14 }}>
         {renderTreemapArea()}
       </div>
 
@@ -501,6 +512,76 @@ export const SubPortfolioTreemap: React.FC<{
                 }
           }
         />
+      )}
+
+      {/* Modal «Distribución por defecto» (v3): una sola vez, cuando el
+          treemap va a mostrar contenido derivado (cripto agrupado por la
+          regla automática) y el usuario todavía no confirmó. Su elección se
+          persiste en NwSettings.subPortfolios vía setSubPortfolioDefaults. */}
+      {showDefaultsPrompt && (
+        <div className="modal-backdrop" style={{ zIndex: 130 }}>
+          <div
+            className="modal-card"
+            style={{ width: 420 }}
+            role="dialog"
+            aria-label="Distribución por defecto de subcarteras"
+            data-testid="subportfolio-defaults-modal"
+          >
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10 }}>
+              Distribución por defecto
+            </div>
+            <div
+              style={{
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: 'var(--text-secondary)',
+                marginBottom: 6,
+              }}
+            >
+              Tus activos cripto se agrupan solos en la subcartera{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>«Cripto»</strong>{' '}
+              (hoy, {derivedCryptoCount}{' '}
+              {derivedCryptoCount === 1 ? 'activo' : 'activos'}), sin que tengas
+              que etiquetarlos uno por uno. Además ya tenés listas{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>«Núcleo»</strong> y{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                «Especulativas»
+              </strong>{' '}
+              para etiquetar el resto a mano, manteniendo presionado cada activo.
+            </div>
+            <div
+              style={{
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: 'var(--text-secondary)',
+                marginBottom: 16,
+              }}
+            >
+              ¿Usamos esta distribución por defecto, o preferís etiquetar todo a
+              mano, sin ningún agrupamiento automático?
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-testid="defaults-accept"
+                style={{ minHeight: 44, padding: '8px 16px', fontSize: 13 }}
+                onClick={() => setSubPortfolioDefaults(true, true)}
+              >
+                Usar esta distribución
+              </button>
+              <button
+                type="button"
+                className="btn"
+                data-testid="defaults-manual"
+                style={{ minHeight: 44, padding: '8px 16px', fontSize: 13 }}
+                onClick={() => setSubPortfolioDefaults(true, false)}
+              >
+                No, etiqueto todo a mano
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Gestor de subcartera: renombrar, recolorear, borrar */}
