@@ -10,7 +10,8 @@ El Fair Value combina hasta tres componentes independientes:
 1. **DCF**: flujo de caja libre reportado, proyectado mecánicamente.
 2. **Múltiplos**: EPS forward × múltiplo según el moat (Wide 26, Narrow 20,
    None 15).
-3. **Target**: precio objetivo promedio de los analistas.
+3. **Target**: mediana de los precios objetivo de los analistas (la
+   fuente Yahoo aporta su mediana desde 2026-11-14 — ver «Pata 1»).
 
 ---
 
@@ -98,9 +99,10 @@ Reglas de la escalera:
   derivación de fundamentos (ruta 3), donde un factor entero suele ser
   ruido.
 - **Target de analistas**: promedio de las fuentes disponibles (Yahoo
-  `targetMeanPrice`; si falta, la mediana del mismo consenso como
-  escalón de respaldo; Finviz "Target Price"). Más fuentes, mejor
-  promedio.
+  `targetMedianPrice` — la mediana del consenso, estadística vigente
+  desde 2026-11-14 —; si falta, el promedio `targetMeanPrice` como
+  escalón de respaldo; Finviz "Target Price"; TradingView). Más
+  fuentes, mejor promedio.
 
 ## R3 — Zonas de earnings yield: escrutinio, no puertas
 
@@ -506,12 +508,24 @@ la investigación guardada en
 
 ### Pata 1 — Target de consenso
 
-Promedio de los targets que publican las fuentes (Yahoo —media o,
-en su defecto, mediana del mismo consenso—, Finviz y TradingView):
-cada fuente entra con la agregación que ella misma publica (FactSet
-agrega por mediana bottom-up; Simply Wall St y Yahoo publican
-promedio a 12 meses) y entre fuentes se promedia, por la doctrina
-del usuario de ampliar la muestra. El componente vive **siempre
+Promedio de los targets que publican las fuentes (Yahoo —MEDIANA
+de su consenso, con el promedio como respaldo si la mediana falta—,
+Finviz y TradingView): cada fuente entra con la agregación que ella
+misma publica (FactSet agrega por mediana bottom-up; Yahoo publica
+promedio y mediana a 12 meses, y de Yahoo se toma la mediana) y
+entre fuentes se promedia, por la doctrina del usuario de ampliar
+la muestra.
+
+**Nota (2026-11-14, directiva del dueño): la estadística de Yahoo
+pasó de promedio a mediana.** El promedio se deja arrastrar por las
+colas cuando el rango del consenso es muy disperso (caso disparador:
+MU, con targets publicados de 361 a 3.000 — la mediana es el centro
+robusto de ese mismo consenso). El resto de la pata no cambia: se
+sigue promediando entre fuentes (Finviz y TradingView solo publican
+promedio) y viviendo dentro del rango publicado. En MU el cambio es
+mínimo (mediana 1.550 contra promedio 1.561,91); en NU mueve la pata
+hacia arriba (mediana 18,90 contra promedio 17,95, arrastrado por
+los targets bajos). El componente vive **siempre
 dentro del rango [low, high] de la unión de fuentes** y está
 **exento de la winsorización entre patas en ambas direcciones**: la
 banda anti-basura [0,25×, 3,5×] contra el promedio de las demás

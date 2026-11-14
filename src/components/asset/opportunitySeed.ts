@@ -166,7 +166,10 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
   };
   const price = quote?.price ?? 0;
   const fv = fairValue?.fairValue ?? null;
-  const analyst = extras?.targetMean ?? fairValue?.analystTarget ?? null;
+  // La estadística del consenso que usa la app desde 2026-11-14 es
+  // la MEDIANA de Yahoo (la misma que alimenta la pata target del
+  // motor); el promedio queda como respaldo.
+  const analyst = extras?.targetMedian ?? extras?.targetMean ?? fairValue?.analystTarget ?? null;
 
   // Escenarios DESDE EL MOTOR (unificación R13): la ficha consume
   // la vista del FV del motor del Optimizador que trae el payload
@@ -306,7 +309,7 @@ export function seedOpportunityForm(detail: AssetDetailResponse): OpportunityFor
         : extras?.dividendYieldPct != null
           ? extras.dividendYieldPct.toFixed(2).replace('.', ',')
           : '',
-    consAvg: num(extras?.targetMean ?? analyst),
+    consAvg: num(extras?.targetMedian ?? extras?.targetMean ?? analyst),
     consMin: num(extras?.targetLow),
     consMax: num(extras?.targetHigh),
     consBull: int((extras?.buy ?? 0) + (extras?.strongBuy ?? 0)),

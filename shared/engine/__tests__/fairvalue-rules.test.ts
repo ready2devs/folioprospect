@@ -418,7 +418,7 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
     expect(r.fvFlags).not.toContain('cyclicalBaseHaircut');
   });
 
-  it('target: promedia las fuentes disponibles (Yahoo + Finviz)', () => {
+  it('target sin mediana: respaldo con el promedio de Yahoo, promediado con Finviz', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 500,
@@ -428,9 +428,10 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
     expect(r.analystTarget).toBe(320);
     const prov = r.fvProvenance?.find((p) => p.component === 'target');
     expect(prov?.sources).toEqual(['yahooTargetMean', 'finvizTargetPrice']);
+    expect(prov?.originalValue).toBe(300);
   });
 
-  it('target sin promedio: escalón de respaldo con la mediana del mismo consenso', () => {
+  it('target: la fuente Yahoo aporta la MEDIANA del consenso (estadística vigente desde 2026-11-14)', () => {
     const r = computeFairValue({
       ...baseInput,
       freeCashflow: 500,
@@ -439,6 +440,40 @@ describe('base del DCF normalizada y procedencia (computeFairValue)', () => {
     expect(r.analystTarget).toBe(280);
     const prov = r.fvProvenance?.find((p) => p.component === 'target');
     expect(prov?.sources).toEqual(['yahooTargetMedian']);
+    expect(prov?.originalValue).toBe(280);
+  });
+
+  it('target con mediana y promedio presentes: manda la mediana, el promedio no entra', () => {
+    const r = computeFairValue({
+      ...baseInput,
+      freeCashflow: 500,
+      targetMedianPrice: 280,
+      targetMeanPrice: 999,
+      targetAltPrice: 320,
+    });
+    // La pata promedia las fuentes que entran: mediana Yahoo (280)
+    // y Finviz (320) — el promedio de Yahoo (999) queda fuera.
+    expect(r.analystTarget).toBe(300);
+    const prov = r.fvProvenance?.find((p) => p.component === 'target');
+    expect(prov?.sources).toEqual(['yahooTargetMedian', 'finvizTargetPrice']);
+    expect(prov?.originalValue).toBe(280);
+    expect(prov?.usedValue).toBe(300);
+  });
+
+  it('target: la mediana también vive dentro del rango publicado [low, high]', () => {
+    const r = computeFairValue({
+      ...baseInput,
+      freeCashflow: 500,
+      targetMedianPrice: 500,
+      targetLowPrice: 100,
+      targetHighPrice: 300,
+    });
+    expect(r.analystTarget).toBe(300);
+    expect(r.fvFlags).toContain('targetClampedToConsensus');
+    const prov = r.fvProvenance?.find((p) => p.component === 'target');
+    expect(prov?.sources).toEqual(['yahooTargetMedian']);
+    expect(prov?.originalValue).toBe(500);
+    expect(prov?.usedValue).toBe(300);
   });
 
   it('R0: base del DCF derivada de filings (EDGAR) queda marcada en la procedencia', () => {

@@ -2,8 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Info, X } from 'lucide-react';
 import { METHODOLOGY } from './methodology';
 
-/** Ícono ⓘ con popover de metodología (SPEC-004: pedido del usuario). */
-export const InfoTip: React.FC<{ k: keyof typeof METHODOLOGY; label?: string }> = ({ k, label }) => {
+/**
+ * Ícono ⓘ con popover de metodología (SPEC-004: pedido del usuario).
+ *
+ * Dos modos de uso:
+ *  - por clave (`k`): el texto sale de METHODOLOGY (Optimizador).
+ *  - a medida (`title` + `body`): para textos construidos con los
+ *    datos del activo en pantalla (ficha de oportunidad), donde la
+ *    explicación depende de los números concretos que se están
+ *    viendo. Si vienen `title` y `body`, mandan ellos.
+ */
+export const InfoTip: React.FC<{
+  k?: keyof typeof METHODOLOGY;
+  title?: string;
+  body?: string;
+  label?: string;
+}> = ({ k, title, body, label }) => {
   const [open, setOpen] = useState(false);
   const [popStyle, setPopStyle] = useState<React.CSSProperties>({});
   const ref = useRef<HTMLSpanElement>(null);
@@ -15,7 +29,9 @@ export const InfoTip: React.FC<{ k: keyof typeof METHODOLOGY; label?: string }> 
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open ]);
-  const m = METHODOLOGY[k];
+  const m =
+    title != null && body != null ? { title, body } : k != null ? METHODOLOGY[k] : null;
+  if (!m) return null;
 
   // Al abrir, medir el botón y desplazar el popover lo justo para que nunca
   // quede cortado por el borde de la pantalla (pasaba en el celular con los

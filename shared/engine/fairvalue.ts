@@ -3,9 +3,14 @@ import type { FairValueResult } from './types.js';
 export interface FundamentalInput {
   symbol: string;
   currentPrice: number;
+  /** Target promedio de Yahoo: respaldo del componente target cuando
+   *  falta la mediana (mismo consenso, otra estadística). */
   targetMeanPrice?: number | null;
-  /** Target mediano de Yahoo: escalón de respaldo del componente target
-   *  cuando falta el promedio (mismo consenso, otra estadística). */
+  /** Target mediano de Yahoo: la estadística que la pata target usa de
+   *  Yahoo desde 2026-11-14 (directiva del dueño): la mediana es el
+   *  centro robusto del consenso y no se deja arrastrar por las colas
+   *  cuando el rango publicado es muy disperso (ej. MU: targets de
+   *  361 a 3.000). */
   targetMedianPrice?: number | null;
   /** Segunda fuente del target de analistas (Finviz "Target Price"):
    *  amplía la muestra del componente target (R-B). */
@@ -1668,14 +1673,21 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
   }
 
   // Componente target: promedio de las fuentes de target disponibles
-  // (Yahoo — promedio o, en su defecto, mediana del mismo consenso — y
-  // Finviz Target Price). Null solo si ninguna fuente publica target
+  // (Yahoo — MEDIANA del consenso desde 2026-11-14, directiva del
+  // dueño: el promedio se distorsiona cuando el rango publicado es
+  // muy disperso, ej. MU con targets de 361 a 3.000; la mediana es el
+  // centro robusto del mismo consenso y el promedio queda como
+  // respaldo si la mediana falta —, Finviz Target Price y
+  // TradingView). Null solo si ninguna fuente publica target
   // (imposibilidad).
   const targetSources: Array<{ value: number; source: string }> = [];
-  if (input.targetMeanPrice && input.targetMeanPrice > 0) {
-    targetSources.push({ value: input.targetMeanPrice, source: 'yahooTargetMean' });
-  } else if (input.targetMedianPrice && input.targetMedianPrice > 0) {
+  let yahooTargetUsed: number | null = null;
+  if (input.targetMedianPrice && input.targetMedianPrice > 0) {
     targetSources.push({ value: input.targetMedianPrice, source: 'yahooTargetMedian' });
+    yahooTargetUsed = input.targetMedianPrice;
+  } else if (input.targetMeanPrice && input.targetMeanPrice > 0) {
+    targetSources.push({ value: input.targetMeanPrice, source: 'yahooTargetMean' });
+    yahooTargetUsed = input.targetMeanPrice;
   }
   if (input.targetAltPrice && input.targetAltPrice > 0) {
     targetSources.push({ value: input.targetAltPrice, source: 'finvizTargetPrice' });
@@ -1840,7 +1852,10 @@ export function computeFairValue(input: FundamentalInput): FairValueResult {
     },
     {
       component: 'target',
-      originalValue: input.targetMeanPrice ?? null,
+      // El valor crudo de la fuente primaria (Yahoo) efectivamente
+      // usado: la mediana desde 2026-11-14, o el promedio si la
+      // mediana faltaba.
+      originalValue: yahooTargetUsed,
       usedValue: analystTarget,
       sources: targetSources.map((t) => t.source),
       flags: fvFlags.includes('targetClampedToConsensus') ? ['targetClampedToConsensus'] : [],

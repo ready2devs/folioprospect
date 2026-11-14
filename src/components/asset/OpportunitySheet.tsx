@@ -15,6 +15,16 @@ import {
 } from './opportunitySeed';
 import { finvizSentiment, type FinvizSentiment } from '@shared/engine/finvizSentiment';
 import { AlertTriangle, Banknote, ChevronDown, Flame, Pencil, Star } from 'lucide-react';
+import { InfoTip } from '../optimizer/InfoTip';
+import {
+  formatScenarioUpsides,
+  lowestFvLeg,
+  rankingExplainer,
+  scenarioExplainer,
+  scenarioUpsides,
+  uncertaintyExplainer,
+  verdictExplainer,
+} from './scenarioExplain';
 
 /** Formato de múltiplo PER (una decimal, coma es-AR): 77,2×. */
 const fmtPe = (v: number): string => v.toFixed(1).replace('.', ',') + '×';
@@ -86,7 +96,23 @@ const MetricCell: React.FC<{ m: MetricItem }> = ({ m }) => (
       textAlign: 'center',
     }}
   >
-    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{m.label}</div>
+    <div
+      style={{
+        fontSize: 9.5,
+        color: 'var(--text-muted)',
+        marginBottom: 2,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+      }}
+    >
+      <span>{m.label}</span>
+      {/* ⓘ táctil con la misma explicación del title: en el celular
+          el hover no existe y el tip quedaba inaccesible. El title=
+          de la tarjeta queda como respaldo de escritorio. */}
+      <InfoTip title={m.label} body={m.tip} />
+    </div>
     <div
       className="mono"
       style={{
@@ -154,6 +180,25 @@ export const OpportunitySheet: React.FC<{
       }),
     [price, fvPes, fvBase, fvOpt, form.scenario, form.uncertainty, years]
   );
+
+  // Escenarios visibles por defecto con su % contra el precio de hoy
+  // y explicaciones ⓘ de qué representa cada número (pedido del
+  // dueño 2026-11-14: sacarse la duda dentro de la app). La pata
+  // menor de ESTE activo se identifica contra las patas del motor
+  // que trae el detalle (target de analistas y múltiplos).
+  const scenUps = scenarioUpsides(price, fvPes, fvBase, fvOpt);
+  const scenLine = formatScenarioUpsides(scenUps);
+  const targetLeg =
+    detail.fairValue?.analystTarget ?? detail.extras?.targetMedian ?? detail.extras?.targetMean ?? null;
+  const multiplesLeg = detail.fairValue?.multiplesValue ?? null;
+  const lowLeg = lowestFvLeg(fvPes, { target: targetLeg, multiples: multiplesLeg });
+  const scenTip = scenarioExplainer(
+    lowLeg,
+    lowLeg === 'target' ? targetLeg : lowLeg === 'multiples' ? multiplesLeg : null
+  );
+  const verdictTip = verdictExplainer();
+  const rankingTip = rankingExplainer(form.uncertainty);
+  const uncTip = uncertaintyExplainer();
 
   // Consenso
   const cAvg = parseLocalNum(form.consAvg);
@@ -535,7 +580,7 @@ export const OpportunitySheet: React.FC<{
             <input style={inputStyle} inputMode="decimal" value={form.divYield} onChange={set('divYield')} />
           </div>
           <div>
-            <label style={labelStyle}>Promedio de analistas (US$)</label>
+            <label style={labelStyle}>Mediana de analistas (US$)</label>
             <input style={inputStyle} inputMode="decimal" value={form.consAvg} onChange={set('consAvg')} />
           </div>
         </div>
@@ -666,7 +711,20 @@ export const OpportunitySheet: React.FC<{
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t.label}</div>
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      color: 'var(--text-muted)',
+                      marginBottom: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 2,
+                    }}
+                  >
+                    <span>{t.label}</span>
+                    <InfoTip title={t.label} body={t.tip} />
+                  </div>
                   <div className="mono" style={{ fontWeight: 700, fontSize: 12, color: t.color }}>{t.val}</div>
                 </div>
               ))}
@@ -862,7 +920,10 @@ export const OpportunitySheet: React.FC<{
       </div>
 
       <div style={{ padding: '12px 0 6px', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div style={fldLabel}>Ranking de oportunidad de inversión</div>
+        <div style={fldLabel}>
+          Ranking de oportunidad de inversión{' '}
+          <InfoTip title={rankingTip.title} body={rankingTip.body} />
+        </div>
         <div style={{ display: 'flex', gap: 3, marginTop: 6 }} aria-label={result ? `${result.stars} de 5 estrellas` : undefined}>
           {[1, 2, 3, 4, 5].map((i) => (
             <Star
@@ -1053,6 +1114,12 @@ export const OpportunitySheet: React.FC<{
               el total entre los años, porque cada año la ganancia se suma a lo ya ganado.
             </div>
           )}
+          {scenLine && (
+            <div style={{ ...fldSub, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+              <span>{scenLine}</span>
+              <InfoTip title={scenTip.title} body={scenTip.body} />
+            </div>
+          )}
           {detail.fairValue?.fvConfidence && (
             <div style={fldSub}>
               Confianza de esta valuación: <b>{detail.fairValue.fvConfidence}</b> — sale de qué tan de
@@ -1067,7 +1134,9 @@ export const OpportunitySheet: React.FC<{
           <div style={fldSub}>{form.moatDesc}</div>
         </div>
         <div style={{ padding: '11px 0 11px 12px', borderBottom: '1px solid var(--border-subtle)', borderLeft: '1px solid var(--border-subtle)' }}>
-          <div style={fldLabel}>Incertidumbre</div>
+          <div style={fldLabel}>
+            Incertidumbre <InfoTip title={uncTip.title} body={uncTip.body} />
+          </div>
           <div style={fldVal}>{form.uncertainty}</div>
           <div style={fldSub}>
             Qué tan predecibles son los resultados: cuanto más alta, más descuento exige el ranking antes
@@ -1139,16 +1208,16 @@ export const OpportunitySheet: React.FC<{
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           {cAvg > 0
-            ? `hasta el promedio de analistas (US$ ${fmtLocal(cAvg)}) — el precio que esperan, en promedio, para dentro de ~1 año`
-            : 'hasta el promedio de analistas'}
+            ? `hasta la mediana de analistas (US$ ${fmtLocal(cAvg)}) — la mediana de los precios objetivo de los analistas para dentro de ~1 año`
+            : 'hasta la mediana de analistas'}
         </div>
         <div style={{ position: 'relative', height: 66, marginTop: 14 }}>
           <div style={{ position: 'absolute', left: 0, right: 0, top: 25, height: 2, background: 'var(--border-subtle)' }} />
           {scaleMarkers.map(marker)}
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0', borderTop: '1px solid var(--border-subtle)', paddingTop: 8 }}>
-          Cada panel de analistas da un promedio distinto; por eso el Fair Value propio promedia varias
-          fuentes en vez de copiar un solo número. Este promedio es una expectativa a ~1 año, no el valor
+          Cada panel de analistas da un número distinto; por eso el Fair Value propio combina varias
+          fuentes en vez de copiar uno solo. Esta mediana es una expectativa a ~1 año, no el valor
           de largo plazo de la empresa.
         </p>
       </div>
@@ -1306,6 +1375,7 @@ export const OpportunitySheet: React.FC<{
       <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 16, paddingTop: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ ...fldLabel, flex: 1 }}>Veredicto: ¿comprar, mantener o vender?</div>
+          <InfoTip title={verdictTip.title} body={verdictTip.body} />
           <button
             type="button"
             onClick={() => setEditingVerdict(v => !v)}

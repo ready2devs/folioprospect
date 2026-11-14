@@ -321,7 +321,7 @@ async function buildAssetInput(
       fvBase: fvBaseUsed,
       fvOptimista: components.length ? Math.max(...components) : fvBaseUsed,
       uncertainty: fv.uncertainty,
-      analystTarget: extras.targetMean ?? fv.analystTarget ?? null,
+      analystTarget: extras.targetMedian ?? extras.targetMean ?? fv.analystTarget ?? null,
       // FASE 1: credibilidad del consenso y región — SOLO
       // alimentan la certeza y el prior de correlación del
       // módulo de riesgo; jamás el FV ni el RE. El conteo es el
@@ -492,7 +492,7 @@ async function fetchIndustryPeers(
         uncertainty: fv.uncertainty,
         fvConfidence: fv.fvConfidence ?? null,
         fvComponentCount: fv.fvComponents != null ? fv.fvComponents.length : fv.fairValue != null ? 1 : 0,
-        analystTarget: extras?.targetMean ?? fv.analystTarget ?? null,
+        analystTarget: extras?.targetMedian ?? extras?.targetMean ?? fv.analystTarget ?? null,
         // FASE 1: el par se puntúa con la misma certeza vF1 —
         // mismos insumos de consenso y región que las posiciones.
         analystCount: Math.max(extras?.analystCount ?? 0, fundAtPrice.analystCount ?? 0) || null,
