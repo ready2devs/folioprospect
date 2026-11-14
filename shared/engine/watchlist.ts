@@ -462,35 +462,45 @@ export function removeWatchlistItem(
 }
 
 /**
- * Reordenamiento dentro del grupo (enmienda v8, agregado del dueño
- * con las capturas de edición de Investing): intercambia el ítem con
- * el anterior/siguiente **de su mismo grupo** en la lista plana (la
- * lista mezcla grupos en el orden de la captura, así que el vecino
- * de grupo puede no ser el vecino de array). Las secciones son por
- * tipo de activo: el movimiento **nunca cruza de grupo**. En los
- * bordes del grupo (primero hacia arriba, último hacia abajo), si el
- * ticker no existe o el ítem no es válido, devuelve la MISMA config
- * (sin cambios y sin mutar la original).
+ * Reordenamiento por arrastre dentro del grupo (enmienda v9: el
+ * dueño pidió arrastrar el bloque del activo con presión sostenida
+ * en vez de las flechas ↑/↓ de la v8, impracticables para bajar
+ * muchas posiciones de una vez). Mueve el ítem al índice destino
+ * **dentro de su grupo** (0 = primer puesto del grupo) con
+ * remove + insert sobre la subsecuencia del grupo; los demás grupos
+ * y el entrelazado de la lista plana no se tocan, así que el
+ * movimiento **nunca cruza de grupo**. El índice destino se clampea
+ * a los bordes del grupo. Si el ticker no existe, el índice no es un
+ * número finito o el destino es el puesto actual, devuelve la MISMA
+ * config (sin cambios y sin mutar la original), para que el llamador
+ * pueda decidir no persistir.
  */
-export function moveWatchlistItem(
+export function reorderWatchlistItem(
   config: WatchlistConfig,
   ticker: string,
-  direction: 'up' | 'down'
+  targetIndexInGroup: number
 ): WatchlistConfig {
   const t = String(ticker || '').trim().toUpperCase();
-  if (!t) return config;
-  const idx = config.items.findIndex((it) => it.ticker === t);
-  if (idx < 0) return config;
-  const group = config.items[idx].group;
-  const step = direction === 'up' ? -1 : 1;
-  let j = idx + step;
-  while (j >= 0 && j < config.items.length && config.items[j].group !== group) {
-    j += step;
-  }
-  if (j < 0 || j >= config.items.length) return config;
-  const items = [...config.items];
-  const tmp = items[idx];
-  items[idx] = items[j];
-  items[j] = tmp;
+  if (!t || !Number.isFinite(targetIndexInGroup)) return config;
+  const fromFlat = config.items.findIndex((it) => it.ticker === t);
+  if (fromFlat < 0) return config;
+  const group = config.items[fromFlat].group;
+  const groupItems = config.items.filter((it) => it.group === group);
+  const fromIndex = groupItems.findIndex((it) => it.ticker === t);
+  const targetIndex = Math.max(
+    0,
+    Math.min(groupItems.length - 1, Math.trunc(targetIndexInGroup))
+  );
+  if (targetIndex === fromIndex) return config;
+  const reorderedGroup = [...groupItems];
+  const [moved] = reorderedGroup.splice(fromIndex, 1);
+  reorderedGroup.splice(targetIndex, 0, moved);
+  // Reconstruir la lista plana: cada «hueco» del grupo toma el
+  // siguiente ítem de la subsecuencia reordenada; los demás grupos
+  // quedan exactamente donde estaban.
+  let cursor = 0;
+  const items = config.items.map((it) =>
+    it.group === group ? reorderedGroup[cursor++] : it
+  );
   return { items };
 }

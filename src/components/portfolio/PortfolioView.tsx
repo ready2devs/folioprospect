@@ -603,7 +603,7 @@ export const PortfolioView: React.FC = () => {
             className="btn btn-primary"
             onClick={() => openAddModal('trade')}
           >
-            <Plus size={14} /> + Add to portfolio
+            <Plus size={14} /> Add to portfolio
           </button>
           <button
             className="btn"

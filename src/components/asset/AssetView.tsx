@@ -749,7 +749,7 @@ export const AssetView: React.FC = () => {
             style={{ padding: '5px 12px', fontSize: 12 }}
             onClick={() => openAddModal('trade', 'ledger', assetDetail.symbol)}
           >
-            <Plus size={13} /> + Operar {meta.ticker}
+            <Plus size={13} /> Operar {meta.ticker}
           </button>
         </div>
 
@@ -951,7 +951,7 @@ export const AssetView: React.FC = () => {
               className="btn btn-primary"
               onClick={() => openAddModal('trade', 'ledger', assetDetail.symbol)}
             >
-              <Plus size={13} /> + Abrir Posición en Cartera ({meta.ticker})
+              <Plus size={13} /> Abrir Posición en Cartera ({meta.ticker})
             </button>
           </div>
         )}

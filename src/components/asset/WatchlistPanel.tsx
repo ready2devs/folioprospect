@@ -15,10 +15,9 @@ import {
 } from '@shared/engine/watchlist';
 import type { WatchlistItem } from '@shared/engine/types';
 import {
-  ArrowDown,
-  ArrowUp,
   Check,
   ChevronDown,
+  GripVertical,
   ListChecks,
   Pencil,
   Plus,
@@ -41,10 +40,18 @@ import {
  *
  * Enmienda v8: filtro por veredicto (chips Todos/CF/C/M/V), alta de
  * activos desde el buscador de la app (grupo detectado solo, se
- * persiste en el acto) y, en el modo edición, baja (× por fila) y
- * reordenamiento con ↑/↓ dentro del grupo — como la vista de
- * edición de Investing que mandó el dueño —, todo persistido en el
- * acto.
+ * persiste en el acto) y baja en el modo edición (× por fila), todo
+ * persistido en el acto.
+ *
+ * Enmienda v9: el reordenamiento del modo edición es por ARRASTRE
+ * con presión sostenida (el dueño encontró impracticables las
+ * flechas ↑/↓ de la v8 para bajar muchas posiciones): mantener
+ * presionada una fila ~300 ms la «levanta» y desde ahí el dedo o el
+ * mouse la mueve dentro de su grupo, con auto-scroll del panel
+ * cerca de los bordes para recorrer muchas posiciones sin soltar.
+ * El arrastre nunca cruza de grupo y el orden nuevo se persiste una
+ * sola vez al soltar. Fuera del arrastre, en edición un gesto de
+ * scroll sigue recorriendo la lista (cancela la presión pendiente).
  */
 
 const SIGLA_STYLE: Record<string, React.CSSProperties> = {
@@ -114,23 +121,6 @@ const SiglaPill: React.FC<{ sigla: string | null; verdict: string | null }> = ({
   );
 };
 
-const moveBtnStyle = (disabled: boolean): React.CSSProperties => ({
-  width: 32,
-  height: 32,
-  minWidth: 32,
-  minHeight: 32,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 8,
-  border: '1px solid var(--border-subtle)',
-  background: 'var(--bg-elevated)',
-  color: 'var(--text-primary)',
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.3 : 1,
-  flexShrink: 0,
-});
-
 const headerBtnStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -147,6 +137,42 @@ const headerBtnStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+/** Arrastre con presión sostenida (enmienda v9): tiempos y umbrales. */
+const WL_LONG_PRESS_MS = 300;
+const WL_PRESS_MOVE_TOLERANCE_PX = 10;
+const WL_AUTOSCROLL_EDGE_PX = 56;
+const WL_AUTOSCROLL_MAX_STEP_PX = 16;
+
+interface WlDragSession {
+  pointerId: number;
+  ticker: string;
+  group: WatchlistItem['group'];
+  fromIndex: number;
+  /** Centro vertical de la fila arrastrada en coordenadas del
+   *  contenido del panel (con scroll), al activarse el arrastre. */
+  originCenter: number;
+  /** Extremos del grupo en coordenadas del contenido: la fila
+   *  arrastrada no puede salir de acá (nunca cruza de grupo). */
+  groupTop: number;
+  groupBottom: number;
+  rowHeight: number;
+  startY: number;
+  startScrollTop: number;
+  lastClientY: number;
+  /** Hermanas del grupo (sin la arrastrada), en orden, con su
+   *  centro en coordenadas del contenido al activarse. */
+  siblings: { ticker: string; center: number }[];
+}
+
+interface WlDragUi {
+  ticker: string;
+  group: WatchlistItem['group'];
+  dy: number;
+  targetIndex: number;
+  rowHeight: number;
+  fromIndex: number;
+}
+
 export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
   const {
     nwSettings,
@@ -156,7 +182,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     fxRates,
     addWatchlistItem,
     removeWatchlistItem,
-    moveWatchlistItem,
+    reorderWatchlistItem,
   } = useAppStore();
   const config = useMemo(() => resolveWatchlistConfig(nwSettings), [nwSettings]);
   const groups = useMemo(() => groupWatchlistItems(config.items), [config]);
@@ -192,21 +218,6 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     [config, verdicts]
   );
 
-  // Bordes de cada grupo (para deshabilitar ↑ en el primer ítem y ↓
-  // en el último en el modo edición): se calculan sobre la lista
-  // completa, no sobre lo filtrado.
-  const groupEdges = useMemo(() => {
-    const first = new Set<string>();
-    const last = new Set<string>();
-    for (const g of groups) {
-      if (g.items.length > 0) {
-        first.add(g.items[0].ticker);
-        last.add(g.items[g.items.length - 1].ticker);
-      }
-    }
-    return { first, last };
-  }, [groups]);
-
   // Grupos visibles según el filtro: los grupos que quedan sin filas
   // visibles se ocultan enteros.
   const visibleGroups = useMemo(
@@ -226,6 +237,316 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
     noticeTimerRef.current = setTimeout(() => setNotice(null), 2600);
   };
+
+  // ===== Arrastre con presión sostenida (enmienda v9) =====
+  // Solo en modo edición y con el filtro en «Todos» (con un filtro
+  // de veredicto activo, el índice visible no es el del grupo).
+  const [dragUi, setDragUi] = useState<WlDragUi | null>(null);
+  // Espejo del estado en un ref: los listeners de ventana se
+  // registran al pointerdown y tienen que leer el destino vigente
+  // al soltar, no el del render de ese momento.
+  const dragUiRef = useRef<WlDragUi | null>(null);
+  const applyDragUi = (ui: WlDragUi | null) => {
+    dragUiRef.current = ui;
+    setDragUi(ui);
+  };
+  const dragSessionRef = useRef<WlDragSession | null>(null);
+  const pressRef = useRef<{
+    pointerId: number;
+    pointerType: string;
+    ticker: string;
+    group: WatchlistItem['group'];
+    indexInGroup: number;
+    startX: number;
+    startY: number;
+    startScrollTop: number;
+    /** 'press': esperando la activación. 'scroll': el gesto resultó
+     *  ser un scroll táctil y el resto del gesto scrollea a mano. */
+    mode: 'press' | 'scroll';
+    rowEl: HTMLElement;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const dragRafRef = useRef<number | null>(null);
+  const autoScrollRafRef = useRef<number | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  const endDragSession = (persist: boolean) => {
+    const session = dragSessionRef.current;
+    const ui = dragUiRef.current;
+    if (dragCleanupRef.current) {
+      dragCleanupRef.current();
+      dragCleanupRef.current = null;
+    }
+    dragSessionRef.current = null;
+    applyDragUi(null);
+    if (persist && session && ui && ui.targetIndex !== session.fromIndex) {
+      reorderWatchlistItem(session.ticker, ui.targetIndex);
+    }
+  };
+
+  const cancelPress = () => {
+    if (pressRef.current) {
+      clearTimeout(pressRef.current.timer);
+      pressRef.current = null;
+    }
+    if (dragCleanupRef.current) {
+      dragCleanupRef.current();
+      dragCleanupRef.current = null;
+    }
+  };
+
+  /** Recalcula dy y puesto destino desde la última posición del
+   *  puntero (teniendo en cuenta cuánto scrolleó el contenedor,
+   *  a mano o por auto-scroll, desde la activación). */
+  const updateDragFromPointer = () => {
+    const session = dragSessionRef.current;
+    const box = scrollRef.current;
+    if (!session || !box) return;
+    const rawDy =
+      session.lastClientY - session.startY + (box.scrollTop - session.startScrollTop);
+    const half = session.rowHeight / 2;
+    // La fila no sale de su grupo: se clampea el desplazamiento a
+    // los extremos del grupo medidos al activarse.
+    const minDy = session.groupTop - (session.originCenter - half);
+    const maxDy = session.groupBottom - (session.originCenter + half);
+    const dy = Math.max(minDy, Math.min(maxDy, rawDy));
+    const center = session.originCenter + dy;
+    let targetIndex = 0;
+    for (const sib of session.siblings) {
+      if (sib.center < center) targetIndex += 1;
+    }
+    targetIndex = Math.max(
+      0,
+      Math.min(session.siblings.length, targetIndex)
+    );
+    const prev = dragUiRef.current;
+    if (!prev || prev.dy !== dy || prev.targetIndex !== targetIndex) {
+      applyDragUi({
+        ticker: session.ticker,
+        group: session.group,
+        dy,
+        targetIndex,
+        rowHeight: session.rowHeight,
+        fromIndex: session.fromIndex,
+      });
+    }
+  };
+
+  const scheduleDragUpdate = () => {
+    if (dragRafRef.current !== null) return;
+    dragRafRef.current = requestAnimationFrame(() => {
+      dragRafRef.current = null;
+      updateDragFromPointer();
+    });
+  };
+
+  /** Auto-scroll del contenedor mientras se arrastra: si el puntero
+   *  está cerca del borde visible, el panel scrollea solo (más
+   *  rápido cuanto más cerca del borde) para poder recorrer muchas
+   *  posiciones sin soltar. */
+  const runAutoScrollLoop = () => {
+    const step = () => {
+      autoScrollRafRef.current = null;
+      const session = dragSessionRef.current;
+      const box = scrollRef.current;
+      if (!session || !box) return;
+      const rect = box.getBoundingClientRect();
+      const distTop = session.lastClientY - rect.top;
+      const distBottom = rect.bottom - session.lastClientY;
+      let delta = 0;
+      if (distTop < WL_AUTOSCROLL_EDGE_PX) {
+        const f = 1 - Math.max(0, distTop) / WL_AUTOSCROLL_EDGE_PX;
+        delta = -Math.max(2, Math.round(f * WL_AUTOSCROLL_MAX_STEP_PX));
+      } else if (distBottom < WL_AUTOSCROLL_EDGE_PX) {
+        const f = 1 - Math.max(0, distBottom) / WL_AUTOSCROLL_EDGE_PX;
+        delta = Math.max(2, Math.round(f * WL_AUTOSCROLL_MAX_STEP_PX));
+      }
+      if (delta !== 0) {
+        box.scrollTop += delta;
+        updateDragFromPointer();
+      }
+      autoScrollRafRef.current = requestAnimationFrame(step);
+    };
+    if (autoScrollRafRef.current === null) {
+      autoScrollRafRef.current = requestAnimationFrame(step);
+    }
+  };
+
+  const activateDrag = () => {
+    const press = pressRef.current;
+    const box = scrollRef.current;
+    if (!press || !box || press.mode !== 'press') return;
+    pressRef.current = null;
+    const containerRect = box.getBoundingClientRect();
+    const toContentY = (clientRectTop: number) =>
+      clientRectTop - containerRect.top + box.scrollTop;
+    const rowRect = press.rowEl.getBoundingClientRect();
+    const rowTop = toContentY(rowRect.top);
+    const rowHeight = rowRect.height;
+    // Geometría de las filas del mismo grupo (visibles: en edición
+    // el filtro está en «Todos», así que son todas las del grupo).
+    const rowEls = box.querySelectorAll<HTMLElement>(
+      `[data-wl-group="${press.group}"]`
+    );
+    let groupTop = rowTop;
+    let groupBottom = rowTop + rowHeight;
+    const siblings: { ticker: string; center: number }[] = [];
+    rowEls.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const top = toContentY(r.top);
+      groupTop = Math.min(groupTop, top);
+      groupBottom = Math.max(groupBottom, top + r.height);
+      const t = el.getAttribute('data-wl-row');
+      if (t && t !== press.ticker) {
+        siblings.push({ ticker: t, center: top + r.height / 2 });
+      }
+    });
+    dragSessionRef.current = {
+      pointerId: press.pointerId,
+      ticker: press.ticker,
+      group: press.group,
+      fromIndex: press.indexInGroup,
+      originCenter: rowTop + rowHeight / 2,
+      groupTop,
+      groupBottom,
+      rowHeight,
+      startY: press.startY,
+      startScrollTop: box.scrollTop,
+      lastClientY: press.startY,
+      siblings,
+    };
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      /* vibración no disponible: no es crítica */
+    }
+    try {
+      press.rowEl.setPointerCapture(press.pointerId);
+    } catch {
+      /* la captura es una ayuda; los listeners de ventana alcanzan */
+    }
+    applyDragUi({
+      ticker: press.ticker,
+      group: press.group,
+      dy: 0,
+      targetIndex: press.indexInGroup,
+      rowHeight,
+      fromIndex: press.indexInGroup,
+    });
+    runAutoScrollLoop();
+  };
+
+  const handleRowPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    item: WatchlistItem,
+    indexInGroup: number
+  ) => {
+    if (!editing || filter !== 'TODOS') return;
+    if (e.button !== undefined && e.button !== 0) return;
+    // La presión tiene que nacer sobre la fila, no sobre un botón
+    // (la × de quitar tiene su propio toque).
+    if ((e.target as HTMLElement).closest('button')) return;
+    cancelPress();
+    const rowEl = e.currentTarget;
+    const onMove = (ev: PointerEvent) => {
+      const session = dragSessionRef.current;
+      if (session) {
+        if (ev.pointerId !== session.pointerId) return;
+        session.lastClientY = ev.clientY;
+        scheduleDragUpdate();
+        return;
+      }
+      const press = pressRef.current;
+      if (!press || ev.pointerId !== press.pointerId) return;
+      if (press.mode === 'scroll') {
+        // El resto de un gesto de scroll táctil: la lista sigue al
+        // dedo a mano (en edición las filas llevan touch-action:
+        // none, así que el navegador no scrollea por su cuenta).
+        const box = scrollRef.current;
+        if (box) box.scrollTop = press.startScrollTop - (ev.clientY - press.startY);
+        return;
+      }
+      // Antes de activarse, moverse más que la tolerancia es un
+      // gesto de scroll (o un arrastre apurado): se cancela la
+      // presión pendiente. Con mouse alcanza con cancelar; con el
+      // dedo, el gesto pasa a scrollear la lista a mano.
+      if (
+        Math.abs(ev.clientX - press.startX) > WL_PRESS_MOVE_TOLERANCE_PX ||
+        Math.abs(ev.clientY - press.startY) > WL_PRESS_MOVE_TOLERANCE_PX
+      ) {
+        if (press.pointerType === 'mouse') {
+          cancelPress();
+          return;
+        }
+        clearTimeout(press.timer);
+        press.mode = 'scroll';
+        const box = scrollRef.current;
+        if (box) box.scrollTop = press.startScrollTop - (ev.clientY - press.startY);
+      }
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (dragSessionRef.current) {
+        if (ev.pointerId !== dragSessionRef.current.pointerId) return;
+        endDragSession(true);
+      } else {
+        cancelPress();
+      }
+    };
+    const onCancel = (ev: PointerEvent) => {
+      const activeId = dragSessionRef.current?.pointerId ?? pressRef.current?.pointerId;
+      if (activeId !== undefined && ev.pointerId !== activeId) return;
+      // pointercancel (el navegador se quedó con el gesto, p. ej.
+      // para scrollear): no se persiste nada.
+      if (dragSessionRef.current) endDragSession(false);
+      else cancelPress();
+    };
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    pressRef.current = {
+      pointerId: e.pointerId,
+      pointerType: e.pointerType || 'touch',
+      ticker: item.ticker,
+      group: item.group,
+      indexInGroup,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScrollTop: scrollRef.current?.scrollTop ?? 0,
+      mode: 'press',
+      rowEl,
+      timer: setTimeout(activateDrag, WL_LONG_PRESS_MS),
+    };
+  };
+
+  // Si se sale del modo edición (o el panel se desmonta) en medio de
+  // una presión/arrastre, se cancela sin persistir.
+  useEffect(() => {
+    if (!editing) {
+      if (dragSessionRef.current) endDragSession(false);
+      else cancelPress();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+  useEffect(
+    () => () => {
+      if (pressRef.current) clearTimeout(pressRef.current.timer);
+      if (dragCleanupRef.current) dragCleanupRef.current();
+    },
+    []
+  );
 
   // Precios en lote + refresco con la cadencia Live de la app (15 s).
   useEffect(() => {
@@ -344,7 +665,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     setResults([]);
   };
 
-  const renderRow = (item: WatchlistItem) => {
+  const renderRow = (item: WatchlistItem, indexInGroup: number) => {
     const q = item.symbol ? quotes[item.symbol] : undefined;
     const isActive = Boolean(item.symbol) && item.symbol === selectedSymbol;
     const unavailable = item.symbol === null;
@@ -360,16 +681,41 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         : formatMoney(q.price, currency, fxRates, {
             decimals: q.price >= 1 ? 2 : 4,
           });
+    // Arrastre (enmienda v9): la fila arrastrada sigue al dedo/mouse
+    // y las hermanas del grupo se desplazan dejando el hueco.
+    const isDragged = dragUi?.ticker === item.ticker;
+    let shiftY = 0;
+    if (dragUi && !isDragged && dragUi.group === item.group) {
+      if (
+        dragUi.fromIndex < dragUi.targetIndex &&
+        indexInGroup > dragUi.fromIndex &&
+        indexInGroup <= dragUi.targetIndex
+      ) {
+        shiftY = -dragUi.rowHeight;
+      } else if (
+        dragUi.targetIndex < dragUi.fromIndex &&
+        indexInGroup >= dragUi.targetIndex &&
+        indexInGroup < dragUi.fromIndex
+      ) {
+        shiftY = dragUi.rowHeight;
+      }
+    }
     return (
       <div
         key={item.ticker}
         data-wl-row={item.ticker}
+        data-wl-group={item.group}
         data-wl-active={isActive ? 'true' : undefined}
+        data-wl-dragging={isDragged ? 'true' : undefined}
         onClick={
           !editing && item.symbol
             ? () => void selectAsset(item.symbol as string)
             : undefined
         }
+        onPointerDown={
+          editing ? (e) => handleRowPointerDown(e, item, indexInGroup) : undefined
+        }
+        onContextMenu={editing ? (e) => e.preventDefault() : undefined}
         title={
           unavailable
             ? 'Activo no disponible en las fuentes de la app'
@@ -377,47 +723,43 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         }
         style={{
           display: 'grid',
-          gridTemplateColumns: editing ? 'auto minmax(0, 1fr) auto' : 'minmax(0, 1fr) auto',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
           alignItems: 'center',
           gap: 8,
           padding: isActive ? '6px 10px 6px 7px' : '6px 10px',
           borderBottom: '1px solid var(--border-subtle)',
-          borderLeft: isActive ? '3px solid var(--accent-cyan)' : '3px solid transparent',
-          background: isActive ? 'var(--bg-hover)' : undefined,
-          cursor: !editing && item.symbol ? 'pointer' : 'default',
+          borderLeft:
+            isActive || isDragged
+              ? '3px solid var(--accent-cyan)'
+              : '3px solid transparent',
+          background: isDragged
+            ? 'var(--bg-elevated)'
+            : isActive
+              ? 'var(--bg-hover)'
+              : undefined,
+          cursor: editing ? 'grab' : !editing && item.symbol ? 'pointer' : 'default',
           opacity: unavailable ? 0.55 : 1,
+          transform: isDragged
+            ? `translateY(${dragUi.dy}px) scale(1.02)`
+            : shiftY !== 0
+              ? `translateY(${shiftY}px)`
+              : undefined,
+          transition: isDragged ? 'none' : 'transform 0.18s ease',
+          position: isDragged ? 'relative' : undefined,
+          zIndex: isDragged ? 6 : undefined,
+          boxShadow: isDragged ? '0 10px 28px rgba(0, 0, 0, 0.55)' : undefined,
+          // En edición las filas capturan el gesto (touch-action:
+          // none): si el navegador pudiera scrollear, se quedaría
+          // con el gesto a mitad de la presión (pointercancel) y el
+          // arrastre moriría al primer movimiento. El scroll en
+          // edición lo resuelve el propio gesto: moverse antes de
+          // la activación scrollea la lista a mano siguiendo al
+          // dedo. Fuera de edición, el scroll nativo no se toca.
+          touchAction: editing ? 'none' : undefined,
+          userSelect: editing ? 'none' : undefined,
+          WebkitTouchCallout: editing ? 'none' : undefined,
         }}
       >
-        {editing && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <button
-              type="button"
-              aria-label={`Subir ${item.ticker} en su grupo`}
-              data-wl-up={item.ticker}
-              disabled={groupEdges.first.has(item.ticker)}
-              onClick={(e) => {
-                e.stopPropagation();
-                moveWatchlistItem(item.ticker, 'up');
-              }}
-              style={moveBtnStyle(groupEdges.first.has(item.ticker))}
-            >
-              <ArrowUp size={15} />
-            </button>
-            <button
-              type="button"
-              aria-label={`Bajar ${item.ticker} en su grupo`}
-              data-wl-down={item.ticker}
-              disabled={groupEdges.last.has(item.ticker)}
-              onClick={(e) => {
-                e.stopPropagation();
-                moveWatchlistItem(item.ticker, 'down');
-              }}
-              style={moveBtnStyle(groupEdges.last.has(item.ticker))}
-            >
-              <ArrowDown size={15} />
-            </button>
-          </div>
-        )}
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span
@@ -538,7 +880,14 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           type="button"
           style={headerBtnStyle}
           aria-pressed={editing}
-          onClick={() => setEditing((v) => !v)}
+          onClick={() => {
+            const next = !editing;
+            setEditing(next);
+            // Al entrar a edición se ve la lista completa: el
+            // arrastre reordena por índice dentro del grupo y con un
+            // filtro de veredicto activo ese índice no sería el real.
+            if (next) setFilter('TODOS');
+          }}
         >
           {editing ? (
             <>
@@ -551,6 +900,27 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           )}
         </button>
       </div>
+
+      {editing && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 12px',
+            fontSize: 11.5,
+            color: 'var(--text-muted)',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          <GripVertical size={13} style={{ flexShrink: 0 }} />
+          <span>
+            Mantené presionada una fila y arrastrala para reordenar dentro de su
+            grupo.
+          </span>
+        </div>
+      )}
 
       {notice && (
         <div
@@ -775,7 +1145,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
                   }}
                 />
               </button>
-              {!isCollapsed && items.map(renderRow)}
+              {!isCollapsed && items.map((item, idx) => renderRow(item, idx))}
             </div>
           );
         })}

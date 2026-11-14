@@ -18,7 +18,7 @@ import {
 } from '@shared/engine/subPortfolios';
 import {
   addWatchlistItem as addWatchlistItemToConfig,
-  moveWatchlistItem as moveWatchlistItemInConfig,
+  reorderWatchlistItem as reorderWatchlistItemInConfig,
   removeWatchlistItem as removeWatchlistItemFromConfig,
   resolveWatchlistConfig,
 } from '@shared/engine/watchlist';
@@ -233,9 +233,11 @@ export interface AppState {
    *  false si el activo ya estaba (no se duplica). */
   addWatchlistItem: (item: WatchlistItem) => boolean;
   removeWatchlistItem: (ticker: string) => void;
-  /** Reordena un activo dentro de su grupo (↑/↓ del modo edición);
-   *  persiste en el acto, como el alta/baja. */
-  moveWatchlistItem: (ticker: string, direction: 'up' | 'down') => void;
+  /** Reordena un activo dentro de su grupo al índice destino
+   *  (arrastre con presión sostenida del modo edición, enmienda
+   *  v9); persiste el orden completo una sola vez al soltar, como
+   *  el alta/baja. */
+  reorderWatchlistItem: (ticker: string, targetIndexInGroup: number) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -552,10 +554,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (next.items.length === config.items.length) return;
     get().setNwSettings({ watchlist: next });
   },
-  moveWatchlistItem: (ticker, direction) => {
+  reorderWatchlistItem: (ticker, targetIndexInGroup) => {
     const config = resolveWatchlistConfig(get().nwSettings);
-    const next = moveWatchlistItemInConfig(config, ticker, direction);
-    if (next === config) return; // borde del grupo o ticker inexistente
+    const next = reorderWatchlistItemInConfig(config, ticker, targetIndexInGroup);
+    if (next === config) return; // mismo puesto, borde o ticker inexistente
     get().setNwSettings({ watchlist: next });
   },
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),

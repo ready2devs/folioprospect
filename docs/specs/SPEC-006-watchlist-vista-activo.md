@@ -199,3 +199,80 @@ de nuevo, con el orden persistido tras recargar y captura del modo
 edición con las flechas a 412 px); baja del mismo activo en modo
 edición, también verificada tras recargar; pastilla CF visible en
 filas (NU); escritorio sin desbordes.
+
+## 8. Enmienda v9 (2026-11-14) — reordenamiento por arrastre con presión sostenida
+
+Corrección de interacción del dueño tras usar la v8 en vivo: «al
+mantener apretado el bloque del activo tengo que poder moverlo para
+arriba o para abajo dentro de la ventana del watchlist; no son
+prácticas las flechas para subir o bajar cuando tengo que bajar un
+montón de posiciones». Cambios:
+
+- **Se retiran las flechas ↑/↓** del modo edición (quedan la × para
+  quitar y el «+ Agregar» como estaban) y con ellas el helper
+  `moveWatchlistItem` y la acción homónima del store, sin código
+  muerto.
+- **Arrastre con presión sostenida**, solo en el modo edición
+  (fuera de edición el toque sigue abriendo el activo y el scroll
+  sigue siendo scroll):
+  - Presión sostenida de ~300 ms sin moverse más de ~10 px sobre el
+    bloque de una fila **activa** el arrastre: la fila se «levanta»
+    (sombra, borde de acento, leve escala 1,02) y vibra corto si el
+    dispositivo lo soporta. Un gesto de scroll (o cualquier
+    movimiento mayor a la tolerancia) **cancela** la presión
+    pendiente: en edición, scrollear sigue siendo la forma de
+    recorrer la lista.
+  - Mientras se arrastra, la fila sigue al dedo/mouse y las demás
+    filas **del grupo** se desplazan con transición suave dejando el
+    hueco; el puesto destino se calcula por el centro de la fila
+    arrastrada contra los centros de sus hermanas.
+  - **Auto-scroll**: si el puntero se acerca a ~56 px del borde
+    superior o inferior del área visible del panel, el contenedor
+    scrollea solo, con velocidad creciente cerca del borde, para
+    bajar/subir muchas posiciones sin soltar.
+  - El arrastre **nunca cruza de grupo**: la fila se detiene en el
+    primer/último puesto de su grupo (ACCIONES/CRIPTO/ETFS). Con un
+    filtro de veredicto activo no se puede arrastrar (al entrar a
+    edición el filtro vuelve a «Todos»: el índice visible tiene que
+    ser el índice real del grupo).
+  - Al soltar se persiste **una sola vez** el orden completo (store
+    → `PUT /api/settings/nw`, la misma vía del alta/baja). Si el
+    arrastre se cancela (`pointercancel`, el navegador se queda con
+    el gesto) o se suelta sin haber cambiado de puesto, no se
+    persiste nada.
+  - Implementación con Pointer Events y estado propio, sin
+    librerías de drag&drop. En modo edición las filas llevan
+    `touch-action: none` (si el navegador pudiera scrollear, se
+    quedaría con el gesto a mitad de la presión vía `pointercancel`
+    y el arrastre moriría al primer movimiento — verificado en la
+    QA); el scroll en edición lo resuelve el propio gesto: moverse
+    antes de la activación cancela la presión y el resto del gesto
+    scrollea la lista a mano siguiendo al dedo. Fuera de edición el
+    scroll nativo no se toca. Mouse en escritorio: el mismo gesto.
+  - Ayuda visual en el encabezado del modo edición: «Mantené
+    presionada una fila y arrastrala para reordenar dentro de su
+    grupo.»
+- **Motor puro nuevo**: `reorderWatchlistItem(config, ticker,
+  targetIndexInGroup)` — remove + insert a un índice destino dentro
+  del grupo, clampeado a los bordes, sin cruzar grupos, sin mutar;
+  mismo puesto o ticker inexistente → la misma config. Acción del
+  store: `reorderWatchlistItem(ticker, targetIndexInGroup)`.
+- **Corrección cosmética de la misma corrida** (pedido del dueño
+  con captura de la ficha de FSLR): botones con ícono Plus y texto
+  que además empezaba con «+ » mostraban el signo duplicado. Se
+  quitó el «+ » del texto en «Operar {ticker}» y «Abrir Posición en
+  Cartera ({ticker})» de la ficha y en «Add to portfolio» de la
+  vista de portafolio (auditoría completa del patrón en el resto de
+  los componentes: sin más ocurrencias; los rótulos informativos y
+  los botones de solo texto con «+» no se tocaron).
+
+**QA v9** (Playwright, datos reales, prefijo `v9-`): arrastre
+táctil en móvil 412×915 de una fila de ACCIONES varias posiciones
+hacia abajo con auto-scroll, con captura a mitad del arrastre (fila
+levantada y hueco visible) y verificación del orden en el DOM, vía
+API y tras recargar; scroll normal en edición sin disparar arrastre
+y toque corto sin reordenar; arrastre con mouse en escritorio 1440
+con persistencia tras recargar y sin desbordes; × de quitar y
+filtro por veredicto intactos; bloque «Tu Posición en Cartera» de
+un activo sin posición (FSLR) con los botones ya sin el «+»
+duplicado.

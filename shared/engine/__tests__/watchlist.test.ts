@@ -7,7 +7,7 @@ import {
   detectWatchlistGroup,
   filterWatchlistItems,
   groupWatchlistItems,
-  moveWatchlistItem,
+  reorderWatchlistItem,
   rederiveVerdictSigla,
   removeWatchlistItem,
   resolveWatchlistConfig,
@@ -289,7 +289,7 @@ describe('watchlist · alta y baja (enmienda v8)', () => {
   });
 });
 
-describe('watchlist · moveWatchlistItem (enmienda v8: reordenar ↑/↓)', () => {
+describe('watchlist · reorderWatchlistItem (enmienda v9: arrastre)', () => {
   // Lista plana con grupos MEZCLADOS, como la semilla real (la
   // captura intercala cripto/ETFs entre acciones).
   const mixed = {
@@ -299,61 +299,70 @@ describe('watchlist · moveWatchlistItem (enmienda v8: reordenar ↑/↓)', () =
       { ticker: 'BBB', group: 'ACCIONES', symbol: 'NASDAQ:BBB' },
       { ticker: 'SPY', group: 'ETFS', symbol: 'AMEX:SPY' },
       { ticker: 'CCC', group: 'ACCIONES', symbol: 'NASDAQ:CCC' },
+      { ticker: 'DDD', group: 'ACCIONES', symbol: 'NASDAQ:DDD' },
       { ticker: 'ETH/USD', group: 'CRIPTO', symbol: 'BINANCE:ETHUSDT' },
+      { ticker: 'EEE', group: 'ACCIONES', symbol: 'NASDAQ:EEE' },
     ] as WatchlistItem[],
   };
-  const accionesDe = (cfg: { items: WatchlistItem[] }) =>
-    groupWatchlistItems(cfg.items).find((g) => g.group === 'ACCIONES')!.items.map((i) => i.ticker);
+  const grupoDe = (cfg: { items: WatchlistItem[] }, group: string) =>
+    groupWatchlistItems(cfg.items).find((g) => g.group === group)!.items.map((i) => i.ticker);
+  const accionesDe = (cfg: { items: WatchlistItem[] }) => grupoDe(cfg, 'ACCIONES');
 
-  it('bajar intercambia con el siguiente DEL MISMO GRUPO, saltando los de otros grupos', () => {
-    const out = moveWatchlistItem(mixed, 'AAA', 'down');
-    expect(accionesDe(out)).toEqual(['BBB', 'AAA', 'CCC']);
-    // Los demás grupos no se tocan.
-    expect(out.items.filter((i) => i.group === 'CRIPTO').map((i) => i.ticker)).toEqual([
-      'BTC/USD', 'ETH/USD',
+  it('mueve varias posiciones de una vez (remove + insert dentro del grupo)', () => {
+    const out = reorderWatchlistItem(mixed, 'AAA', 3);
+    expect(accionesDe(out)).toEqual(['BBB', 'CCC', 'DDD', 'AAA', 'EEE']);
+    const back = reorderWatchlistItem(out, 'AAA', 0);
+    expect(accionesDe(back)).toEqual(['AAA', 'BBB', 'CCC', 'DDD', 'EEE']);
+    const up = reorderWatchlistItem(mixed, 'EEE', 1);
+    expect(accionesDe(up)).toEqual(['AAA', 'EEE', 'BBB', 'CCC', 'DDD']);
+  });
+
+  it('el índice destino se clampea a los bordes del grupo', () => {
+    expect(accionesDe(reorderWatchlistItem(mixed, 'BBB', 99))).toEqual([
+      'AAA', 'CCC', 'DDD', 'EEE', 'BBB',
     ]);
-    expect(out.items.filter((i) => i.group === 'ETFS').map((i) => i.ticker)).toEqual(['SPY']);
+    expect(accionesDe(reorderWatchlistItem(mixed, 'DDD', -5))).toEqual([
+      'DDD', 'AAA', 'BBB', 'CCC', 'EEE',
+    ]);
   });
 
-  it('subir intercambia con el anterior del mismo grupo y es reversible', () => {
-    const down = moveWatchlistItem(mixed, 'BBB', 'down');
-    expect(accionesDe(down)).toEqual(['AAA', 'CCC', 'BBB']);
-    const back = moveWatchlistItem(down, 'BBB', 'up');
-    expect(accionesDe(back)).toEqual(['AAA', 'BBB', 'CCC']);
-    const up = moveWatchlistItem(mixed, 'CCC', 'up');
-    expect(accionesDe(up)).toEqual(['AAA', 'CCC', 'BBB']);
+  it('nunca cruza de grupo: los demás grupos conservan items y orden', () => {
+    const out = reorderWatchlistItem(mixed, 'AAA', 4);
+    expect(grupoDe(out, 'CRIPTO')).toEqual(['BTC/USD', 'ETH/USD']);
+    expect(grupoDe(out, 'ETFS')).toEqual(['SPY']);
+    // El ítem movido sigue siendo de su grupo y el total no cambia.
+    expect(out.items.find((i) => i.ticker === 'AAA')?.group).toBe('ACCIONES');
+    expect(out.items).toHaveLength(mixed.items.length);
+    // Y al revés: mover dentro de CRIPTO no toca ACCIONES.
+    const cripto = reorderWatchlistItem(mixed, 'ETH/USD', 0);
+    expect(grupoDe(cripto, 'CRIPTO')).toEqual(['ETH/USD', 'BTC/USD']);
+    expect(accionesDe(cripto)).toEqual(['AAA', 'BBB', 'CCC', 'DDD', 'EEE']);
   });
 
-  it('los bordes del grupo no tienen efecto y devuelven la misma config', () => {
-    expect(moveWatchlistItem(mixed, 'AAA', 'up')).toBe(mixed); // primera ACCIÓN
-    expect(moveWatchlistItem(mixed, 'CCC', 'down')).toBe(mixed); // última ACCIÓN
-    expect(moveWatchlistItem(mixed, 'BTC/USD', 'up')).toBe(mixed); // primera CRIPTO
-    expect(moveWatchlistItem(mixed, 'ETH/USD', 'down')).toBe(mixed); // última CRIPTO
-    expect(moveWatchlistItem(mixed, 'SPY', 'up')).toBe(mixed); // única en ETFS
-    expect(moveWatchlistItem(mixed, 'SPY', 'down')).toBe(mixed);
+  it('mismo puesto → misma config (sin cambios); ticker inexistente o índice inválido también', () => {
+    expect(reorderWatchlistItem(mixed, 'BBB', 1)).toBe(mixed);
+    expect(reorderWatchlistItem(mixed, 'SPY', 0)).toBe(mixed); // única en ETFS
+    expect(reorderWatchlistItem(mixed, 'XXXX', 2)).toBe(mixed);
+    expect(reorderWatchlistItem(mixed, 'AAA', Number.NaN)).toBe(mixed);
+    expect(reorderWatchlistItem(mixed, '', 2)).toBe(mixed);
   });
 
-  it('nunca cruza de grupo aunque el vecino de array sea de otro grupo', () => {
-    // ETH/USD está último en la lista plana y es el último de CRIPTO:
-    // bajarlo no lo mueve (no salta a ningún grupo vecino).
-    expect(moveWatchlistItem(mixed, 'ETH/USD', 'down')).toBe(mixed);
-    // BBB baja sobre CCC aunque en el medio del array hay un ETF.
-    const out = moveWatchlistItem(mixed, 'BBB', 'down');
-    expect(out.items.find((i) => i.ticker === 'SPY')?.group).toBe('ETFS');
-    expect(accionesDe(out)).toEqual(['AAA', 'CCC', 'BBB']);
-  });
-
-  it('ticker inexistente → misma config; y no muta la original', () => {
-    expect(moveWatchlistItem(mixed, 'XXXX', 'up')).toBe(mixed);
+  it('no muta la original', () => {
     const snapshot = JSON.stringify(mixed);
-    moveWatchlistItem(mixed, 'AAA', 'down');
+    reorderWatchlistItem(mixed, 'AAA', 4);
+    reorderWatchlistItem(mixed, 'EEE', 0);
     expect(JSON.stringify(mixed)).toBe(snapshot);
   });
 
-  it('sobre la semilla real: bajar GOOG lo deja segundo de ACCIONES', () => {
+  it('sobre la semilla real: arrastrar GOOG al puesto 5 de ACCIONES', () => {
     const seed = seedWatchlistConfig();
-    const out = moveWatchlistItem(seed, 'GOOG', 'down');
-    expect(accionesDe(out).slice(0, 3)).toEqual(['TSM', 'GOOG', 'MU']);
+    const out = reorderWatchlistItem(seed, 'GOOG', 5);
+    expect(accionesDe(out).slice(0, 7)).toEqual([
+      'TSM', 'MU', 'NVDA', 'META', 'MSFT', 'GOOG', 'NU',
+    ]);
     expect(seed.items[0].ticker).toBe('GOOG'); // original intacta
+    expect(grupoDe(out, 'CRIPTO')).toEqual([
+      'BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD', 'ETH/BTC',
+    ]);
   });
 });
