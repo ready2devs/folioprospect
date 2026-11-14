@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useAppStore } from '@/store';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { MarketClock } from '@/components/ui/MarketClock';
 import { PriceSessionCell } from '@/components/left/PriceSessionCell';
+import { SubPortfolioTreemap } from '@/components/left/SubPortfolioTreemap';
+import {
+  GENERAL_PANEL_ID,
+  effectiveDefId,
+  findDef,
+  resolveSubPortfolioConfig,
+} from '@shared/engine/subPortfolios';
 import { NwLiquidCard } from '@/components/left/NwLiquidCard';
 import { computeNwPatrimony } from '@shared/engine/nw';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
@@ -34,6 +41,7 @@ export const LeftPanel: React.FC = () => {
     openAddModal,
     netOrGrossMode,
     setNetOrGrossMode,
+    subPortfolioFilter,
   } = useAppStore();
 
   const isMobile = useIsMobile(1023);
@@ -41,6 +49,45 @@ export const LeftPanel: React.FC = () => {
 
   const [sortBy, setSortBy] = useState<'value' | 'allocation' | 'daily' | 'ticker'>('value');
   const [filterText, setFilterText] = useState('');
+
+  // --- Long-press en filas (SPEC-005): 450 ms sin mover >10 px abre el menú
+  // enfocado en la sección Subcartera; el click que sigue se suprime. ---
+  const lpTimer = useRef<number | null>(null);
+  const lpStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressRowClick = useRef(false);
+  const clearLongPress = () => {
+    if (lpTimer.current !== null) {
+      window.clearTimeout(lpTimer.current);
+      lpTimer.current = null;
+    }
+  };
+  const startLongPress = (e: React.PointerEvent, symbol: string) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    lpStart.current = { x: e.clientX, y: e.clientY };
+    clearLongPress();
+    lpTimer.current = window.setTimeout(() => {
+      lpTimer.current = null;
+      suppressRowClick.current = true;
+      try {
+        navigator.vibrate?.(10);
+      } catch {
+        // vibración no disponible: sin efecto
+      }
+      openHoldingMenu(symbol, { focusTag: true });
+      window.setTimeout(() => {
+        suppressRowClick.current = false;
+      }, 700);
+    }, 450);
+  };
+  const moveLongPress = (e: React.PointerEvent) => {
+    if (
+      lpStart.current &&
+      (Math.abs(e.clientX - lpStart.current.x) > 10 ||
+        Math.abs(e.clientY - lpStart.current.y) > 10)
+    ) {
+      clearLongPress();
+    }
+  };
 
   if (!evaluation) {
     return (
@@ -75,6 +122,9 @@ export const LeftPanel: React.FC = () => {
 
   const dayPositive = kpis.lastDayGain.v >= 0;
 
+  // Subcarteras (SPEC-005): config efectiva (con siembra si nunca se guardó)
+  const spConfig = resolveSubPortfolioConfig(nwSettings);
+
   const filteredHoldings = [...holdings]
     .filter(
       (h) =>
@@ -83,6 +133,13 @@ export const LeftPanel: React.FC = () => {
         h.name.toLowerCase().includes(filterText.toLowerCase()) ||
         h.sector.toLowerCase().includes(filterText.toLowerCase())
     )
+    .filter((h) => {
+      if (!subPortfolioFilter) return true;
+      const eff = effectiveDefId(h, spConfig);
+      return subPortfolioFilter === GENERAL_PANEL_ID
+        ? eff === null
+        : eff === subPortfolioFilter;
+    })
     .sort((a, b) => {
       if (sortBy === 'ticker') return a.ticker.localeCompare(b.ticker);
       if (sortBy === 'daily') return b.dailyGain.p - a.dailyGain.p;
@@ -264,6 +321,12 @@ export const LeftPanel: React.FC = () => {
           </div>
         </div>
 
+        {/* Mini-treemaps de subcarteras (SPEC-005 §6, corrección 23:57):
+            debajo del total/HOY y encima del desglose, en la línea del
+            bloque HOY que sigue al monto total. Uno por subcartera, hasta
+            3 por fila y cada uno de hasta 1/3 del ancho; alto compacto. */}
+        <SubPortfolioTreemap holdings={holdings} height={isMobile ? 104 : 96} />
+
         {/* Desglose Tenencias Brutas · Cash Comitente · Neto Contable + Botones Rápidos */}
         <div
           style={{
@@ -412,6 +475,8 @@ export const LeftPanel: React.FC = () => {
           const isSelected =
             rightState === 'asset' &&
             (selectedSymbol === h.symbol || selectedSymbol.endsWith(':' + h.ticker));
+          // Subcartera efectiva del activo (manual o regla cripto), si tiene.
+          const spDef = findDef(spConfig, effectiveDefId(h, spConfig));
 
           return (
             <div
@@ -421,7 +486,23 @@ export const LeftPanel: React.FC = () => {
                 gridTemplateColumns: gridTemplate,
                 padding: isCompactRow ? '8px 10px' : '7px 12px',
               }}
-              onClick={() => openHoldingMenu(h.symbol)}
+              onClick={() => {
+                if (suppressRowClick.current) {
+                  suppressRowClick.current = false;
+                  return;
+                }
+                openHoldingMenu(h.symbol);
+              }}
+              onPointerDown={(e) => startLongPress(e, h.symbol)}
+              onPointerMove={moveLongPress}
+              onPointerUp={clearLongPress}
+              onPointerLeave={clearLongPress}
+              onPointerCancel={clearLongPress}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                clearLongPress();
+                openHoldingMenu(h.symbol, { focusTag: true });
+              }}
               title={`${h.name}: Análisis del activo, Agregar, Venta parcial o Venta total`}
             >
               {/* COLUMNA 1 — Posición: Fila 1 = Ticker + badge AssetType. Fila 2 = MarketClock + Nombre */}
@@ -488,6 +569,36 @@ export const LeftPanel: React.FC = () => {
                   >
                     {h.name}
                   </span>
+                  {/* Píldora de subcartera (SPEC-005, agregado 22:25): óvalo
+                      transparente teñido con el color de la subcartera, al
+                      lado derecho del nombre. Nombre completo si ≤10
+                      caracteres; si no, ~9 + «…» (completo en el title).
+                      Sin subcartera no se renderiza nada. */}
+                  {spDef && (
+                    <span
+                      data-testid={`subportfolio-pill-${h.ticker}`}
+                      title={spDef.name}
+                      style={{
+                        flexShrink: 0,
+                        maxWidth: isCompactRow ? 76 : 110,
+                        padding: '0 6px',
+                        borderRadius: 999,
+                        border: `1px solid ${spDef.color}`,
+                        background: `${spDef.color}26`,
+                        color: spDef.color,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        lineHeight: '14px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {spDef.name.length <= 10
+                        ? spDef.name
+                        : `${spDef.name.slice(0, 9)}…`}
+                    </span>
+                  )}
                 </div>
               </div>
 

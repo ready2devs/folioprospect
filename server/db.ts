@@ -1,6 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AssetMeta, NwSettings, Portfolio, Trade } from '../shared/engine/types.js';
+import type {
+  AssetMeta,
+  NwSettings,
+  Portfolio,
+  SubPortfolioConfig,
+  Trade,
+} from '../shared/engine/types.js';
+import {
+  MAX_SUBPORTFOLIO_ASSIGNMENTS,
+  MAX_SUBPORTFOLIO_DEFS,
+  MAX_SUBPORTFOLIO_NAME,
+  SUBPORTFOLIO_COLORS,
+} from '../shared/engine/subPortfolios.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SEED_DIR = path.join(DATA_DIR, 'seed');
@@ -131,7 +143,50 @@ export function sanitizeNwSettings(raw: any): NwSettings | null {
   out.includeCryptoInCcl = Boolean(raw.includeCryptoInCcl);
   if (typeof raw.fxFormulaExpr === 'string') out.fxFormulaExpr = raw.fxFormulaExpr;
   if (raw.labelStyle === 'clean' || raw.labelStyle === 'tv') out.labelStyle = raw.labelStyle;
+  const subPortfolios = sanitizeSubPortfolios(raw.subPortfolios);
+  if (subPortfolios) out.subPortfolios = subPortfolios;
   return out;
+}
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** Valida la config de subcarteras (SPEC-005). Si el campo no viene, devuelve
+ *  undefined (base vieja = «sin configurar»); si viene basura, devuelve una
+ *  config vacía. Nunca lanza. Topes: 8 defs, nombre 1..24, color de la paleta
+ *  o hex válido, ids únicos, asignaciones solo a defs existentes, máx. 300. */
+export function sanitizeSubPortfolios(raw: any): SubPortfolioConfig | undefined {
+  if (raw === undefined) return undefined;
+  const empty: SubPortfolioConfig = { defs: [], assignments: {} };
+  try {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+    const defs: SubPortfolioConfig['defs'] = [];
+    const seenIds = new Set<string>();
+    if (Array.isArray(raw.defs)) {
+      for (const d of raw.defs) {
+        if (defs.length >= MAX_SUBPORTFOLIO_DEFS) break;
+        if (!d || typeof d !== 'object') continue;
+        const id = typeof d.id === 'string' ? d.id.trim() : '';
+        const name = typeof d.name === 'string' ? d.name.trim() : '';
+        const color = typeof d.color === 'string' ? d.color : '';
+        if (!id || seenIds.has(id)) continue;
+        if (name.length < 1 || name.length > MAX_SUBPORTFOLIO_NAME) continue;
+        if (!SUBPORTFOLIO_COLORS.includes(color) && !HEX_COLOR_RE.test(color)) continue;
+        seenIds.add(id);
+        defs.push({ id, name, color });
+      }
+    }
+    const assignments: Record<string, string> = {};
+    if (raw.assignments && typeof raw.assignments === 'object' && !Array.isArray(raw.assignments)) {
+      for (const [symbol, defId] of Object.entries(raw.assignments)) {
+        if (Object.keys(assignments).length >= MAX_SUBPORTFOLIO_ASSIGNMENTS) break;
+        if (typeof symbol !== 'string' || symbol.length === 0) continue;
+        if (typeof defId === 'string' && seenIds.has(defId)) assignments[symbol] = defId;
+      }
+    }
+    return { defs, assignments };
+  } catch {
+    return empty;
+  }
 }
 
 export function loadSeedExtract(): any {

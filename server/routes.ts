@@ -33,6 +33,7 @@ import {
 import {
   evaluateLedger,
   buildPortfolioSeries,
+  filterPortfolioBySymbols,
   computeRiskMetrics,
   computeFairValue,
   cashAnchorStateFor,
@@ -144,6 +145,62 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
     res.json(db.nwSettings ?? null);
   });
+
+  // Serie de performance de una subcartera (SPEC-005 §6 bis): el cliente
+  // manda los símbolos de la subcartera (ya conoce holdings y asignaciones,
+  // incluida la regla derivada de cripto y el pseudo-panel «General») y el
+  // servidor construye la serie con el MISMO motor del portafolio
+  // (buildPortfolioSeries) sobre el ledger filtrado a esos símbolos.
+  // Si el subconjunto no tiene operaciones, responde serie vacía: jamás
+  // se interpola ni se fabrica historia.
+  app.get(
+    '/api/portfolios/overview/subportfolio-series',
+    async (req: Request, res: Response) => {
+      await refreshDatabase(db);
+      const portfolio = db.portfolios[0];
+      const symbols = Array.from(
+        new Set(
+          String(req.query.symbols || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        )
+      );
+      if (!portfolio || symbols.length === 0) {
+        res.json({ daily: [], empty: true, reason: 'no-symbols', benchmark: 'SP:SPX', symbols });
+        return;
+      }
+      const filtered = filterPortfolioBySymbols(portfolio, symbols);
+      if (filtered.trades.length === 0) {
+        res.json({ daily: [], empty: true, reason: 'no-trades', benchmark: 'SP:SPX', symbols });
+        return;
+      }
+      let quotesMap: Record<string, any> = {};
+      try {
+        const qRes = await fetchQuotesWithSparklines(symbols);
+        quotesMap = qRes.quotes;
+      } catch {
+        quotesMap = {};
+      }
+      const historyForSeries = { ...seedHistory };
+      if (!historyForSeries['SP:SPX']) {
+        const benchChart = await fetchAssetChart('SP:SPX', '1Y');
+        if (benchChart.points.length > 0) {
+          historyForSeries['SP:SPX'] = benchChart.points.map(([ms, c]) => [
+            Math.floor(ms / 1000),
+            c,
+          ]);
+        }
+      }
+      const series = buildPortfolioSeries(filtered, historyForSeries, quotesMap, 'SP:SPX');
+      res.json({
+        daily: series.daily,
+        empty: series.daily.length < 2,
+        benchmark: 'SP:SPX',
+        symbols,
+      });
+    }
+  );
 
   // Full portfolio evaluation (Left Panel + State 2 TradingView Dashboard + 10/20Y Prospectiva)
   app.get('/api/portfolios/:id/evaluate', async (req: Request, res: Response) => {

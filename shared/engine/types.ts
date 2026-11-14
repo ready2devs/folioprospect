@@ -349,6 +349,19 @@ export interface ArgFxResponse {
   fetchedAt: number;
 }
 
+/** Definición de una subcartera personalizada (SPEC-005): nombre y color
+ *  elegidos por el usuario, con id slug estable. */
+export interface SubPortfolioDef {
+  id: string; // slug estable, ej. 'nucleo', 'especulativa', 'cripto', o 'sp-<hash>'
+  name: string; // 1..24 caracteres
+  color: string; // hex de la paleta SUBPORTFOLIO_COLORS
+}
+
+export interface SubPortfolioConfig {
+  defs: SubPortfolioDef[]; // máx. 8
+  assignments: Record<string, string>; // symbol completo (ej. 'NASDAQ:GOOG') -> defId
+}
+
 export interface NwSettings {
   brokerCashUsd: number;
   cashReserveUsd: number;
@@ -362,6 +375,11 @@ export interface NwSettings {
   fxDiffOverride: number | null;
   fxFormulaExpr?: string;
   labelStyle?: 'clean' | 'tv';
+  /** Subcarteras personalizadas (SPEC-005). Opcional y retrocompatible:
+   *  la ausencia del campo significa «sin configurar» (se siembran las
+   *  definiciones por defecto al leer); una config presente —aunque tenga
+   *  defs vacías— es la elección guardada del usuario y se respeta. */
+  subPortfolios?: SubPortfolioConfig;
 }
 
 export interface NwComputedResult {

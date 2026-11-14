@@ -4,9 +4,16 @@ import type {
   ArgFxResponse,
   CurrencyCode,
   NwSettings,
+  SubPortfolioDef,
   Trade,
 } from '@shared/engine/types';
 import { normalizeTradingViewSymbol } from '@shared/engine';
+import {
+  removeDef as removeSubPortfolioDefFromConfig,
+  resolveSubPortfolioConfig,
+  setAssignment as setSubPortfolioAssignment,
+  upsertDef as upsertSubPortfolioDefInConfig,
+} from '@shared/engine/subPortfolios';
 import {
   api,
   type AssetDetailResponse,
@@ -145,6 +152,11 @@ export interface AppState {
   addModalEditingTrade: Trade | null;
   /** Símbolo cuyo menú de acciones (Análisis / Agregar / Venta) está abierto, o null. */
   holdingMenuSymbol: string | null;
+  /** El menú se abrió por long-press / clic derecho: debe mostrar enfocado la
+   *  sección «Subcartera» (SPEC-005). */
+  holdingMenuFocusTag: boolean;
+  /** Filtro de la lista por subcartera (defId o '__general__'), o null. */
+  subPortfolioFilter: string | null;
   loading: boolean;
   evaluation: PortfolioEvaluationResponse | null;
   optimizerData: import('./api').OptimizerResponse | null;
@@ -198,8 +210,14 @@ export interface AppState {
     prefill?: TradePrefill | null
   ) => void;
   openEditTrade: (trade: Trade) => void;
-  openHoldingMenu: (symbol: string) => void;
+  openHoldingMenu: (symbol: string, opts?: { focusTag?: boolean }) => void;
   closeHoldingMenu: () => void;
+  /** Subcarteras (SPEC-005): operan sobre NwSettings vía setNwSettings, que
+   *  ya persiste en localStorage y sincroniza al servidor. */
+  setHoldingSubPortfolio: (symbol: string, defId: string | null) => void;
+  upsertSubPortfolioDef: (def: SubPortfolioDef) => void;
+  removeSubPortfolioDef: (defId: string) => void;
+  setSubPortfolioFilter: (filter: string | null) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -228,6 +246,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addModalPrefill: null,
   addModalEditingTrade: null,
   holdingMenuSymbol: null,
+  holdingMenuFocusTag: false,
+  subPortfolioFilter: null,
   loading: false,
   evaluation: null,
   optimizerData: null,
@@ -450,6 +470,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       addModalPrefill: tab === 'trade' ? (prefill ?? null) : null,
       addModalEditingTrade: null,
       holdingMenuSymbol: null,
+      holdingMenuFocusTag: false,
     }),
   openEditTrade: (trade) =>
     set({
@@ -460,10 +481,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       addModalPrefill: null,
       addModalEditingTrade: trade,
       holdingMenuSymbol: null,
+      holdingMenuFocusTag: false,
     }),
-  openHoldingMenu: (symbol) =>
-    set({ holdingMenuSymbol: normalizeTradingViewSymbol(symbol) }),
-  closeHoldingMenu: () => set({ holdingMenuSymbol: null }),
+  openHoldingMenu: (symbol, opts) =>
+    set({
+      holdingMenuSymbol: normalizeTradingViewSymbol(symbol),
+      holdingMenuFocusTag: Boolean(opts?.focusTag),
+    }),
+  closeHoldingMenu: () => set({ holdingMenuSymbol: null, holdingMenuFocusTag: false }),
+  setHoldingSubPortfolio: (symbol, defId) => {
+    const config = resolveSubPortfolioConfig(get().nwSettings);
+    const next = setSubPortfolioAssignment(
+      config,
+      normalizeTradingViewSymbol(symbol),
+      defId
+    );
+    get().setNwSettings({ subPortfolios: next });
+  },
+  upsertSubPortfolioDef: (def) => {
+    const config = resolveSubPortfolioConfig(get().nwSettings);
+    get().setNwSettings({
+      subPortfolios: upsertSubPortfolioDefInConfig(config, def),
+    });
+  },
+  removeSubPortfolioDef: (defId) => {
+    const config = resolveSubPortfolioConfig(get().nwSettings);
+    get().setNwSettings({
+      subPortfolios: removeSubPortfolioDefFromConfig(config, defId),
+    });
+    if (get().subPortfolioFilter === defId) set({ subPortfolioFilter: null });
+  },
+  setSubPortfolioFilter: (subPortfolioFilter) => set({ subPortfolioFilter }),
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
   closeAddModal: () =>
     set({
