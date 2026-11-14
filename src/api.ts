@@ -231,6 +231,21 @@ export interface AssetEarningsInfo {
   }[];
 }
 
+/** Cotización puntual de la watchlist (SPEC-006): precio y % del día. */
+export interface WatchlistQuote {
+  price: number;
+  changePct: number;
+  name: string;
+}
+
+/** Sigla de veredicto de la watchlist (SPEC-006): `verdict` es el texto
+ *  completo de la ficha ('COMPRA FUERTE', …) o null si el motor no
+ *  produce evaluación para el activo (sigla '—'). */
+export interface WatchlistVerdictEntry {
+  sigla: string;
+  verdict: string | null;
+}
+
 export interface AssetDetailResponse {
   symbol: string;
   meta: AssetMeta;
@@ -937,6 +952,44 @@ export const api = {
       `/api/asset/${encodeURIComponent(normSym)}?range=${encodeURIComponent(range)}`
     );
     return r.json();
+  },
+  /**
+   * Cotizaciones en lote de la watchlist (SPEC-006): el pipeline del
+   * servidor solo devuelve los símbolos con cotización real; el resto
+   * no aparece en el mapa. Ante cualquier fallo devuelve {} (la fila
+   * muestra «—» en vez de un precio inventado).
+   */
+  async getQuotes(symbols: string[]): Promise<Record<string, WatchlistQuote>> {
+    try {
+      if (symbols.length === 0) return {};
+      const qs = encodeURIComponent(symbols.join(','));
+      const r = await fetch(`/api/quotes?symbols=${qs}`);
+      if (!r.ok) return {};
+      const j = await r.json();
+      return (j?.quotes as Record<string, WatchlistQuote>) ?? {};
+    } catch {
+      return {};
+    }
+  },
+  /**
+   * Siglas de veredicto de la watchlist (SPEC-006): el servidor las
+   * calcula con la regla de la ficha sobre el pipeline de Fair Value
+   * del motor y las cachea por día. Ante cualquier fallo devuelve {}
+   * (la fila sigue en «··» y se reintenta en la próxima tanda).
+   */
+  async getWatchlistVerdicts(
+    symbols: string[]
+  ): Promise<Record<string, WatchlistVerdictEntry>> {
+    try {
+      if (symbols.length === 0) return {};
+      const qs = encodeURIComponent(symbols.join(','));
+      const r = await fetch(`/api/watchlist/verdicts?symbols=${qs}`);
+      if (!r.ok) return {};
+      const j = await r.json();
+      return (j?.verdicts as Record<string, WatchlistVerdictEntry>) ?? {};
+    } catch {
+      return {};
+    }
   },
   /**
    * Balances del activo desde el endpoint dedicado (escaneo Nasdaq con

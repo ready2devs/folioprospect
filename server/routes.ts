@@ -36,6 +36,10 @@ import {
   filterPortfolioBySymbols,
   computeRiskMetrics,
   computeFairValue,
+  computeOpportunity,
+  normalizeUncertainty,
+  scenariosFromMotorFv,
+  verdictToSigla,
   cashAnchorStateFor,
   pePairFor,
   runPortfolioProjection,
@@ -932,6 +936,112 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
 
     res.json(info ?? null);
+  });
+
+  // Cotizaciones en lote para símbolos arbitrarios (watchlist,
+  // SPEC-006): el mismo pipeline que alimenta Mercado/cartera. Solo
+  // devuelve los símbolos con cotización real (precio finito > 0): si
+  // una fuente no resuelve un símbolo, simplemente no aparece — nunca
+  // un precio inventado.
+  app.get('/api/quotes', async (req: Request, res: Response) => {
+    const symbols = String(req.query.symbols || '')
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)
+      .slice(0, 120);
+    if (symbols.length === 0) {
+      res.json({ quotes: {} });
+      return;
+    }
+    const { quotes } = await fetchQuotesWithSparklines(symbols);
+    const out: Record<string, { price: number; changePct: number; name: string }> = {};
+    for (const sym of symbols) {
+      const q = quotes[sym];
+      if (q && Number.isFinite(q.price) && q.price > 0) {
+        out[sym] = {
+          price: q.price,
+          changePct: Number.isFinite(q.changePct) ? q.changePct : 0,
+          name: db.assetMeta[sym]?.name || (q as any).name || '',
+        };
+      }
+    }
+    res.json({ quotes: out });
+  });
+
+  // Una sigla de veredicto (SPEC-006): la MISMA regla de la ficha —
+  // computeOpportunity sobre los escenarios del motor en escenario
+  // Base — alimentada por el MISMO pipeline de Fair Value que usa
+  // /api/asset/:symbol (buildAssetOptimizerFv). Sin precio real o sin
+  // FV del motor (cripto, ETF, fuentes caídas) no hay sigla: «—».
+  const computeWatchlistVerdict = async (
+    sym: string
+  ): Promise<{ sigla: string; verdict: string | null }> => {
+    const none = { sigla: '—', verdict: null as string | null };
+    try {
+      if (sym.startsWith('BINANCE:')) return none;
+      const { quotes } = await fetchQuotesWithSparklines([sym]);
+      const price = quotes[sym]?.price;
+      if (!price || !Number.isFinite(price) || price <= 0) return none;
+      const view = await buildAssetOptimizerFv(sym, price);
+      if (!view || !(view.fv > 0)) return none;
+      const result = computeOpportunity({
+        price,
+        ...scenariosFromMotorFv(view),
+        scenario: 'Base',
+        uncertainty: normalizeUncertainty(view.uncertainty),
+        yearsToCorrection: 3,
+      });
+      if (!result) return none;
+      return { sigla: verdictToSigla(result.verdict), verdict: result.verdict };
+    } catch {
+      return none;
+    }
+  };
+
+  // Siglas de veredicto de la watchlist (SPEC-006): caché PERSISTIDA
+  // por símbolo con vencimiento diario (día de Nueva York, como el
+  // resto de la app). Lo fresco se responde al instante; lo vencido o
+  // ausente se calcula con concurrencia acotada (3 en paralelo — el
+  // detalle de un activo tarda ~1-2 s) y se persiste.
+  app.get('/api/watchlist/verdicts', async (req: Request, res: Response) => {
+    await refreshDatabase(db);
+    const symbols = String(req.query.symbols || '')
+      .split(',')
+      .map((s) => normalizeTradingViewSymbol(s.trim()))
+      .filter(Boolean)
+      .slice(0, 24);
+    const today = todayInNewYork();
+    if (!db.verdictCache || typeof db.verdictCache !== 'object') db.verdictCache = {};
+    const out: Record<string, { sigla: string; verdict: string | null }> = {};
+    const stale: string[] = [];
+    for (const sym of symbols) {
+      const c = db.verdictCache[sym];
+      if (c && c.day === today && typeof c.sigla === 'string') {
+        out[sym] = { sigla: c.sigla, verdict: c.verdict ?? null };
+      } else {
+        stale.push(sym);
+      }
+    }
+    if (stale.length > 0) {
+      const queue = [...stale];
+      const workers = Array.from({ length: 3 }, async () => {
+        while (queue.length) {
+          const sym = queue.shift()!;
+          out[sym] = await computeWatchlistVerdict(sym);
+        }
+      });
+      await Promise.all(workers);
+      // Podar lo de otros días (vencido por definición) y persistir.
+      for (const sym of Object.keys(db.verdictCache)) {
+        if (db.verdictCache[sym]?.day !== today) delete db.verdictCache[sym];
+      }
+      const at = Date.now();
+      for (const sym of stale) {
+        db.verdictCache[sym] = { ...out[sym], at, day: today };
+      }
+      await saveDatabase(db);
+    }
+    res.json({ verdicts: out });
   });
 
   app.get('/api/search', async (req: Request, res: Response) => {

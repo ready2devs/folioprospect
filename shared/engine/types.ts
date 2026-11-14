@@ -368,6 +368,25 @@ export interface SubPortfolioConfig {
   autoDefaults?: boolean;
 }
 
+/** Grupo de la watchlist de la vista de activo (SPEC-006): la etiqueta
+ *  de sección con la que el dueño agrupa su seguimiento. */
+export type WatchlistGroupId = 'ACCIONES' | 'CRIPTO' | 'ETFS';
+
+/** Un activo de la watchlist: `ticker` es el rótulo que ve el dueño
+ *  (ej. 'GOOG', 'BTC/USD', 'ETH/BTC'); `symbol` es el símbolo completo
+ *  de la app ('NASDAQ:GOOG', 'BINANCE:BTCUSDT') o null si el activo no
+ *  resuelve en las fuentes de la app (la fila se muestra sin precio,
+ *  marcada no disponible — nunca se inventa un precio). */
+export interface WatchlistItem {
+  symbol: string | null;
+  ticker: string;
+  group: WatchlistGroupId;
+}
+
+export interface WatchlistConfig {
+  items: WatchlistItem[];
+}
+
 export interface NwSettings {
   brokerCashUsd: number;
   cashReserveUsd: number;
@@ -386,6 +405,11 @@ export interface NwSettings {
    *  definiciones por defecto al leer); una config presente —aunque tenga
    *  defs vacías— es la elección guardada del usuario y se respeta. */
   subPortfolios?: SubPortfolioConfig;
+  /** Watchlist de la vista de activo (SPEC-006). Opcional y
+   *  retrocompatible: la ausencia del campo significa «sin configurar»
+   *  (se siembra la lista de seguimiento del dueño al leer); una config
+   *  presente —aunque tenga items vacíos— es la guardada y se respeta. */
+  watchlist?: WatchlistConfig;
 }
 
 export interface NwComputedResult {

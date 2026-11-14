@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { FinvizChart } from './FinvizChart';
 import { OpportunitySheet } from './OpportunitySheet';
+import { WatchlistPanel } from './WatchlistPanel';
 
 const TIMEFRAMES = ['1D', '5D', '1M', '6M', 'YTD', '1Y', '5Y', 'MAX'] as const;
 
@@ -715,7 +716,27 @@ export const AssetView: React.FC = () => {
         </div>
       )}
 
-      <OpportunitySheet key={assetDetail.symbol} detail={assetDetail} isMobile={isMobile} />
+      {/* SPEC-006: columna izquierda = Watchlist persistente (vive acá,
+          fuera del OpportunitySheet con key por símbolo: no se remonta
+          al cambiar de activo y conserva su scroll); columna derecha =
+          Evaluación de oportunidad con su configuración adentro. En
+          móvil la watchlist va como bloque de ancho completo entre el
+          gráfico y la evaluación, con scroll interno. */}
+      <div
+        style={
+          isMobile
+            ? { display: 'flex', flexDirection: 'column', gap: 14 }
+            : {
+                display: 'grid',
+                gridTemplateColumns: 'minmax(300px, 340px) minmax(0, 1fr)',
+                gap: 20,
+                alignItems: 'start',
+              }
+        }
+      >
+        <WatchlistPanel isMobile={isMobile} />
+        <OpportunitySheet key={assetDetail.symbol} detail={assetDetail} isMobile={isMobile} />
+      </div>
 
       {/* 3. BLOQUE 'TU POSICIÓN EN CARTERA & HISTORIAL DE TRANSACCIONES' */}
       <div className="card">

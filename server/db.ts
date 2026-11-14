@@ -6,6 +6,7 @@ import type {
   Portfolio,
   SubPortfolioConfig,
   Trade,
+  WatchlistConfig,
 } from '../shared/engine/types.js';
 import {
   MAX_SUBPORTFOLIO_ASSIGNMENTS,
@@ -13,6 +14,11 @@ import {
   MAX_SUBPORTFOLIO_NAME,
   SUBPORTFOLIO_COLORS,
 } from '../shared/engine/subPortfolios.js';
+import {
+  isValidWatchlistItemShape,
+  MAX_WATCHLIST_ITEMS,
+  normalizeWatchlistItem,
+} from '../shared/engine/watchlist.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SEED_DIR = path.join(DATA_DIR, 'seed');
@@ -96,6 +102,19 @@ export interface DatabaseSchema {
   /** Ajustes de patrimonio neto (Reserva, cash de broker, overrides de FX)
    *  sincronizados entre dispositivos; gana la modificación más reciente. */
   nwSettings: { data: NwSettings; updatedAt: number } | null;
+  /** Caché persistida de siglas de veredicto de la watchlist (SPEC-006):
+   *  símbolo → sigla/veredicto calculados con el pipeline de Fair Value
+   *  del motor, con vencimiento diario (`day` = fecha en Nueva York). */
+  verdictCache: Record<string, VerdictCacheEntry>;
+}
+
+/** Una sigla de veredicto cacheada (SPEC-006). `verdict: null` y
+ *  `sigla: '—'` = el motor no produce evaluación para el activo. */
+export interface VerdictCacheEntry {
+  sigla: string;
+  verdict: string | null;
+  at: number;
+  day: string;
 }
 
 /** Completa los campos que una base persistida anterior a esta versión no
@@ -103,6 +122,9 @@ export interface DatabaseSchema {
 export function normalizeDatabase(db: DatabaseSchema): DatabaseSchema {
   if (!db.tombstones || typeof db.tombstones !== 'object') db.tombstones = {};
   if (db.nwSettings === undefined) db.nwSettings = null;
+  if (!db.verdictCache || typeof db.verdictCache !== 'object' || Array.isArray(db.verdictCache)) {
+    db.verdictCache = {};
+  }
   return db;
 }
 
@@ -145,7 +167,37 @@ export function sanitizeNwSettings(raw: any): NwSettings | null {
   if (raw.labelStyle === 'clean' || raw.labelStyle === 'tv') out.labelStyle = raw.labelStyle;
   const subPortfolios = sanitizeSubPortfolios(raw.subPortfolios);
   if (subPortfolios) out.subPortfolios = subPortfolios;
+  const watchlist = sanitizeWatchlist(raw.watchlist);
+  if (watchlist) out.watchlist = watchlist;
   return out;
+}
+
+/** Valida la config de la watchlist (SPEC-006). Si el campo no viene,
+ *  devuelve undefined (base vieja = «sin configurar», el cliente
+ *  siembra); si viene basura, devuelve una config vacía. Nunca lanza.
+ *  Topes: máx. 200 items, ticker válido de hasta 16 caracteres, grupo
+ *  dentro de ACCIONES/CRIPTO/ETFS, símbolo completo válido o null, sin
+ *  duplicados por ticker (gana la primera aparición). */
+export function sanitizeWatchlist(raw: any): WatchlistConfig | undefined {
+  if (raw === undefined) return undefined;
+  const empty: WatchlistConfig = { items: [] };
+  try {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+    if (!Array.isArray(raw.items)) return empty;
+    const items: WatchlistConfig['items'] = [];
+    const seen = new Set<string>();
+    for (const it of raw.items) {
+      if (items.length >= MAX_WATCHLIST_ITEMS) break;
+      if (!isValidWatchlistItemShape(it)) continue;
+      const norm = normalizeWatchlistItem(it);
+      if (seen.has(norm.ticker)) continue;
+      seen.add(norm.ticker);
+      items.push(norm);
+    }
+    return { items };
+  } catch {
+    return empty;
+  }
 }
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -269,6 +321,7 @@ export function initDatabase(): DatabaseSchema {
     updatedAt: new Date().toISOString(),
     tombstones: {},
     nwSettings: null,
+    verdictCache: {},
   };
   saveDatabase(db);
   return db;
@@ -318,6 +371,16 @@ export async function refreshDatabase(db: DatabaseSchema): Promise<boolean> {
   db.assetMeta = fresh.assetMeta;
   db.tombstones = fresh.tombstones;
   db.nwSettings = fresh.nwSettings;
+  // La caché de veredictos se FUSIONA por símbolo (gana la entrada más
+  // reciente de cada una): es una caché, no un estado del usuario, y
+  // reemplazarla en bloque perdería siglas recién calculadas acá.
+  const mergedCache: Record<string, VerdictCacheEntry> = { ...(fresh.verdictCache || {}) };
+  for (const [sym, entry] of Object.entries(db.verdictCache || {})) {
+    if (!mergedCache[sym] || (entry?.at ?? 0) > (mergedCache[sym]?.at ?? 0)) {
+      mergedCache[sym] = entry;
+    }
+  }
+  db.verdictCache = mergedCache;
   db.updatedAt = fresh.updatedAt;
   hydratedDb = db;
   return true;

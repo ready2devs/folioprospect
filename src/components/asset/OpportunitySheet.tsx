@@ -14,7 +14,7 @@ import {
   type OpportunityFormState,
 } from './opportunitySeed';
 import { finvizSentiment, type FinvizSentiment } from '@shared/engine/finvizSentiment';
-import { AlertTriangle, Banknote, ChevronDown, Flame, Pencil, Star } from 'lucide-react';
+import { AlertTriangle, Banknote, ChevronDown, Flame, Pencil, Settings2, Star } from 'lucide-react';
 import { InfoTip } from '../optimizer/InfoTip';
 import {
   formatScenarioUpsides,
@@ -44,9 +44,12 @@ const fmtIsoDate = (iso: string): string =>
 /**
  * Ficha de «Evaluación de oportunidad» embebida en el detalle del activo.
  *
- * Réplica de la lógica y la disposición del PMV del 21/10/2026 (captura de
- * referencia: dos columnas — formulario a la izquierda, ficha a la derecha).
- * En móvil la ficha va primero y el formulario queda plegado debajo.
+ * Réplica de la lógica del PMV del 21/10/2026. Desde SPEC-006 el
+ * formulario «Datos de la ficha» ya no es una columna propia (ese
+ * lugar lo ocupa la Watchlist, en AssetView): es una sección de
+ * configuración colapsable DENTRO de este panel, que se abre con el
+ * botón «Configurar ficha» del encabezado. Editar recalcula la ficha
+ * en vivo, como siempre.
  */
 
 const labelStyle: React.CSSProperties = {
@@ -845,10 +848,41 @@ export const OpportunitySheet: React.FC<{
           <span style={{ fontSize: 22, fontWeight: 800 }}>{form.name || '—'}</span>{' '}
           <span style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 600 }}>{form.ticker}</span>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
-          Evaluación de oportunidad
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
+            Evaluación de oportunidad
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setFormOpen((o) => !o)}
+            aria-expanded={formOpen}
+            style={{ padding: '4px 10px', fontSize: 12 }}
+            title="Editar los datos con los que se calcula esta ficha"
+          >
+            <Settings2 size={13} /> Configurar ficha
+            <ChevronDown
+              size={13}
+              style={{
+                transform: formOpen ? 'rotate(180deg)' : undefined,
+                transition: 'transform 0.15s',
+              }}
+            />
+          </button>
         </div>
       </div>
+
+      {/* Configuración de la ficha (SPEC-006): el formulario «Datos de
+          la ficha» + el resumen de la empresa, colapsados por defecto
+          dentro del panel de la Evaluación. Editar recalcula en vivo. */}
+      {formOpen && <div style={{ marginTop: 14 }}>{formCard}</div>}
 
       {form.core && (
         <div style={{ paddingTop: 10, position: 'relative' }}>
@@ -1427,35 +1461,8 @@ export const OpportunitySheet: React.FC<{
     </div>
   );
 
-  if (isMobile) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {ficha}
-        <button
-          className="btn btn-ghost"
-          onClick={() => setFormOpen((o) => !o)}
-          style={{ alignSelf: 'flex-start', fontSize: 12.5 }}
-          aria-expanded={formOpen}
-        >
-          <Pencil size={13} /> {formOpen ? 'Ocultar' : 'Editar'} datos de la ficha
-          <ChevronDown size={13} style={{ transform: formOpen ? 'rotate(180deg)' : undefined }} />
-        </button>
-        {formOpen && formCard}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(260px, 320px) minmax(0, 1fr)',
-        gap: 20,
-        alignItems: 'start',
-      }}
-    >
-      {formCard}
-      {ficha}
-    </div>
-  );
+  // SPEC-006: este componente es solo el panel de la Evaluación (con
+  // su configuración adentro). La grilla de la vista — Watchlist a la
+  // izquierda, evaluación a la derecha — la arma AssetView.
+  return ficha;
 };
