@@ -40,6 +40,7 @@ import {
   normalizeUncertainty,
   scenariosFromMotorFv,
   verdictToSigla,
+  rederiveVerdictSigla,
   cashAnchorStateFor,
   pePairFor,
   runPortfolioProjection,
@@ -1017,7 +1018,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     for (const sym of symbols) {
       const c = db.verdictCache[sym];
       if (c && c.day === today && typeof c.sigla === 'string') {
-        out[sym] = { sigla: c.sigla, verdict: c.verdict ?? null };
+        // La sigla se RE-DERIVA del veredicto guardado al servir
+        // (enmienda v8 de la SPEC-006): una entrada cacheada con una
+        // sigla de una versión anterior («CM» para Compra Fuerte) se
+        // sirve con la vigente («CF») sin esperar al vencimiento.
+        const fresh = rederiveVerdictSigla(c);
+        out[sym] = { sigla: fresh.sigla, verdict: fresh.verdict ?? null };
       } else {
         stale.push(sym);
       }

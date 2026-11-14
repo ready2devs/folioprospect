@@ -6,6 +6,7 @@ import type {
   NwSettings,
   SubPortfolioDef,
   Trade,
+  WatchlistItem,
 } from '@shared/engine/types';
 import { normalizeTradingViewSymbol } from '@shared/engine';
 import {
@@ -15,6 +16,12 @@ import {
   setDefaultsDecision as setSubPortfolioDefaultsInConfig,
   upsertDef as upsertSubPortfolioDefInConfig,
 } from '@shared/engine/subPortfolios';
+import {
+  addWatchlistItem as addWatchlistItemToConfig,
+  moveWatchlistItem as moveWatchlistItemInConfig,
+  removeWatchlistItem as removeWatchlistItemFromConfig,
+  resolveWatchlistConfig,
+} from '@shared/engine/watchlist';
 import {
   api,
   type AssetDetailResponse,
@@ -221,6 +228,14 @@ export interface AppState {
   /** v3: guarda la decisión del modal «Distribución por defecto». */
   setSubPortfolioDefaults: (defaultsConfirmed: boolean, autoDefaults: boolean) => void;
   setSubPortfolioFilter: (filter: string | null) => void;
+  /** Watchlist (SPEC-006, enmienda v8): alta/baja de activos desde el
+   *  panel; persisten en el acto vía setNwSettings. El alta devuelve
+   *  false si el activo ya estaba (no se duplica). */
+  addWatchlistItem: (item: WatchlistItem) => boolean;
+  removeWatchlistItem: (ticker: string) => void;
+  /** Reordena un activo dentro de su grupo (↑/↓ del modo edición);
+   *  persiste en el acto, como el alta/baja. */
+  moveWatchlistItem: (ticker: string, direction: 'up' | 'down') => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -524,6 +539,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   setSubPortfolioFilter: (subPortfolioFilter) => set({ subPortfolioFilter }),
+  addWatchlistItem: (item) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const res = addWatchlistItemToConfig(config, item);
+    if (!res.added) return false;
+    get().setNwSettings({ watchlist: res.config });
+    return true;
+  },
+  removeWatchlistItem: (ticker) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const next = removeWatchlistItemFromConfig(config, ticker);
+    if (next.items.length === config.items.length) return;
+    get().setNwSettings({ watchlist: next });
+  },
+  moveWatchlistItem: (ticker, direction) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const next = moveWatchlistItemInConfig(config, ticker, direction);
+    if (next === config) return; // borde del grupo o ticker inexistente
+    get().setNwSettings({ watchlist: next });
+  },
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
   closeAddModal: () =>
     set({

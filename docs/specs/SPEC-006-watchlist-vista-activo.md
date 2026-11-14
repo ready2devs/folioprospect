@@ -8,7 +8,7 @@ En la vista de activo («Activo & Fair Value»), debajo del gráfico, la columna
 
 1. El formulario «Datos de la ficha» deja de ser una columna propia: pasa a ser una **configuración dentro del panel derecho**, junto con la Evaluación de oportunidad.
 2. En el lugar que deja libre (columna izquierda) va una **watchlist persistente y preconfigurada** con todos los activos que sigue en Investing.com, **en su orden de importancia**, agrupada **por tipo de activo** con etiquetas de sección (como la captura de TradingView: secciones con rótulo y filas con símbolo, precio y % del día).
-3. Al lado del nombre de cada activo de la watchlist, la **sigla de su evaluación de oportunidad**: Compra Fuerte = **CM**, Comprar de a poco = **C**, Mantener = **M**, Vender = **V**.
+3. Al lado del nombre de cada activo de la watchlist, la **sigla de su evaluación de oportunidad**: Compra Fuerte = **CF**, Comprar de a poco = **C**, Mantener = **M**, Vender = **V**. (La sigla de Compra Fuerte se publicó como «CM» en la v1 por un malentendido y el dueño la corrigió a «CF» en vivo; ver la enmienda v8, §7.)
 4. Al tocar un activo de la watchlist, ese activo se **despliega en la ventana principal** (gráfico, datos y evaluación), igual que cuando se lo abre desde la cartera o el buscador.
 
 ## 2. La lista (fuente: captura de Investing del dueño, 2026-10-20)
@@ -39,7 +39,7 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
 ### 3.2 Filas de la watchlist
 
 - Encabezado de sección con la etiqueta (ACCIONES / CRIPTO / ETFS) y la cantidad.
-- Fila: **ticker** (y nombre corto si entra), **sigla del veredicto** junto al nombre (pastilla chica con color por veredicto: CM verde fuerte, C verde, M neutro/ámbar, V rojo; title con el veredicto completo), **precio** y **% del día** a la derecha (verde/rojo como el resto de la app).
+- Fila: **ticker** (y nombre corto si entra), **sigla del veredicto** junto al nombre (pastilla chica con color por veredicto: CF verde fuerte, C verde, M neutro/ámbar, V rojo; title con el veredicto completo), **precio** y **% del día** a la derecha (verde/rojo como el resto de la app).
 - Fila del activo abierto actualmente: resaltada como las posiciones seleccionadas de la cartera.
 - Clic en una fila: abre ese activo con el mecanismo existente (`selectAsset`), actualizando gráfico, datos y evaluación.
 
@@ -52,7 +52,7 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
 
 ## 4. Fuera de alcance
 
-- Editar la lista desde la UI (agregar/quitar/reordenar): queda para una iteración posterior; hoy es preconfigurada.
+- Editar la lista desde la UI (agregar/quitar/reordenar): queda para una iteración posterior; hoy es preconfigurada. **(Superado por la enmienda v8, §7: agregar, quitar y reordenar ya se hacen desde la UI.)**
 - Cambiar cualquier cálculo del motor, del veredicto o de la ficha.
 - Llevar la watchlist a otras vistas (Mercado/Portafolio/Optimizador): por ahora vive en la vista de activo, que es donde el dueño la pidió.
 
@@ -60,7 +60,7 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
 
 1. En la vista de activo ya no existe la columna «Datos de la ficha»; la configuración se abre dentro del panel de la Evaluación y editarla recalcula la ficha en vivo.
 2. La watchlist muestra los 84 activos únicos agrupados en ACCIONES/CRIPTO/ETFS, en el orden relativo de la captura dentro de cada grupo, con precio y % del día reales.
-3. Las siglas CM/C/M/V coinciden con el veredicto que la ficha muestra al abrir ese activo (verificado en una muestra de ≥5 activos, incl. uno de cada veredicto disponible).
+3. Las siglas CF/C/M/V coinciden con el veredicto que la ficha muestra al abrir ese activo (verificado en una muestra de ≥5 activos, incl. uno de cada veredicto disponible).
 4. Tocar una fila abre el activo en toda la ventana principal; la watchlist conserva su scroll.
 5. Recargar la página (y abrir desde otro dispositivo) mantiene la watchlist tal cual.
 6. QA en 412×915 y 1440 sin desbordes; suite de tests en verde (con tests nuevos para: deduplicación y agrupado de la lista semilla, mapeo veredicto→sigla, y sanitización de la config persistida) y build OK.
@@ -91,8 +91,9 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
   calcula con la MISMA regla de la ficha — `buildAssetOptimizerFv` (el
   pipeline de Fair Value de `/api/asset/:symbol`) + `computeOpportunity`
   con `scenariosFromMotorFv`, escenario Base, incertidumbre del motor —
-  y mapea con `verdictToSigla` («CM» para COMPRA FUERTE, literal del
-  dueño). Concurrencia acotada: pool de 3. **Caché persistida** en
+  y mapea con `verdictToSigla` («CF» para COMPRA FUERTE desde la
+  enmienda v8; en la v1 se publicó «CM», ver §7). Concurrencia
+  acotada: pool de 3. **Caché persistida** en
   `db.verdictCache` (mapa símbolo → `{ sigla, verdict, at, day }`) con
   **vencimiento diario por día de Nueva York** (`todayInNewYork`, el
   criterio del resto de la app); al persistir se podan los días viejos.
@@ -118,10 +119,83 @@ Símbolos completos de la app: resolver cada ticker a su símbolo con prefijo (N
   navega la ventana principal conservando el scroll; móvil 412×915 sin
   desborde (scrollWidth 412) y orden gráfico → watchlist → evaluación.
   Siglas contrastadas contra el titular del veredicto de la ficha:
-  NU CM = COMPRA FUERTE, GOOG M = MANTENER, AAPL V = VENDER (acuerdo
+  NU CF = COMPRA FUERTE (registrado en su momento como «CM»; la
+  sigla vigente es CF desde la enmienda v8, §7), GOOG M = MANTENER, AAPL V = VENDER (acuerdo
   exacto); NVDA y MU no se pudieron contrastar en la misma ventana de
   tiempo porque el pipeline de datos de este entorno devuelve añadas
   distintas entre llamadas (p. ej. el FV base de NVDA osciló 176 ↔ 291
   en una hora): la sigla y la ficha usan por construcción la misma
   regla y el mismo pipeline, y la caché diaria hace que la sigla sea
   la foto del día.
+
+## 7. Enmienda v8 (2026-11-14) — sigla CF, filtro por veredicto, alta/baja y reordenamiento desde la UI
+
+Feedback del dueño usando la watchlist en vivo en su celular, el mismo
+día de la publicación. Tres cambios:
+
+1. **Compra Fuerte = «CF», no «CM».** La v1 publicó «CM» porque el
+   pedido original lo transcribió así; el dueño lo corrigió en vivo
+   («CF es compra fuerte, no CM»). Cambia `verdictToSigla` y todo lo
+   que la usa (pastilla, colores, tests, esta spec). Como la caché de
+   veredictos persiste `{ sigla, verdict }` por día, el endpoint
+   `GET /api/watchlist/verdicts` **re-deriva la sigla desde el
+   veredicto guardado al servir** (`rederiveVerdictSigla`): las
+   entradas cacheadas como «CM» se sirven como «CF» sin esperar al
+   vencimiento diario.
+2. **Filtro por veredicto.** Fila de chips sobre la lista: Todos /
+   CF / C / M / V, cada sigla con su color y el conteo de las ya
+   cargadas. Filtrar muestra solo las filas cuya sigla **cargada**
+   coincide; los grupos que quedan sin filas visibles se ocultan; las
+   filas todavía cargando («··») y las «—» (cripto, ETFs) solo
+   aparecen en «Todos». Sin resultados, un mensaje simple («Ningún
+   activo en Compra Fuerte por ahora», según el filtro). La lógica es
+   la función pura `filterWatchlistItems` (+ `countWatchlistSiglas`)
+   de `shared/engine/watchlist.ts`; el estado del filtro es local al
+   panel y arranca en «Todos».
+3. **Agregar, quitar y reordenar activos desde la UI** (lo que §4
+   dejaba para una iteración posterior):
+   - **Agregar**: botón «+ Agregar» siempre visible en el encabezado.
+     Abre un buscador mínimo propio sobre el mismo endpoint del
+     buscador global (`/api/search` vía `api.search`; el SearchModal
+     global no se reutiliza porque está acoplado a navegar/operar).
+     Al elegir un resultado, el activo se agrega **al final de su
+     grupo**, detectado automáticamente (`detectWatchlistGroup`:
+     símbolo BINANCE: → CRIPTO; tipo ETF del resultado → ETFS; resto
+     → ACCIONES) y se **persiste en el acto** con el patrón de
+     guardado de las subcarteras (`setNwSettings` →
+     GET/PUT `/api/settings/nw`; el sanitizador ya aceptaba items
+     arbitrarios). Si ya está (por símbolo o por ticker), no se
+     duplica y se avisa «Ya está en tu watchlist».
+   - **Quitar**: botón «Editar» (lápiz) en el encabezado activa el
+     modo edición: cada fila muestra un botón × (objetivo táctil
+     ≥32 px) que quita el activo y persiste en el acto; «Listo» sale
+     del modo. En modo edición las filas **no navegan** al activo,
+     para que quitar no sea una trampa de toques. Fuera del modo
+     edición, el comportamiento no cambia.
+   - **Reordenar** (agregado del dueño con las capturas de edición
+     de Investing: flechas ↑/↓ a un lado de la fila y × al otro): en
+     el modo edición, cada fila muestra también botones ↑ y ↓
+     (≥32 px) a la izquierda. Subir/bajar intercambia la posición
+     con el ítem anterior/siguiente **de su mismo grupo** — las
+     secciones son por tipo de activo y el movimiento nunca cruza
+     de grupo —; en el primer ítem del grupo la ↑ queda
+     deshabilitada y en el último la ↓ también. Cada movimiento
+     **persiste en el acto**, sin botón «Guardar» aparte. Helper
+     puro `moveWatchlistItem(config, ticker, 'up' | 'down')`: swap
+     dentro del grupo, bordes sin efecto (devuelve la misma
+     config), sin mutar la original.
+   - Helpers puros testeados: `addWatchlistItem` (dedupe por símbolo
+     y por ticker), `removeWatchlistItem`, `moveWatchlistItem`,
+     `buildWatchlistItemFromSearch`, `detectWatchlistGroup`,
+     `watchlistContains`. Acciones del store: `addWatchlistItem` /
+     `removeWatchlistItem` / `moveWatchlistItem`, mismo patrón que
+     las subcarteras.
+
+**QA v8** (Playwright, datos reales, prefijo `v8-`): filtro por la
+sigla más poblada en móvil mostrando solo esas filas; alta de KLAC
+desde el buscador con persistencia verificada tras recargar (vía API);
+reordenamiento en modo edición (bajar un activo un puesto y subirlo
+de nuevo, con el orden persistido tras recargar y captura del modo
+edición con las flechas a 412 px); baja del mismo activo en modo
+edición, también verificada tras recargar; pastilla CF visible en
+filas (NU); escritorio sin desbordes.

@@ -268,16 +268,229 @@ export function groupWatchlistItems(
 
 /**
  * Sigla de la fila para un veredicto de la ficha (los textos exactos
- * de `computeOpportunity`): el dueño pidió «CM» literal para Compra
- * Fuerte. Sin veredicto (cripto, ETFs, activo sin valuación del
- * motor) → «—».
+ * de `computeOpportunity`): Compra Fuerte = «CF» (corrección del
+ * dueño, enmienda v8 de la SPEC-006: en la v1 se publicó «CM» por un
+ * malentendido y el dueño lo corrigió en vivo). Sin veredicto
+ * (cripto, ETFs, activo sin valuación del motor) → «—».
  */
 export function verdictToSigla(verdict: string | null | undefined): string {
   if (!verdict) return '—';
   const v = verdict.trim().toUpperCase();
-  if (v === 'COMPRA FUERTE') return 'CM';
+  if (v === 'COMPRA FUERTE') return 'CF';
   if (v.startsWith('COMPRAR')) return 'C';
   if (v === 'MANTENER') return 'M';
   if (v === 'VENDER') return 'V';
   return '—';
+}
+
+/**
+ * Re-deriva la sigla de una entrada de la caché de veredictos desde
+ * su veredicto guardado (enmienda v8). El endpoint de siglas la usa
+ * al servir: una entrada persistida con una sigla de una versión
+ * anterior («CM») se sirve con la vigente («CF») sin esperar al
+ * vencimiento diario de la caché.
+ */
+export function rederiveVerdictSigla<
+  T extends { sigla: string; verdict: string | null },
+>(entry: T): T {
+  return { ...entry, sigla: verdictToSigla(entry.verdict) };
+}
+
+/** Filtros de la fila de chips del panel (enmienda v8): «TODOS» o una
+ *  sigla de veredicto ya cargada. */
+export type WatchlistSiglaFilter = 'TODOS' | 'CF' | 'C' | 'M' | 'V';
+
+export const WATCHLIST_SIGLA_FILTERS: readonly WatchlistSiglaFilter[] = [
+  'TODOS',
+  'CF',
+  'C',
+  'M',
+  'V',
+];
+
+/** Nombre legible del veredicto de cada sigla, para mensajes como
+ *  «Ningún activo en Compra Fuerte por ahora». */
+export function siglaFilterName(filter: WatchlistSiglaFilter): string {
+  switch (filter) {
+    case 'CF':
+      return 'Compra Fuerte';
+    case 'C':
+      return 'Comprar de a poco';
+    case 'M':
+      return 'Mantener';
+    case 'V':
+      return 'Vender';
+    default:
+      return 'Todos';
+  }
+}
+
+/** Entrada de veredicto tal como la consume el panel (estructural:
+ *  coincide con `WatchlistVerdictEntry` de la API del cliente). */
+export interface WatchlistVerdictLike {
+  sigla: string;
+  verdict?: string | null;
+}
+
+/**
+ * Sigla visible de un item según las entradas ya cargadas: las
+ * ACCIONES con símbolo devuelven la sigla del servidor o `null`
+ * (todavía cargando, la fila muestra «··»); el resto (cripto, par
+ * ETH/BTC, ETFs, sin símbolo) es «—» definitivo.
+ */
+export function watchlistItemSigla(
+  item: Pick<WatchlistItem, 'group' | 'symbol'>,
+  verdicts: Record<string, WatchlistVerdictLike | undefined>
+): string | null {
+  if (item.group === 'ACCIONES' && item.symbol) {
+    const entry = verdicts[item.symbol];
+    return entry ? entry.sigla : null;
+  }
+  return '—';
+}
+
+/**
+ * Filtro por veredicto del panel (enmienda v8), función pura: con
+ * «TODOS» pasan todos los items; con una sigla, solo los que ya la
+ * tienen CARGADA e igual a la del filtro. Los que todavía cargan
+ * («··») y los «—» (cripto/ETFs) solo aparecen en «TODOS».
+ */
+export function filterWatchlistItems<T extends Pick<WatchlistItem, 'group' | 'symbol'>>(
+  items: readonly T[],
+  verdicts: Record<string, WatchlistVerdictLike | undefined>,
+  filter: WatchlistSiglaFilter
+): T[] {
+  if (filter === 'TODOS') return [...items];
+  return items.filter((it) => watchlistItemSigla(it, verdicts) === filter);
+}
+
+/** Conteo de siglas ya cargadas (para los chips del filtro). */
+export function countWatchlistSiglas(
+  items: readonly Pick<WatchlistItem, 'group' | 'symbol'>[],
+  verdicts: Record<string, WatchlistVerdictLike | undefined>
+): Record<'CF' | 'C' | 'M' | 'V', number> {
+  const counts: Record<'CF' | 'C' | 'M' | 'V', number> = { CF: 0, C: 0, M: 0, V: 0 };
+  for (const it of items) {
+    const sigla = watchlistItemSigla(it, verdicts);
+    if (sigla === 'CF' || sigla === 'C' || sigla === 'M' || sigla === 'V') {
+      counts[sigla] += 1;
+    }
+  }
+  return counts;
+}
+
+/**
+ * Grupo automático de un resultado del buscador (enmienda v8):
+ * símbolo BINANCE: → CRIPTO; tipo ETF del resultado → ETFS; el resto
+ * → ACCIONES.
+ */
+export function detectWatchlistGroup(result: {
+  symbol?: string | null;
+  type?: string | null;
+}): WatchlistGroupId {
+  const symbol = String(result?.symbol || '').toUpperCase();
+  if (symbol.startsWith('BINANCE:')) return 'CRIPTO';
+  if (String(result?.type || '').trim().toUpperCase() === 'ETF') return 'ETFS';
+  return 'ACCIONES';
+}
+
+/**
+ * Construye el item de watchlist desde un resultado del buscador de
+ * la app (/api/search: símbolo completo, ticker y tipo). Devuelve
+ * null si el símbolo no tiene la forma válida de la app.
+ */
+export function buildWatchlistItemFromSearch(result: {
+  symbol?: string | null;
+  ticker?: string | null;
+  type?: string | null;
+}): WatchlistItem | null {
+  const symbol =
+    typeof result?.symbol === 'string' ? result.symbol.trim().toUpperCase() : '';
+  if (!isValidWatchlistSymbol(symbol)) return null;
+  const fromResult =
+    typeof result?.ticker === 'string' ? result.ticker.trim().toUpperCase() : '';
+  const ticker = fromResult || symbol.split(':')[1] || '';
+  const item: WatchlistItem = {
+    ticker,
+    group: detectWatchlistGroup(result),
+    symbol,
+  };
+  if (!isValidWatchlistItemShape(item)) return null;
+  return normalizeWatchlistItem(item);
+}
+
+/** ¿El activo ya está en la watchlist? Coincidencia por símbolo
+ *  completo o por ticker (la config nunca tiene duplicados de
+ *  ninguna de las dos claves: el sanitizador deduplica por ticker). */
+export function watchlistContains(
+  config: WatchlistConfig,
+  probe: { symbol?: string | null; ticker?: string | null }
+): boolean {
+  const ticker = String(probe?.ticker || '').trim().toUpperCase();
+  return config.items.some(
+    (it) =>
+      (probe?.symbol != null && it.symbol === probe.symbol) ||
+      (ticker !== '' && it.ticker === ticker)
+  );
+}
+
+/**
+ * Alta de un activo (enmienda v8): lo agrega AL FINAL de su grupo
+ * (al final de la lista plana; el agrupado conserva el orden dentro
+ * de cada grupo). Si ya está (por símbolo o ticker) o la lista llegó
+ * al tope, no toca nada y devuelve `added: false`.
+ */
+export function addWatchlistItem(
+  config: WatchlistConfig,
+  item: WatchlistItem
+): { config: WatchlistConfig; added: boolean } {
+  if (!isValidWatchlistItemShape(item)) return { config, added: false };
+  if (config.items.length >= MAX_WATCHLIST_ITEMS) return { config, added: false };
+  const norm = normalizeWatchlistItem(item);
+  if (watchlistContains(config, norm)) return { config, added: false };
+  return { config: { items: [...config.items, norm] }, added: true };
+}
+
+/** Baja de un activo por ticker (enmienda v8). */
+export function removeWatchlistItem(
+  config: WatchlistConfig,
+  ticker: string
+): WatchlistConfig {
+  const t = String(ticker || '').trim().toUpperCase();
+  if (!t) return config;
+  return { items: config.items.filter((it) => it.ticker !== t) };
+}
+
+/**
+ * Reordenamiento dentro del grupo (enmienda v8, agregado del dueño
+ * con las capturas de edición de Investing): intercambia el ítem con
+ * el anterior/siguiente **de su mismo grupo** en la lista plana (la
+ * lista mezcla grupos en el orden de la captura, así que el vecino
+ * de grupo puede no ser el vecino de array). Las secciones son por
+ * tipo de activo: el movimiento **nunca cruza de grupo**. En los
+ * bordes del grupo (primero hacia arriba, último hacia abajo), si el
+ * ticker no existe o el ítem no es válido, devuelve la MISMA config
+ * (sin cambios y sin mutar la original).
+ */
+export function moveWatchlistItem(
+  config: WatchlistConfig,
+  ticker: string,
+  direction: 'up' | 'down'
+): WatchlistConfig {
+  const t = String(ticker || '').trim().toUpperCase();
+  if (!t) return config;
+  const idx = config.items.findIndex((it) => it.ticker === t);
+  if (idx < 0) return config;
+  const group = config.items[idx].group;
+  const step = direction === 'up' ? -1 : 1;
+  let j = idx + step;
+  while (j >= 0 && j < config.items.length && config.items[j].group !== group) {
+    j += step;
+  }
+  if (j < 0 || j >= config.items.length) return config;
+  const items = [...config.items];
+  const tmp = items[idx];
+  items[idx] = items[j];
+  items[j] = tmp;
+  return { items };
 }

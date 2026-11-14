@@ -3,11 +3,28 @@ import { useAppStore } from '@/store';
 import { api, type WatchlistQuote, type WatchlistVerdictEntry } from '@/api';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
+  buildWatchlistItemFromSearch,
+  countWatchlistSiglas,
+  filterWatchlistItems,
   groupWatchlistItems,
   resolveWatchlistConfig,
+  siglaFilterName,
+  watchlistItemSigla,
+  WATCHLIST_SIGLA_FILTERS,
+  type WatchlistSiglaFilter,
 } from '@shared/engine/watchlist';
 import type { WatchlistItem } from '@shared/engine/types';
-import { ChevronDown, ListChecks } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ListChecks,
+  Pencil,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react';
 
 /**
  * Watchlist persistente de la vista de activo (SPEC-006).
@@ -21,10 +38,17 @@ import { ChevronDown, ListChecks } from 'lucide-react';
  * del motor y las cachea por día (/api/watchlist/verdicts): acá se
  * piden en lotes progresivos solo para las ACCIONES; cripto, el par
  * ETH/BTC y los ETFs no tienen evaluación del motor («—» definitivo).
+ *
+ * Enmienda v8: filtro por veredicto (chips Todos/CF/C/M/V), alta de
+ * activos desde el buscador de la app (grupo detectado solo, se
+ * persiste en el acto) y, en el modo edición, baja (× por fila) y
+ * reordenamiento con ↑/↓ dentro del grupo — como la vista de
+ * edición de Investing que mandó el dueño —, todo persistido en el
+ * acto.
  */
 
 const SIGLA_STYLE: Record<string, React.CSSProperties> = {
-  CM: {
+  CF: {
     background: 'rgba(16, 185, 129, 0.22)',
     color: '#34D399',
     border: '1px solid rgba(16, 185, 129, 0.55)',
@@ -90,14 +114,65 @@ const SiglaPill: React.FC<{ sigla: string | null; verdict: string | null }> = ({
   );
 };
 
+const moveBtnStyle = (disabled: boolean): React.CSSProperties => ({
+  width: 32,
+  height: 32,
+  minWidth: 32,
+  minHeight: 32,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 8,
+  border: '1px solid var(--border-subtle)',
+  background: 'var(--bg-elevated)',
+  color: 'var(--text-primary)',
+  cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.3 : 1,
+  flexShrink: 0,
+});
+
+const headerBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  minHeight: 32,
+  padding: '5px 10px',
+  fontSize: 12,
+  fontWeight: 700,
+  borderRadius: 8,
+  border: '1px solid var(--border-subtle)',
+  background: 'var(--bg-elevated)',
+  color: 'var(--text-primary)',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
 export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
-  const { nwSettings, selectedSymbol, selectAsset, currency, fxRates } = useAppStore();
+  const {
+    nwSettings,
+    selectedSymbol,
+    selectAsset,
+    currency,
+    fxRates,
+    addWatchlistItem,
+    removeWatchlistItem,
+    moveWatchlistItem,
+  } = useAppStore();
   const config = useMemo(() => resolveWatchlistConfig(nwSettings), [nwSettings]);
   const groups = useMemo(() => groupWatchlistItems(config.items), [config]);
 
   const [quotes, setQuotes] = useState<Record<string, WatchlistQuote>>({});
   const [verdicts, setVerdicts] = useState<Record<string, WatchlistVerdictEntry>>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Enmienda v8: filtro por veredicto, modo edición y buscador de alta.
+  const [filter, setFilter] = useState<WatchlistSiglaFilter>('TODOS');
+  const [editing, setEditing] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvedRef = useRef<Set<string>>(new Set());
   const loopGenRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,6 +186,46 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         .join(','),
     [config]
   );
+
+  const siglaCounts = useMemo(
+    () => countWatchlistSiglas(config.items, verdicts),
+    [config, verdicts]
+  );
+
+  // Bordes de cada grupo (para deshabilitar ↑ en el primer ítem y ↓
+  // en el último en el modo edición): se calculan sobre la lista
+  // completa, no sobre lo filtrado.
+  const groupEdges = useMemo(() => {
+    const first = new Set<string>();
+    const last = new Set<string>();
+    for (const g of groups) {
+      if (g.items.length > 0) {
+        first.add(g.items[0].ticker);
+        last.add(g.items[g.items.length - 1].ticker);
+      }
+    }
+    return { first, last };
+  }, [groups]);
+
+  // Grupos visibles según el filtro: los grupos que quedan sin filas
+  // visibles se ocultan enteros.
+  const visibleGroups = useMemo(
+    () =>
+      groups
+        .map((g) => ({
+          group: g.group,
+          total: g.items.length,
+          items: filterWatchlistItems(g.items, verdicts, filter),
+        }))
+        .filter((g) => g.items.length > 0),
+    [groups, verdicts, filter]
+  );
+
+  const showNotice = (text: string) => {
+    setNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 2600);
+  };
 
   // Precios en lote + refresco con la cadencia Live de la app (15 s).
   useEffect(() => {
@@ -174,6 +289,38 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     return () => clearTimeout(t);
   }, []);
 
+  // Buscador del alta (enmienda v8): mismo endpoint que el buscador
+  // global de la app (/api/search vía api.search), con debounce.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const q = query.trim();
+    if (q.length < 1) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    let active = true;
+    const id = setTimeout(() => {
+      api
+        .search(q)
+        .then((res) => {
+          if (!active) return;
+          setResults(Array.isArray(res) ? res.slice(0, 10) : []);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (!active) return;
+          setResults([]);
+          setSearching(false);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(id);
+    };
+  }, [query, searchOpen]);
+
   const toggleGroup = (group: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -182,23 +329,29 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
       return next;
     });
 
+  const handleAddResult = (result: any) => {
+    const item = buildWatchlistItemFromSearch(result);
+    if (!item) return;
+    const added = addWatchlistItem(item);
+    if (!added) {
+      // Ya estaba (por símbolo o por ticker): no se duplica.
+      showNotice('Ya está en tu watchlist');
+      return;
+    }
+    showNotice(`${item.ticker} se agregó a tu watchlist`);
+    setSearchOpen(false);
+    setQuery('');
+    setResults([]);
+  };
+
   const renderRow = (item: WatchlistItem) => {
     const q = item.symbol ? quotes[item.symbol] : undefined;
     const isActive = Boolean(item.symbol) && item.symbol === selectedSymbol;
     const unavailable = item.symbol === null;
     // Sigla: las ACCIONES con símbolo la resuelven contra el servidor;
     // el resto (cripto, par, ETFs, sin símbolo) es «—» definitivo.
-    let sigla: string | null = '—';
-    let verdict: string | null = null;
-    if (item.group === 'ACCIONES' && item.symbol) {
-      const entry = verdicts[item.symbol];
-      if (entry) {
-        sigla = entry.sigla;
-        verdict = entry.verdict;
-      } else {
-        sigla = null;
-      }
-    }
+    const sigla = watchlistItemSigla(item, verdicts);
+    const verdict = item.symbol ? verdicts[item.symbol]?.verdict ?? null : null;
     const up = (q?.changePct ?? 0) >= 0;
     const priceText = !q
       ? null
@@ -210,8 +363,13 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     return (
       <div
         key={item.ticker}
+        data-wl-row={item.ticker}
         data-wl-active={isActive ? 'true' : undefined}
-        onClick={item.symbol ? () => void selectAsset(item.symbol as string) : undefined}
+        onClick={
+          !editing && item.symbol
+            ? () => void selectAsset(item.symbol as string)
+            : undefined
+        }
         title={
           unavailable
             ? 'Activo no disponible en las fuentes de la app'
@@ -219,17 +377,47 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         }
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gridTemplateColumns: editing ? 'auto minmax(0, 1fr) auto' : 'minmax(0, 1fr) auto',
           alignItems: 'center',
           gap: 8,
           padding: isActive ? '6px 10px 6px 7px' : '6px 10px',
           borderBottom: '1px solid var(--border-subtle)',
           borderLeft: isActive ? '3px solid var(--accent-cyan)' : '3px solid transparent',
           background: isActive ? 'var(--bg-hover)' : undefined,
-          cursor: item.symbol ? 'pointer' : 'default',
+          cursor: !editing && item.symbol ? 'pointer' : 'default',
           opacity: unavailable ? 0.55 : 1,
         }}
       >
+        {editing && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button
+              type="button"
+              aria-label={`Subir ${item.ticker} en su grupo`}
+              data-wl-up={item.ticker}
+              disabled={groupEdges.first.has(item.ticker)}
+              onClick={(e) => {
+                e.stopPropagation();
+                moveWatchlistItem(item.ticker, 'up');
+              }}
+              style={moveBtnStyle(groupEdges.first.has(item.ticker))}
+            >
+              <ArrowUp size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label={`Bajar ${item.ticker} en su grupo`}
+              data-wl-down={item.ticker}
+              disabled={groupEdges.last.has(item.ticker)}
+              onClick={(e) => {
+                e.stopPropagation();
+                moveWatchlistItem(item.ticker, 'down');
+              }}
+              style={moveBtnStyle(groupEdges.last.has(item.ticker))}
+            >
+              <ArrowDown size={15} />
+            </button>
+          </div>
+        )}
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span
@@ -255,29 +443,58 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
             </div>
           )}
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          {unavailable ? (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
-          ) : q ? (
-            <>
-              <div className="mono tabular" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {priceText}
-              </div>
-              <div
-                className="mono tabular"
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: up ? 'var(--pos-bright)' : 'var(--neg-bright)',
-                }}
-              >
-                {formatPct(q.changePct)}
-              </div>
-            </>
-          ) : (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-          )}
-        </div>
+        {editing ? (
+          <button
+            type="button"
+            aria-label={`Quitar ${item.ticker} de la watchlist`}
+            data-wl-remove={item.ticker}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeWatchlistItem(item.ticker);
+            }}
+            style={{
+              width: 32,
+              height: 32,
+              minWidth: 32,
+              minHeight: 32,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              border: '1px solid rgba(239, 68, 68, 0.40)',
+              background: 'rgba(239, 68, 68, 0.10)',
+              color: 'var(--neg-bright)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <X size={15} />
+          </button>
+        ) : (
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            {unavailable ? (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
+            ) : q ? (
+              <>
+                <div className="mono tabular" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                  {priceText}
+                </div>
+                <div
+                  className="mono tabular"
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: up ? 'var(--pos-bright)' : 'var(--neg-bright)',
+                  }}
+                >
+                  {formatPct(q.changePct)}
+                </div>
+              </>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -300,6 +517,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           gap: 7,
           padding: '11px 12px 9px',
           borderBottom: '1px solid var(--border-subtle)',
+          flexWrap: 'wrap',
         }}
       >
         <ListChecks size={15} color="var(--accent-cyan)" />
@@ -307,7 +525,209 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {config.items.length} activos · tu orden de importancia
         </span>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          style={headerBtnStyle}
+          aria-expanded={searchOpen}
+          onClick={() => setSearchOpen((v) => !v)}
+        >
+          <Plus size={13} /> Agregar
+        </button>
+        <button
+          type="button"
+          style={headerBtnStyle}
+          aria-pressed={editing}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? (
+            <>
+              <Check size={13} /> Listo
+            </>
+          ) : (
+            <>
+              <Pencil size={13} /> Editar
+            </>
+          )}
+        </button>
       </div>
+
+      {notice && (
+        <div
+          role="status"
+          style={{
+            padding: '7px 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: 'var(--accent-cyan)',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          {notice}
+        </div>
+      )}
+
+      {searchOpen && (
+        <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+            }}
+          >
+            <Search size={14} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+            <input
+              autoFocus
+              className="input"
+              style={{
+                border: 'none',
+                flex: 1,
+                background: 'transparent',
+                fontSize: 14,
+                minWidth: 0,
+                minHeight: 32,
+              }}
+              placeholder="Buscar símbolo o empresa (ej. KLAC)…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ padding: '4px 6px', minHeight: 32 }}
+              aria-label="Cerrar buscador"
+              onClick={() => {
+                setSearchOpen(false);
+                setQuery('');
+                setResults([]);
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          {query.trim().length >= 1 && (
+            <div style={{ maxHeight: 264, overflowY: 'auto' }}>
+              {searching && results.length === 0 ? (
+                <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+                  Buscando…
+                </div>
+              ) : results.length === 0 ? (
+                <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+                  Sin resultados para «{query.trim()}».
+                </div>
+              ) : (
+                results.map((r) => (
+                  <button
+                    key={r.symbol}
+                    type="button"
+                    data-wl-search-result={r.ticker}
+                    onClick={() => handleAddResult(r)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      minHeight: 40,
+                      padding: '7px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderTop: '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <span className="mono" style={{ fontSize: 12.5, fontWeight: 700 }}>
+                      {r.ticker}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                        background: 'var(--bg-elevated)',
+                        color: 'var(--accent-cyan)',
+                        border: '1px solid var(--border-subtle)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {r.exchange}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)', flexShrink: 0 }}>
+                      {r.type}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        color: 'var(--text-secondary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0,
+                      }}
+                    >
+                      {r.name}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filtro por veredicto (enmienda v8): los conteos son de las
+          siglas ya cargadas en la sesión. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '8px 12px',
+          borderBottom: '1px solid var(--border-subtle)',
+          overflowX: 'auto',
+          background: 'var(--bg-elevated)',
+        }}
+      >
+        {WATCHLIST_SIGLA_FILTERS.map((f) => {
+          const active = filter === f;
+          const style = f !== 'TODOS' ? SIGLA_STYLE[f] : undefined;
+          const count = f !== 'TODOS' ? siglaCounts[f] : null;
+          return (
+            <button
+              key={f}
+              type="button"
+              data-wl-filter={f}
+              aria-pressed={active}
+              onClick={() => setFilter(f)}
+              style={{
+                padding: '4px 10px',
+                minHeight: 30,
+                fontSize: 11.5,
+                fontWeight: active ? 800 : 600,
+                borderRadius: 999,
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                border: style?.border ?? '1px solid var(--border-subtle)',
+                background:
+                  active && f === 'TODOS'
+                    ? 'var(--bg-hover)'
+                    : style?.background ?? 'transparent',
+                color: style?.color ?? 'var(--text-secondary)',
+                boxShadow: active ? 'inset 0 0 0 1px currentColor' : undefined,
+                opacity: active ? 1 : 0.75,
+              }}
+            >
+              {f === 'TODOS' ? 'Todos' : f}
+              {count !== null && count > 0 ? ` · ${count}` : ''}
+            </button>
+          );
+        })}
+      </div>
+
       <div
         ref={scrollRef}
         style={{
@@ -317,7 +737,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           minHeight: 120,
         }}
       >
-        {groups.map(({ group, items }) => {
+        {visibleGroups.map(({ group, total, items }) => {
           const isCollapsed = collapsed.has(group);
           return (
             <div key={group}>
@@ -345,7 +765,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
                     letterSpacing: '0.07em',
                   }}
                 >
-                  {group} · {items.length}
+                  {group} · {filter === 'TODOS' ? total : `${items.length} de ${total}`}
                 </span>
                 <ChevronDown
                   size={13}
@@ -359,9 +779,14 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
             </div>
           );
         })}
-        {groups.length === 0 && (
+        {config.items.length === 0 && (
           <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>
             La watchlist está vacía.
+          </div>
+        )}
+        {config.items.length > 0 && visibleGroups.length === 0 && filter !== 'TODOS' && (
+          <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>
+            Ningún activo en {siglaFilterName(filter)} por ahora.
           </div>
         )}
       </div>
