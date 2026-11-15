@@ -1,1 +1,217 @@
-aW1wb3J0IHsgZGVzY3JpYmUsIGV4cGVjdCwgaXQgfSBmcm9tICd2aXRlc3QnOwppbXBvcnQgewogIGNvbXB1dGVPcHBvcnR1bml0eSwKICBjb25zZW5zdXNUYWcsCiAgZmFpclZhbHVlRGlzY291bnRQaHJhc2UsCiAgbGFiZWxGb3JTY29yZSwKICBzY29yZUZvciwKICBzdGFyc0ZvciwKfSBmcm9tICcuLi9vcHBvcnR1bml0eS5qcyc7CmltcG9ydCB7CiAgZm10SXNvRGF0ZUVzLAogIHNlZWRPcHBvcnR1bml0eUZvcm0sCn0gZnJvbSAnLi4vLi4vLi4vc3JjL2NvbXBvbmVudHMvYXNzZXQvb3Bwb3J0dW5pdHlTZWVkJzsKaW1wb3J0IHR5cGUgeyBBc3NldERldGFpbFJlc3BvbnNlIH0gZnJvbSAnLi4vLi4vLi4vc3JjL2FwaSc7CgovLyBDYXNvcyB2YWxpZGFkb3MgZW4gZWwgUE1WIGRlbCAyMS8xMC8yMDI2IGNvbiBBTEI6Ci8vIEZWIHByb3BpbyBwb3IgZXNjZW5hcmlvcyA5NCAvIDE1NyAvIDIyNSwgaW5jZXJ0aWR1bWJyZSBWZXJ5IEhpZ2guCmNvbnN0IEFMQiA9IHsKICBmdlBlc2ltaXN0YTogOTQsCiAgZnZCYXNlOiAxNTcsCiAgZnZPcHRpbWlzdGE6IDIyNSwKICBzY2VuYXJpbzogJ0Jhc2UnIGFzIGNvbnN0LAogIHVuY2VydGFpbnR5OiAnVmVyeSBIaWdoJyBhcyBjb25zdCwKICB5ZWFyc1RvQ29ycmVjdGlvbjogMywKfTsKCmRlc2NyaWJlKCdFdmFsdWFjacOzbiBkZSBvcG9ydHVuaWRhZCDigJQgYmFuZGFzIHkgcHVudGFqZSAoUE1WKScsICgpID0+IHsKICBpdCgnQUxCIGhveSAoVVMkOTMsNzcpOiB1cHNpZGUgKzY3LDQlLCA04piFLCA3NC8xMDAsIE9wb3J0dW5pZGFkIGJ1ZW5hJywgKCkgPT4gewogICAgY29uc3QgciA9IGNvbXB1dGVPcHBvcnR1bml0eSh7IC4uLkFMQiwgcHJpY2U6IDkzLjc3IH0pOwogICAgZXhwZWN0KHIpLm5vdC50b0JlTnVsbCgpOwogICAgZXhwZWN0KHIhLnVwc2lkZVBjdCkudG9CZUNsb3NlVG8oNjcuNCwgMCk7CiAgICBleHBlY3QociEuc3RhcnMpLnRvQmUoNCk7CiAgICBleHBlY3QociEuc2NvcmUpLnRvQmUoNzQpOwogICAgZXhwZWN0KHIhLmxhYmVsKS50b0JlKCdPcG9ydHVuaWRhZCBidWVuYScpOwogICAgZXhwZWN0KHIhLnN0YXJzUmFuZ2UpLnRvRXF1YWwoWzMsIDVdKTsKICAgIGV4cGVjdChyIS5hbm51YWxpemVkUGN0KS50b0JlQ2xvc2VUbygxOC43LCAwKTsKICB9KTsKCiAgaXQoJ0FMQiBoYWNlIDMgc2VtYW5hcyAoVVMkMTA5LDczKTogNOKYhSBwZXJvIHB1bnRhamUgNjcvMTAwJywgKCkgPT4gewogICAgY29uc3QgciA9IGNvbXB1dGVPcHBvcnR1bml0eSh7IC4uLkFMQiwgcHJpY2U6IDEwOS43MyB9KTsKICAgIGV4cGVjdChyIS5zdGFycykudG9CZSg0KTsKICAgIGV4cGVjdChyIS5zY29yZSkudG9CZSg2Nyk7CiAgICBleHBlY3QociEudXBzaWRlUGN0KS50b0JlQ2xvc2VUbyg0My4xLCAwKTsKICB9KTsKCiAgaXQoJ2NvbiBpbmNlcnRpZHVtYnJlIExvdyBlbCBtaXNtbyBwcmVjaW8gZGEgNeKYhSAoYmFuZGEgTG93LCByYXRpbyAwLDU5NyknLCAoKSA9PiB7CiAgICBjb25zdCByID0gY29tcHV0ZU9wcG9ydHVuaXR5KHsgLi4uQUxCLCBwcmljZTogOTMuNzcsIHVuY2VydGFpbnR5OiAnTG93JyB9KTsKICAgIGV4cGVjdChyIS5zdGFycykudG9CZSg1KTsKICAgIGV4cGVjdChyIS5zY29yZSkudG9CZSg4NSk7CiAgICBleHBlY3QociEubGFiZWwpLnRvQmUoJ09wb3J0dW5pZGFkIGFsdGEnKTsKICB9KTsKCiAgaXQoJ3ZlcmVkaWN0byBBTEI6IENPTVBSQVIgZGUgYSBwb2NvIChiYXNlICs2NyUsIHBlc2ltaXN0YSBzaW4gY29sY2jDs24pJywgKCkgPT4gewogICAgY29uc3QgciA9IGNvbXB1dGVPcHBvcnR1bml0eSh7IC4uLkFMQiwgcHJpY2U6IDkzLjc3IH0pOwogICAgZXhwZWN0KHIhLnZlcmRpY3QpLnRvQmUoJ0NPTVBSQVIgKGRlIGEgcG9jbywgbm8gdG9kbyBqdW50byknKTsKICAgIGV4cGVjdChyIS52ZXJkaWN0Tm90ZSkudG9CZSgnU2kgeWEgbGEgdGVuw6lzOiBNQU5URU5FUi4nKTsKICB9KTsKCiAgaXQoJ2NvbXByYSBmdWVydGUgc2kgaGFzdGEgZWwgcGVzaW1pc3RhIGRlamEgbcOhcyBkZSArMjAlJywgKCkgPT4gewogICAgY29uc3QgciA9IGNvbXB1dGVPcHBvcnR1bml0eSh7IC4uLkFMQiwgcHJpY2U6IDcwIH0pOwogICAgZXhwZWN0KHIhLnZlcmRpY3QpLnRvQmUoJ0NPTVBSQSBGVUVSVEUnKTsKICB9KTsKCiAgaXQoJ3ZlbmRlciBzaSBlbCBwcmVjaW8gc3VwZXJhIGFsIEZhaXIgVmFsdWUgYmFzZSBwb3IgbcOhcyBkZSAxMCUnLCAoKSA9PiB7CiAgICBjb25zdCByID0gY29tcHV0ZU9wcG9ydHVuaXR5KHsgLi4uQUxCLCBwcmljZTogMTgwIH0pOwogICAgZXhwZWN0KHIhLnZlcmRpY3QpLnRvQmUoJ1ZFTkRFUicpOwogIH0pOwoKICBpdCgnc2luIHByZWNpbyBvIHNpbiBGYWlyIFZhbHVlIG5vIGNhbGN1bGEnLCAoKSA9PiB7CiAgICBleHBlY3QoY29tcHV0ZU9wcG9ydHVuaXR5KHsgLi4uQUxCLCBwcmljZTogMCB9KSkudG9CZU51bGwoKTsKICAgIGV4cGVjdChjb21wdXRlT3Bwb3J0dW5pdHkoeyAuLi5BTEIsIHByaWNlOiA5My43NywgZnZCYXNlOiAwIH0pKS50b0JlTnVsbCgpOwogIH0pOwoKICBpdCgnYmFuZGFzOiBleHRyZW1vcyBkZSBsYSB0YWJsYSBWZXJ5IEhpZ2gnLCAoKSA9PiB7CiAgICBleHBlY3Qoc3RhcnNGb3IoMC41LCAnVmVyeSBIaWdoJykpLnRvQmUoNSk7CiAgICBleHBlY3Qoc3RhcnNGb3IoMC41MSwgJ1ZlcnkgSGlnaCcpKS50b0JlKDQpOwogICAgZXhwZWN0KHN0YXJzRm9yKDAuOCwgJ1ZlcnkgSGlnaCcpKS50b0JlKDQpOwogICAgZXhwZWN0KHN0YXJzRm9yKDEuMjUsICdWZXJ5IEhpZ2gnKSkudG9CZSgzKTsKICAgIGV4cGVjdChzdGFyc0ZvcigxLjc2LCAnVmVyeSBIaWdoJykpLnRvQmUoMSk7CiAgICBleHBlY3Qoc2NvcmVGb3IoOTMuNzcgLyAxNTcsICdWZXJ5IEhpZ2gnKSkudG9CZSg3NCk7CiAgICBleHBlY3QobGFiZWxGb3JTY29yZSg3NCkpLnRvQmUoJ09wb3J0dW5pZGFkIGJ1ZW5hJyk7CiAgfSk7CgogIGl0KCdjb25zZW5zbzogZXRpcXVldGEgcG9yIGNvbnRlbycsICgpID0+IHsKICAgIGV4cGVjdChjb25zZW5zdXNUYWcoMTIsIDYsIDApKS50b0JlKCdDb21wcmFyJyk7CiAgICBleHBlY3QoY29uc2Vuc3VzVGFnKDAsIDYsIDEyKSkudG9CZSgnVmVuZGVyJyk7CiAgICBleHBlY3QoY29uc2Vuc3VzVGFnKDUsIDYsIDQpKS50b0JlKCdOZXV0cmFsJyk7CiAgfSk7Cn0pOwoKZGVzY3JpYmUoJ2ZtdElzb0RhdGVFcycsICgpID0+IHsKICBpdCgnZm9ybWF0ZWEgZmVjaGFzIElTTyB2w6FsaWRhcyBlbiBlc3Bhw7FvbCcsICgpID0+IHsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMoJzE5OTktMDEtMjInKSkudG9CZSgnMjIgZW5lIDE5OTknKTsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMoJzIwMDQtMDgtMTknKSkudG9CZSgnMTkgYWdvIDIwMDQnKTsKICB9KTsKCiAgaXQoJ3JldG9ybmEgc3RyaW5nIHZhY8OtbyBhbnRlIGVudHJhZGFzIGludsOhbGlkYXMgbyBudWxhcycsICgpID0+IHsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMobnVsbCkpLnRvQmUoJycpOwogICAgZXhwZWN0KGZtdElzb0RhdGVFcyh1bmRlZmluZWQpKS50b0JlKCcnKTsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMoJycpKS50b0JlKCcnKTsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMoJ2ludmFsaWRhJykpLnRvQmUoJycpOwogICAgZXhwZWN0KGZtdElzb0RhdGVFcygnMTk5OS0xMy0wMScpKS50b0JlKCcnKTsKICAgIGV4cGVjdChmbXRJc29EYXRlRXMoJzE5OTktMDAtMDEnKSkudG9CZSgnJyk7CiAgICBleHBlY3QoZm10SXNvRGF0ZUVzKCcxOTk5LTAxLTMyJykpLnRvQmUoJycpOwogIH0pOwp9KTsKCmRlc2NyaWJlKCdzZWVkT3Bwb3J0dW5pdHlGb3JtJywgKCkgPT4gewogIGl0KCdwcmVjYXJnYSBkYXRvcyBkZXNkZSBtb2NrIGRlIEFzc2V0RGV0YWlsUmVzcG9uc2UgcGFyYSBhY3Rpdm8gZ2Vuw6lyaWNvIChOVkRBKScsICgpID0+IHsKICAgIGNvbnN0IG1vY2tEZXRhaWwgPSB7CiAgICAgIHN5bWJvbDogJ05WREEnLAogICAgICBtZXRhOiB7CiAgICAgICAgdGlja2VyOiAnTlZEQScsCiAgICAgICAgbmFtZTogJ05WSURJQSBDb3Jwb3JhdGlvbicsCiAgICAgICAgZXhjaGFuZ2U6ICdOQVNEQVEnLAogICAgICAgIHNlY3RvcjogJ1RlY2hub2xvZ3knLAogICAgICAgIGluZHVzdHJ5OiAnU2VtaWNvbmR1Y3RvcnMnLAogICAgICAgIGNvdW50cnk6ICdVbml0ZWQgU3RhdGVzJywKICAgICAgfSwKICAgICAgcXVvdGU6IHsKICAgICAgICBwcmljZTogMTMwLAogICAgICAgIG5hbWU6ICdOVklESUEgQ29ycG9yYXRpb24nLAogICAgICB9LAogICAgICBmYWlyVmFsdWU6IHsKICAgICAgICBmYWlyVmFsdWU6IDE0MCwKICAgICAgICBtb2F0OiAnV2lkZScsCiAgICAgICAgdW5jZXJ0YWludHk6ICdIaWdoJywKICAgICAgfSwKICAgICAgZXh0cmFzOiB7CiAgICAgICAgZm91bmRlZFllYXI6IDE5OTMsCiAgICAgICAgaXBvRGF0ZTogJzE5OTktMDEtMjInLAogICAgICAgIGdyb3NzTWFyZ2luUGN0OiA3NC43LAogICAgICAgIHJvaWNQY3Q6IDcyLjQsCiAgICAgICAgZXBzTmV4dDVZR3Jvd3RoUGN0OiA2NC45LAogICAgICAgIGJ1c2luZXNzU3VtbWFyeTogJ0Rlc2NyaXBjacOzbiBkZSBwcnVlYmEnLAogICAgICB9LAogICAgfSBhcyB1bmtub3duIGFzIEFzc2V0RGV0YWlsUmVzcG9uc2U7CgogICAgY29uc3QgcmVzID0gc2VlZE9wcG9ydHVuaXR5Rm9ybShtb2NrRGV0YWlsKTsKICAgIGV4cGVjdChyZXMuckZvdW5kZWQpLnRvQmUoJzE5OTMnKTsKICAgIGV4cGVjdChyZXMucklwbykudG9CZSgnMjIgZW5lIDE5OTknKTsKICAgIGV4cGVjdChyZXMuY29yZSkudG9CZSgnRGVzY3JpcGNpw7NuIGRlIHBydWViYScpOwogICAgZXhwZWN0KHJlcy5lZGdlKS5ub3QudG9CZSgnJyk7CiAgICBleHBlY3QocmVzLmVkZ2UpLnRvQ29udGFpbignRm9zbycpOwogICAgZXhwZWN0KHJlcy5vcHRpb25hbGl0eSkubm90LnRvQmUoJycpOwogICAgZXhwZWN0KHJlcy5vcHRpb25hbGl0eSkudG9Db250YWluKCdCYXNlIGN1YW50aXRhdGl2YScpOwogIH0pOwoKICBpdCgnaW5jbHV5ZSBhY2VsZXJhY2nDs24gZGUgRVBTLCB2ZW50YXMgeSBGQ0YgeWllbGQgZW4gb3B0aW9uYWxpdHkgY3VhbmRvIGVzdMOhbiBkaXNwb25pYmxlcycsICgpID0+IHsKICAgIGNvbnN0IG1vY2tEZXRhaWwgPSB7CiAgICAgIHN5bWJvbDogJ01TRlQnLAogICAgICBtZXRhOiB7CiAgICAgICAgdGlja2VyOiAnTVNGVCcsCiAgICAgICAgbmFtZTogJ01pY3Jvc29mdCBDb3JwJywKICAgICAgICBpbmR1c3RyeTogJ1NvZnR3YXJlJywKICAgICAgfSwKICAgICAgcXVvdGU6IHsgcHJpY2U6IDQwMCB9LAogICAgICBmYWlyVmFsdWU6IHsKICAgICAgICBmYWlyVmFsdWU6IDQ1MCwKICAgICAgICBtb2F0OiAnV2lkZScsCiAgICAgIH0sCiAgICAgIGV4dHJhczogewogICAgICAgIGZpbnZpejogewogICAgICAgICAgZXBzTmV4dDVZUGN0OiAxNS41LAogICAgICAgICAgZXBzUGFzdDVZUGN0OiAxMi4wLAogICAgICAgICAgc2FsZXNZb3lUdG1QY3Q6IDE2LjIsCiAgICAgICAgfSwKICAgICAgICBmY2ZZaWVsZFBjdDogMy41LAogICAgICB9LAogICAgfSBhcyB1bmtub3duIGFzIEFzc2V0RGV0YWlsUmVzcG9uc2U7CgogICAgY29uc3QgcmVzID0gc2VlZE9wcG9ydHVuaXR5Rm9ybShtb2NrRGV0YWlsKTsKICAgIGV4cGVjdChyZXMub3B0aW9uYWxpdHkpLnRvQ29udGFpbignY3JlY2ltaWVudG8gZXNwZXJhZG8gZGUgRVBTIGEgNSBhw7FvcyBkZSAxNSw1JSBhbnVhbCAoYWNlbGVyYSBmcmVudGUgYWwgMTIsMCUgaGlzdMOzcmljbyknKTsKICAgIGV4cGVjdChyZXMub3B0aW9uYWxpdHkpLnRvQ29udGFpbigndmVudGFzIGNyZWNpZW5kbyAxNiwyJSBpbnRlcmFudWFsJyk7CiAgICBleHBlY3QocmVzLm9wdGlvbmFsaXR5KS50b0NvbnRhaW4oJ0ZDRiBZaWVsZCBkZSAzLDUlIHBhcmEgZmluYW5jaWFyIG51ZXZhcyBhcHVlc3RhcyBzaW4gZW5kZXVkYXJzZScpOwogIH0pOwoKICBpdCgnZGVqYSBvcHRpb25hbGl0eSB2YWPDrW8gc2kgbm8gaGF5IG3DqXRyaWNhcyBkZSBjcmVjaW1pZW50byBuaSBGQ0YnLCAoKSA9PiB7CiAgICBjb25zdCBtb2NrRGV0YWlsID0gewogICAgICBzeW1ib2w6ICdURVNUJywKICAgICAgbWV0YTogeyB0aWNrZXI6ICdURVNUJyB9LAogICAgICBxdW90ZTogeyBwcmljZTogNTAgfSwKICAgIH0gYXMgdW5rbm93biBhcyBBc3NldERldGFpbFJlc3BvbnNlOwoKICAgIGNvbnN0IHJlcyA9IHNlZWRPcHBvcnR1bml0eUZvcm0obW9ja0RldGFpbCk7CiAgICBleHBlY3QocmVzLm9wdGlvbmFsaXR5KS50b0JlKCcnKTsKICB9KTsKfSk7CgpkZXNjcmliZSgnZmFpclZhbHVlRGlzY291bnRQaHJhc2Ug4oCUIGVsIGRlc2N1ZW50byBlbiBsZW5ndWFqZSBsbGFubycsICgpID0+IHsKICBpdCgnZGVzY3VlbnRvIGNsYXJvOiBjZW50YXZvcyBwb3IgZMOzbGFyIHkgJSBkZSBkZXNjdWVudG8nLCAoKSA9PiB7CiAgICBleHBlY3QoZmFpclZhbHVlRGlzY291bnRQaHJhc2UoMC42KSkudG9CZSgKICAgICAgJ1BhZ8OhcyA2MCBjZW50YXZvcyBwb3IgY2FkYSAkMSBkZSB2YWxvciBqdXN0bzogNDAlIGRlIGRlc2N1ZW50by4nCiAgICApOwogICAgZXhwZWN0KGZhaXJWYWx1ZURpc2NvdW50UGhyYXNlKDkxLjM4IC8gOTYuOTQpKS50b0JlKAogICAgICAnUGFnw6FzIDk0IGNlbnRhdm9zIHBvciBjYWRhICQxIGRlIHZhbG9yIGp1c3RvOiA2JSBkZSBkZXNjdWVudG8uJwogICAgKTsKICB9KTsKCiAgaXQoJ3NpbiBkZXNjdWVudG8gbmkgcmVjYXJnbyBlbiBsYSBwYXJpZGFkICh5IHBvciByZWRvbmRlbyknLCAoKSA9PiB7CiAgICBleHBlY3QoZmFpclZhbHVlRGlzY291bnRQaHJhc2UoMSkpLnRvQ29udGFpbignc2luIGRlc2N1ZW50byBuaSByZWNhcmdvJyk7CiAgICBleHBlY3QoZmFpclZhbHVlRGlzY291bnRQaHJhc2UoMC45OTkpKS50b0NvbnRhaW4oJ3NpbiBkZXNjdWVudG8gbmkgcmVjYXJnbycpOwogICAgZXhwZWN0KGZhaXJWYWx1ZURpc2NvdW50UGhyYXNlKDEuMDA0KSkudG9Db250YWluKCdzaW4gZGVzY3VlbnRvIG5pIHJlY2FyZ28nKTsKICB9KTsKCiAgaXQoJ3JlY2FyZ286IGTDs2xhcmVzIHBvciBkw7NsYXIgeSAlIHBvciBlbmNpbWEnLCAoKSA9PiB7CiAgICBleHBlY3QoZmFpclZhbHVlRGlzY291bnRQaHJhc2UoMS4xMikpLnRvQmUoCiAgICAgICdQYWfDoXMgJDEsMTIgcG9yIGNhZGEgJDEgZGUgdmFsb3IganVzdG86IDEyJSBwb3IgZW5jaW1hIChzaW4gZGVzY3VlbnRvKS4nCiAgICApOwogIH0pOwoKICBpdCgncmF0aW8gaW52w6FsaWRvIOKGkiBudWxsJywgKCkgPT4gewogICAgZXhwZWN0KGZhaXJWYWx1ZURpc2NvdW50UGhyYXNlKDApKS50b0JlTnVsbCgpOwogICAgZXhwZWN0KGZhaXJWYWx1ZURpc2NvdW50UGhyYXNlKC0xKSkudG9CZU51bGwoKTsKICAgIGV4cGVjdChmYWlyVmFsdWVEaXNjb3VudFBocmFzZShOYU4pKS50b0JlTnVsbCgpOwogIH0pOwp9KTsK
+import { describe, expect, it } from 'vitest';
+import {
+  computeOpportunity,
+  consensusTag,
+  fairValueDiscountPhrase,
+  labelForScore,
+  scoreFor,
+  starsFor,
+} from '../opportunity.js';
+import {
+  fmtIsoDateEs,
+  seedOpportunityForm,
+} from '../../../src/components/asset/opportunitySeed';
+import type { AssetDetailResponse } from '../../../src/api';
+
+// Casos validados en el PMV del 21/10/2026 con ALB:
+// FV propio por escenarios 94 / 157 / 225, incertidumbre Very High.
+const ALB = {
+  fvPesimista: 94,
+  fvBase: 157,
+  fvOptimista: 225,
+  scenario: 'Base' as const,
+  uncertainty: 'Very High' as const,
+  yearsToCorrection: 3,
+};
+
+describe('Evaluación de oportunidad — bandas y puntaje (PMV)', () => {
+  it('ALB hoy (US$93,77): upside +67,4%, 4★, 74/100, Oportunidad buena', () => {
+    const r = computeOpportunity({ ...ALB, price: 93.77 });
+    expect(r).not.toBeNull();
+    expect(r!.upsidePct).toBeCloseTo(67.4, 0);
+    expect(r!.stars).toBe(4);
+    expect(r!.score).toBe(74);
+    expect(r!.label).toBe('Oportunidad buena');
+    expect(r!.starsRange).toEqual([3, 5]);
+    expect(r!.annualizedPct).toBeCloseTo(18.7, 0);
+  });
+
+  it('ALB hace 3 semanas (US$109,73): 4★ pero puntaje 67/100', () => {
+    const r = computeOpportunity({ ...ALB, price: 109.73 });
+    expect(r!.stars).toBe(4);
+    expect(r!.score).toBe(67);
+    expect(r!.upsidePct).toBeCloseTo(43.1, 0);
+  });
+
+  it('con incertidumbre Low el mismo precio da 5★ (banda Low, ratio 0,597)', () => {
+    const r = computeOpportunity({ ...ALB, price: 93.77, uncertainty: 'Low' });
+    expect(r!.stars).toBe(5);
+    expect(r!.score).toBe(85);
+    expect(r!.label).toBe('Oportunidad alta');
+  });
+
+  it('veredicto ALB: COMPRAR de a poco (base +67%, pesimista sin colchón)', () => {
+    const r = computeOpportunity({ ...ALB, price: 93.77 });
+    expect(r!.verdict).toBe('COMPRAR (de a poco, no todo junto)');
+    expect(r!.verdictNote).toBe('Si ya la tenés: MANTENER.');
+  });
+
+  it('compra fuerte si hasta el pesimista deja más de +20%', () => {
+    const r = computeOpportunity({ ...ALB, price: 70 });
+    expect(r!.verdict).toBe('COMPRA FUERTE');
+  });
+
+  it('vender si el precio supera al Fair Value base por más de 10%', () => {
+    const r = computeOpportunity({ ...ALB, price: 180 });
+    expect(r!.verdict).toBe('VENDER');
+  });
+
+  it('sin precio o sin Fair Value no calcula', () => {
+    expect(computeOpportunity({ ...ALB, price: 0 })).toBeNull();
+    expect(computeOpportunity({ ...ALB, price: 93.77, fvBase: 0 })).toBeNull();
+  });
+
+  it('bandas: extremos de la tabla Very High', () => {
+    expect(starsFor(0.5, 'Very High')).toBe(5);
+    expect(starsFor(0.51, 'Very High')).toBe(4);
+    expect(starsFor(0.8, 'Very High')).toBe(4);
+    expect(starsFor(1.25, 'Very High')).toBe(3);
+    expect(starsFor(1.76, 'Very High')).toBe(1);
+    expect(scoreFor(93.77 / 157, 'Very High')).toBe(74);
+    expect(labelForScore(74)).toBe('Oportunidad buena');
+  });
+
+  it('consenso: etiqueta por conteo', () => {
+    expect(consensusTag(12, 6, 0)).toBe('Comprar');
+    expect(consensusTag(0, 6, 12)).toBe('Vender');
+    expect(consensusTag(5, 6, 4)).toBe('Neutral');
+  });
+});
+
+describe('fmtIsoDateEs', () => {
+  it('formatea fechas ISO válidas en español', () => {
+    expect(fmtIsoDateEs('1999-01-22')).toBe('22 ene 1999');
+    expect(fmtIsoDateEs('2004-08-19')).toBe('19 ago 2004');
+  });
+
+  it('retorna string vacío ante entradas inválidas o nulas', () => {
+    expect(fmtIsoDateEs(null)).toBe('');
+    expect(fmtIsoDateEs(undefined)).toBe('');
+    expect(fmtIsoDateEs('')).toBe('');
+    expect(fmtIsoDateEs('invalida')).toBe('');
+    expect(fmtIsoDateEs('1999-13-01')).toBe('');
+    expect(fmtIsoDateEs('1999-00-01')).toBe('');
+    expect(fmtIsoDateEs('1999-01-32')).toBe('');
+  });
+});
+
+describe('seedOpportunityForm', () => {
+  it('precarga datos desde mock de AssetDetailResponse para activo genérico (NVDA)', () => {
+    const mockDetail = {
+      symbol: 'NVDA',
+      meta: {
+        ticker: 'NVDA',
+        name: 'NVIDIA Corporation',
+        exchange: 'NASDAQ',
+        sector: 'Technology',
+        industry: 'Semiconductors',
+        country: 'United States',
+      },
+      quote: {
+        price: 130,
+        name: 'NVIDIA Corporation',
+      },
+      fairValue: {
+        fairValue: 140,
+        moat: 'Wide',
+        uncertainty: 'High',
+      },
+      extras: {
+        foundedYear: 1993,
+        ipoDate: '1999-01-22',
+        grossMarginPct: 74.7,
+        roicPct: 72.4,
+        epsNext5YGrowthPct: 64.9,
+        businessSummary: 'Descripción de prueba',
+      },
+    } as unknown as AssetDetailResponse;
+
+    const res = seedOpportunityForm(mockDetail);
+    expect(res.rFounded).toBe('1993');
+    expect(res.rIpo).toBe('22 ene 1999');
+    expect(res.core).toBe('Descripción de prueba');
+    expect(res.edge).not.toBe('');
+    expect(res.edge).toContain('Foso');
+    expect(res.optionality).not.toBe('');
+    expect(res.optionality).toContain('Base cuantitativa');
+  });
+
+  it('incluye aceleración de EPS, ventas y FCF yield en optionality cuando están disponibles', () => {
+    const mockDetail = {
+      symbol: 'MSFT',
+      meta: {
+        ticker: 'MSFT',
+        name: 'Microsoft Corp',
+        industry: 'Software',
+      },
+      quote: { price: 400 },
+      fairValue: {
+        fairValue: 450,
+        moat: 'Wide',
+      },
+      extras: {
+        finviz: {
+          epsNext5YPct: 15.5,
+          epsPast5YPct: 12.0,
+          salesYoyTtmPct: 16.2,
+        },
+        fcfYieldPct: 3.5,
+      },
+    } as unknown as AssetDetailResponse;
+
+    const res = seedOpportunityForm(mockDetail);
+    expect(res.optionality).toContain('crecimiento esperado de EPS a 5 años de 15,5% anual (acelera frente al 12,0% histórico)');
+    expect(res.optionality).toContain('ventas creciendo 16,2% interanual');
+    expect(res.optionality).toContain('FCF Yield de 3,5% para financiar nuevas apuestas sin endeudarse');
+  });
+
+  it('deja optionality vacío si no hay métricas de crecimiento ni FCF', () => {
+    const mockDetail = {
+      symbol: 'TEST',
+      meta: { ticker: 'TEST' },
+      quote: { price: 50 },
+    } as unknown as AssetDetailResponse;
+
+    const res = seedOpportunityForm(mockDetail);
+    expect(res.optionality).toBe('');
+  });
+});
+
+describe('fairValueDiscountPhrase — el descuento en lenguaje llano', () => {
+  it('descuento claro: centavos por dólar y % de descuento', () => {
+    expect(fairValueDiscountPhrase(0.6)).toBe(
+      'Pagás 60 centavos por cada $1 de valor justo: 40% de descuento.'
+    );
+    expect(fairValueDiscountPhrase(91.38 / 96.94)).toBe(
+      'Pagás 94 centavos por cada $1 de valor justo: 6% de descuento.'
+    );
+  });
+
+  it('sin descuento ni recargo en la paridad (y por redondeo)', () => {
+    expect(fairValueDiscountPhrase(1)).toContain('sin descuento ni recargo');
+    expect(fairValueDiscountPhrase(0.999)).toContain('sin descuento ni recargo');
+    expect(fairValueDiscountPhrase(1.004)).toContain('sin descuento ni recargo');
+  });
+
+  it('recargo: dólares por dólar y % por encima', () => {
+    expect(fairValueDiscountPhrase(1.12)).toBe(
+      'Pagás $1,12 por cada $1 de valor justo: 12% por encima (sin descuento).'
+    );
+  });
+
+  it('ratio inválido → null', () => {
+    expect(fairValueDiscountPhrase(0)).toBeNull();
+    expect(fairValueDiscountPhrase(-1)).toBeNull();
+    expect(fairValueDiscountPhrase(NaN)).toBeNull();
+  });
+});
