@@ -236,6 +236,13 @@ export interface WatchlistQuote {
   price: number;
   changePct: number;
   name: string;
+  /** Sesión extendida (SPEC-006, enmienda v12): mismos campos que
+   * QuoteData del motor; solo vienen cuando el servidor los calculó. */
+  marketState?: string;
+  extPrice?: number;
+  extChange?: number;
+  extChangePct?: number;
+  extSession?: 'pre' | 'post';
 }
 
 /** Sigla de veredicto de la watchlist (SPEC-006): `verdict` es el texto

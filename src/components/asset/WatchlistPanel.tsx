@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store';
+import { PriceSessionCell } from '@/components/left/PriceSessionCell';
 import { api, type WatchlistQuote, type WatchlistVerdictEntry } from '@/api';
-import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
+import { formatMoney } from '@shared/engine/format';
 import {
   buildSeenSiglasSnapshot,
   buildWatchlistItemFromSearch,
@@ -749,14 +750,16 @@ export const WatchlistPanel: React.FC<{
     // el resto (cripto, par, ETFs, sin símbolo) es «—» definitivo.
     const sigla = watchlistItemSigla(item, verdicts);
     const verdict = item.symbol ? verdicts[item.symbol]?.verdict ?? null : null;
-    const up = (q?.changePct ?? 0) >= 0;
-    const priceText = !q
-      ? null
-      : item.symbol === 'BINANCE:ETHBTC'
-        ? formatNumber(q.price, 4)
-        : formatMoney(q.price, currency, fxRates, {
-            decimals: q.price >= 1 ? 2 : 4,
-          });
+    // Precio con sesión extendida (enmienda v12): la celda es la
+    // MISMA de Cartera (PriceSessionCell) — precio, variación del día
+    // y, con el mercado cerrado, la fila 🌙 con el precio pre/post
+    // mercado y su variación. Los montos se convierten a la moneda de
+    // la app como hacía el texto anterior (el par ETH/BTC es un ratio:
+    // no se convierte). La variación absoluta del día se deriva del
+    // precio y el % (la cotización de la watchlist no trae prevClose).
+    const fxMul = item.symbol === 'BINANCE:ETHBTC' ? 1 : (fxRates[currency] ?? 1);
+    const dayChangeAbs =
+      q && q.changePct > -100 ? q.price - q.price / (1 + q.changePct / 100) : 0;
     // Arrastre (enmienda v9): la fila arrastrada sigue al dedo/mouse
     // y las hermanas del grupo se desplazan dejando el hueco.
     const isDragged = dragUi?.ticker === item.ticker;
@@ -996,21 +999,16 @@ export const WatchlistPanel: React.FC<{
             {unavailable ? (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
             ) : q ? (
-              <>
-                <div className="mono tabular" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                  {priceText}
-                </div>
-                <div
-                  className="mono tabular"
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: up ? 'var(--pos-bright)' : 'var(--neg-bright)',
-                  }}
-                >
-                  {formatPct(q.changePct)}
-                </div>
-              </>
+              <PriceSessionCell
+                symbol={item.symbol ?? undefined}
+                price={q.price * fxMul}
+                change={dayChangeAbs * fxMul}
+                changePct={q.changePct}
+                marketState={q.marketState}
+                extPrice={q.extPrice != null ? q.extPrice * fxMul : undefined}
+                extChange={q.extChange != null ? q.extChange * fxMul : undefined}
+                extChangePct={q.extChangePct}
+              />
             ) : (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
             )}

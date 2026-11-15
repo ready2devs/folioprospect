@@ -956,7 +956,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       return;
     }
     const { quotes } = await fetchQuotesWithSparklines(symbols);
-    const out: Record<string, { price: number; changePct: number; name: string }> = {};
+    const out: Record<
+      string,
+      {
+        price: number;
+        changePct: number;
+        name: string;
+        marketState?: string;
+        extPrice?: number;
+        extChange?: number;
+        extChangePct?: number;
+        extSession?: 'pre' | 'post';
+      }
+    > = {};
     for (const sym of symbols) {
       const q = quotes[sym];
       if (q && Number.isFinite(q.price) && q.price > 0) {
@@ -964,6 +976,25 @@ export async function registerRoutes(app: Express): Promise<void> {
           price: q.price,
           changePct: Number.isFinite(q.changePct) ? q.changePct : 0,
           name: db.assetMeta[sym]?.name || (q as any).name || '',
+          // Sesión extendida (pre/post mercado): el pipeline ya la
+          // calcula para las posiciones de Cartera (QuoteData); la
+          // watchlist la muestra con el mismo PriceSessionCell
+          // (SPEC-006, enmienda v12). Solo viaja si hay precio
+          // extendido válido; si no, el campo no va y la fila muestra
+          // solo precio y variación del día, como antes.
+          ...(q.marketState ? { marketState: q.marketState } : {}),
+          ...(q.extPrice != null && Number.isFinite(q.extPrice) && q.extPrice > 0
+            ? {
+                extPrice: q.extPrice,
+                ...(q.extChange != null && Number.isFinite(q.extChange)
+                  ? { extChange: q.extChange }
+                  : {}),
+                ...(q.extChangePct != null && Number.isFinite(q.extChangePct)
+                  ? { extChangePct: q.extChangePct }
+                  : {}),
+                ...(q.extSession ? { extSession: q.extSession } : {}),
+              }
+            : {}),
         };
       }
     }

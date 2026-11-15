@@ -416,3 +416,33 @@ buscaba la etiqueta como texto y en escritorio vive en el `title`
 del botón, patrón v12: corregida la verificación, 3/3). Suite
 completa: 583/583 tests (568 previos + 15 nuevos del motor, el
 sanitizador y la navegación), build limpio.
+
+## 11. Enmienda v12 (2026-11-15) — sesión extendida (pre/post mercado) en las filas
+
+Pedido del dueño: ver en la watchlist el pre/post mercado de cada
+activo igual que en Cartera, para juzgar si un vigilado puede ser
+compra en la próxima rueda.
+
+- **Datos**: el pipeline de cotizaciones ya calculaba la sesión
+  extendida para las posiciones (`QuoteData.marketState` /
+  `extPrice` / `extChange` / `extChangePct` / `extSession`); el
+  endpoint `/api/quotes` ahora también los devuelve cuando hay precio
+  extendido válido. Sin dato, el campo no viaja.
+- **Fila**: el bloque de precio de la fila pasa a ser el mismo
+  componente de Cartera, `PriceSessionCell`: precio, variación
+  absoluta y porcentual del día y, con el mercado cerrado y precio
+  extendido presente, la fila 🌙 con el precio extendido y su
+  variación contra el cierre. Cripto nunca muestra la fila extendida
+  (mercado 24/7), igual que en Cartera. Los montos se convierten a la
+  moneda elegida en la app, como hacía el texto anterior; el par
+  ETH/BTC (un ratio) no se convierte. La variación absoluta del día
+  se deriva de precio y % (la cotización de la watchlist no trae
+  cierre previo). Vale para la vista y para la tarjeta de la ficha,
+  que comparten la fila.
+
+**QA v12** (carpeta `qa-watchlist-ext-2026-11-15`, cotizaciones
+interceptadas con datos de control, resto real contra el servidor
+local): NVDA en post muestra 🌙 155,10 −7,75 (−4,76%); GOOG en pre
+muestra 🌙 296,40 +3,88 (+1,33%); ETH/USD (cripto) no muestra fila
+extendida aunque el dato venga en la respuesta. 3/3. Suite completa:
+583/583 tests, build limpio.
