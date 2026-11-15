@@ -1,6 +1,6 @@
 /**
  * Snapshot COMPARTIDO del Fair Value del motor por activo (SPEC-006,
- * enmienda v13).
+ * enmiendas v13 y v15).
  *
  * El defecto que corrige: la ficha (/api/asset) y las siglas de la
  * watchlist (/api/watchlist/verdicts) llamaban CADA UNA por su lado a
@@ -23,6 +23,16 @@
  * salen del mismo FV sí o sí, en cualquier instancia; el veredicto se
  * deriva en cada pedido con el precio vivo y ese FV snapshot.
  *
+ * Enmienda v15 — la CALIDAD del cómputo manda: la primera foto tras
+ * el despliegue de la v13 salió de una corrida degradada (sin Finviz
+ * y con el contexto sectorial parcial: TMDX quedó congelado en
+ * US$80,36 con pesimista US$41,92 mientras el cálculo sano daba
+ * US$96,94). Cada cómputo declara su calidad (0–5: completitud del
+ * contexto sectorial + presencia de Finviz y de TradingView) y una
+ * foto buena (≤24 h) NO la desplaza un cómputo de menor calidad,
+ * aunque la ventana de 15 min haya vencido: se sigue sirviendo la
+ * buena mientras los cómputos nuevos salgan degradados.
+ *
  * Sin KV configurado (desarrollo local) manda la memoria de la
  * instancia, que igual unifica los dos endpoints del proceso.
  * Nunca se cachea un resultado nulo: si el motor no produjo FV, el
@@ -30,13 +40,25 @@
  */
 import type { MotorFvView } from '../shared/engine/index.js';
 
-/** Ventana del snapshot: la misma del resultado del optimizador
- *  (`CACHE_MS` en server/optimizerData.ts). */
+/** Ventana fresca del snapshot: la misma del resultado del
+ *  optimizador (`CACHE_MS` en server/optimizerData.ts). */
 export const MOTOR_FV_TTL_MS = 15 * 60 * 1000;
+/** Guarda de calidad (v15): una foto buena se sigue sirviendo hasta
+ *  un día si los cómputos nuevos salen de menor calidad. */
+export const MOTOR_FV_KEEP_MS = 24 * 3600 * 1000;
 
 export interface MotorFvSnapshotEntry {
   view: MotorFvView;
   at: number;
+  /** Calidad del cómputo que produjo la vista (0–5; v15). Las
+   *  entradas legadas sin el campo valen 0. */
+  quality: number;
+}
+
+/** Un cómputo del motor: la vista y la calidad de sus insumos. */
+export interface MotorFvComputation {
+  view: MotorFvView;
+  quality: number;
 }
 
 function isValidView(v: any): v is MotorFvView {
@@ -49,25 +71,25 @@ function isValidView(v: any): v is MotorFvView {
   );
 }
 
-/** Caché EN MEMORIA del snapshot (una instancia). Lo vencido se poda
- *  al leer. */
+function normalizeEntry(parsed: any): MotorFvSnapshotEntry | null {
+  if (!parsed || typeof parsed.at !== 'number' || !isValidView(parsed.view)) return null;
+  return {
+    view: parsed.view,
+    at: parsed.at,
+    quality: typeof parsed.quality === 'number' && Number.isFinite(parsed.quality) ? parsed.quality : 0,
+  };
+}
+
+/** Caché EN MEMORIA del snapshot (una instancia). */
 export class MotorFvMemoryCache {
   private readonly entries = new Map<string, MotorFvSnapshotEntry>();
 
-  constructor(private readonly ttlMs: number = MOTOR_FV_TTL_MS) {}
-
-  get(symbol: string, now: number = Date.now()): MotorFvView | null {
-    const e = this.entries.get(symbol);
-    if (!e) return null;
-    if (now - e.at >= this.ttlMs) {
-      this.entries.delete(symbol);
-      return null;
-    }
-    return e.view;
+  getEntry(symbol: string): MotorFvSnapshotEntry | null {
+    return this.entries.get(symbol) ?? null;
   }
 
-  set(symbol: string, view: MotorFvView, now: number = Date.now()): void {
-    this.entries.set(symbol, { view, at: now });
+  set(symbol: string, entry: MotorFvSnapshotEntry): void {
+    this.entries.set(symbol, entry);
   }
 
   get size(): number {
@@ -99,8 +121,7 @@ export const motorFvKvStore: MotorFvKvStore = {
       const data: any = await res.json();
       if (!data?.result) return null;
       const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-      if (!parsed || typeof parsed.at !== 'number' || !isValidView(parsed.view)) return null;
-      return parsed as MotorFvSnapshotEntry;
+      return normalizeEntry(parsed);
     } catch {
       return null;
     }
@@ -109,10 +130,11 @@ export const motorFvKvStore: MotorFvKvStore = {
     if (!KV_URL || !KV_TOKEN) return;
     const value = JSON.stringify(entry);
     try {
-      // Con vencimiento en el propio KV (EX en segundos, = TTL): la
-      // clave vieja no sobrevive a la ventana aunque nadie la lea.
+      // Vencimiento en el propio KV = ventana de guarda (24 h): la
+      // frescura de 15 min la juzga el `at` al leer, pero una foto
+      // buena sobrevive para la regla de calidad de la v15.
       const res = await fetch(
-        `${KV_URL}/set/${encodeURIComponent(kvKey(symbol))}/${encodeURIComponent(value)}/EX/${Math.floor(MOTOR_FV_TTL_MS / 1000)}`,
+        `${KV_URL}/set/${encodeURIComponent(kvKey(symbol))}/${encodeURIComponent(value)}/EX/${Math.floor(MOTOR_FV_KEEP_MS / 1000)}`,
         { method: 'POST', headers: { Authorization: `Bearer ${KV_TOKEN}` }, signal: AbortSignal.timeout(5000) }
       );
       if (res.ok) return;
@@ -133,33 +155,41 @@ export interface MotorFvResolverDeps {
   memory?: MotorFvMemoryCache;
   kv?: MotorFvKvStore;
   ttlMs?: number;
+  keepMs?: number;
   now?: () => number;
 }
 
 /**
  * Resuelve el FV del motor de un activo desde el snapshot compartido:
- * memoria → KV durable → computación (una sola por símbolo y ventana
- * en la instancia: los pedidos concurrentes comparten el cálculo en
- * curso). `compute` devuelve la vista del motor o null (no se
- * cachea). Lo computado se guarda en memoria y en KV.
+ * memoria → KV durable → computación (una sola por símbolo en la
+ * instancia: los pedidos concurrentes comparten el cálculo en curso).
+ * Reglas: foto fresca (< 15 min) se sirve tal cual; vencida, se
+ * recomputa y el cómputo nuevo solo desplaza a la guardada si su
+ * calidad es al menos la de ella (o si la guardada pasó la guarda de
+ * 24 h); cómputo nulo nunca se guarda y cede ante la foto guardada.
  */
 export function createMotorFvResolver(deps: MotorFvResolverDeps = {}) {
-  const memory = deps.memory ?? new MotorFvMemoryCache(deps.ttlMs ?? MOTOR_FV_TTL_MS);
+  const memory = deps.memory ?? new MotorFvMemoryCache();
   const kv = deps.kv ?? motorFvKvStore;
   const ttlMs = deps.ttlMs ?? MOTOR_FV_TTL_MS;
+  const keepMs = deps.keepMs ?? MOTOR_FV_KEEP_MS;
   const now = deps.now ?? (() => Date.now());
   const inflight = new Map<string, Promise<MotorFvView | null>>();
 
   return async function resolveMotorFv(
     symbol: string,
-    compute: () => Promise<MotorFvView | null>
+    compute: () => Promise<MotorFvComputation | null>
   ): Promise<MotorFvView | null> {
-    const hit = memory.get(symbol, now());
-    if (hit) return hit;
+    const t = now();
+    const mem = memory.getEntry(symbol);
+    if (mem && t - mem.at < ttlMs) return mem.view;
 
-    const stored = await kv.get(symbol).catch(() => null);
-    if (stored && now() - stored.at < ttlMs && isValidView(stored.view)) {
-      memory.set(symbol, stored.view, stored.at);
+    const kvEntry = await kv.get(symbol).catch(() => null);
+    const candidate = mem && kvEntry ? (kvEntry.at >= mem.at ? kvEntry : mem) : (mem ?? kvEntry);
+    // Una entrada inválida (vista corrupta) no es foto: se ignora.
+    const stored = candidate && isValidView(candidate.view) ? candidate : null;
+    if (stored && t - stored.at < ttlMs) {
+      memory.set(symbol, stored);
       return stored.view;
     }
 
@@ -168,12 +198,24 @@ export function createMotorFvResolver(deps: MotorFvResolverDeps = {}) {
 
     const p = (async (): Promise<MotorFvView | null> => {
       try {
-        const view = await compute();
-        if (!view || !isValidView(view)) return null;
-        const at = now();
-        memory.set(symbol, view, at);
-        await kv.set(symbol, { view, at }).catch(() => undefined);
-        return view;
+        const computed = await compute();
+        if (!computed || !isValidView(computed.view)) {
+          return stored ? stored.view : null;
+        }
+        const fresh: MotorFvSnapshotEntry = {
+          view: computed.view,
+          at: now(),
+          quality: computed.quality,
+        };
+        // Regla de calidad (v15): la guardada, si es más nueva en
+        // calidad y sigue dentro de la guarda, no se desplaza.
+        if (stored && now() - stored.at < keepMs && fresh.quality < stored.quality) {
+          memory.set(symbol, stored);
+          return stored.view;
+        }
+        memory.set(symbol, fresh);
+        await kv.set(symbol, fresh).catch(() => undefined);
+        return fresh.view;
       } finally {
         inflight.delete(symbol);
       }

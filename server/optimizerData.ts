@@ -163,6 +163,11 @@ async function buildAssetInput(
     defensive: DEFENSIVE_TICKERS.has(ticker),
   };
   if (baseInput.isCrypto || isCash) return baseInput;
+  // Calidad de los insumos de ESTE cómputo (v15): la foto compartida
+  // del FV la usa para no dejar que una corrida degradada desplace a
+  // una buena. Se calcula desde el `fund` ya enriquecido con el
+  // contexto sectorial, más abajo.
+  let fvInputQuality = 0;
   try {
     const [extras, fund, closes] = await Promise.all([
       fetchAssetExtras(h.symbol, h.lastPrice),
@@ -183,6 +188,12 @@ async function buildAssetInput(
       /* sin contexto: el motor cae por su escalera documentada */
     }
     const fv = computeFairValue(fund);
+    fvInputQuality =
+      (fund.industryForwardPe != null ? 1 : 0) +
+      (fund.sectorRoicPct != null ? 1 : 0) +
+      (fund.sectorGrowth5yPct != null ? 1 : 0) +
+      (fund.targetAltPrice != null || fund.finvizForwardPe != null ? 1 : 0) +
+      (fund.targetTvPrice != null ? 1 : 0);
     const finviz = extras.finviz;
     // Escenarios alineados con el FV titular: solo los componentes que la
     // banda de credibilidad efectivamente promedió (fvComponents). Antes se
@@ -247,7 +258,7 @@ async function buildAssetInput(
     // La misma resolución alimenta el término de recompra del ancla
     // de crecimiento sustentable más abajo: un solo ΔS en el pipeline.
     const dilutionRes = resolveDilutionFromFundamentals(fund);
-    return {
+    const builtInput: OptimizerAssetInput = {
       ...baseInput,
       industry: undefined, // se completa con el slug de Finviz si hace falta para pares
       dividendYieldPct: extras.forwardDividendYieldPct ?? extras.dividendYieldPct ?? finviz?.dividendEstPct ?? null,
@@ -419,9 +430,18 @@ async function buildAssetInput(
       debtToEquity: extras.debtToEquity ?? finviz?.debtToEquity ?? null,
       moatScore: fv.moatScore ?? null,
     };
+    fvQualityByInput.set(builtInput, fvInputQuality);
+    return builtInput;
   } catch {
     return baseInput;
   }
+}
+
+/** Calidad de insumos del cómputo que produjo un input (v15): la
+ *  guarda la foto compartida del FV (server/motorFvSnapshot.ts). */
+const fvQualityByInput = new WeakMap<object, number>();
+export function motorFvQualityOf(input: object): number {
+  return fvQualityByInput.get(input) ?? 0;
 }
 
 /** Slug de industria de Finviz (ind_...): vive en sectorContext.ts
@@ -560,6 +580,17 @@ async function fetchIndustryPeers(
  *  caja o fuentes caídas): la ficha cae a su lectura de respaldo
  *  y ningún número compite con el del motor. */
 export async function buildAssetOptimizerFv(symbol: string, price: number): Promise<MotorFvView | null> {
+  const scored = await buildAssetOptimizerFvScored(symbol, price);
+  return scored?.view ?? null;
+}
+
+/** La misma vista, con la CALIDAD de los insumos que la produjeron
+ *  (v15): la consume la foto compartida del FV para que una corrida
+ *  degradada no desplace a una buena. */
+export async function buildAssetOptimizerFvScored(
+  symbol: string,
+  price: number
+): Promise<{ view: MotorFvView; quality: number } | null> {
   try {
     const ticker = cleanTicker(symbol).toUpperCase();
     const input = await buildAssetInput(
@@ -571,7 +602,8 @@ export async function buildAssetOptimizerFv(symbol: string, price: number): Prom
       sellCommissionPct: 0.5, riskFreePct: RISK_FREE_PCT, yearsToCorrection: 3, minTradeUsd: 250,
       maxWeightPct: 12, maxExtractionPct: 15, newPositionCapPct: 5, riskTolerancePp: 1,
     });
-    return motorFvViewFor(input, scored);
+    const view = motorFvViewFor(input, scored);
+    return view ? { view, quality: motorFvQualityOf(input) } : null;
   } catch {
     return null;
   }
