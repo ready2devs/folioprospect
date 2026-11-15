@@ -28,6 +28,11 @@ import {
   type MarketOverviewResponse,
   type PortfolioEvaluationResponse,
 } from './api';
+import {
+  computeAssetOrigin,
+  resolveAssetBackTarget,
+  type MainView,
+} from './backNavigation';
 
 export type { ArgFxQuote, ArgFxResponse, NwSettings };
 
@@ -124,8 +129,13 @@ function saveNwUpdatedAt(updatedAt: number): void {
   }
 }
 
+/** Mismo criterio de «móvil» que usa el layout (useIsMobile(1023)). */
+function isMobileViewport(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth <= 1023;
+}
+
 function scrollTopOnMobile(): void {
-  if (typeof window !== 'undefined' && window.innerWidth <= 1023) {
+  if (isMobileViewport()) {
     try {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
@@ -173,6 +183,11 @@ export interface AppState {
   assetDetail: AssetDetailResponse | null;
   assetError: string | null;
   assetOrigin: AssetOrigin;
+  /** Última vista principal (no ficha) mostrada en el panel derecho.
+   *  Es el destino del «Volver» en escritorio cuando el origen fue la
+   *  lista de posiciones: ahí la lista es el panel izquierdo siempre
+   *  visible y el panel principal tiene que salir de la ficha (v12). */
+  lastMainView: MainView;
   /** Ajustes del análisis del Optimizador: persisten al ir a una ficha y volver. */
   optDisabled: Set<string>;
   optManualFunds: ManualFund[];
@@ -204,6 +219,11 @@ export interface AppState {
   setOptViewMode: (m: 'esperada' | 'prudente') => void;
   setOptSortMode: (m: 'velocidad' | 'score') => void;
   selectAsset: (symbol: string, range?: string) => Promise<void>;
+  /** «Volver» de la ficha: regresa a la vista previa a la cadena de
+   *  activos, en escritorio y en móvil por igual (v12). `isMobile`
+   *  decide si el origen 'holdings' vuelve a la lista (móvil) o a la
+   *  última vista principal (escritorio). */
+  goBackFromAsset: (isMobile: boolean) => void;
   setBenchmark: (b: string) => Promise<void>;
   setNetOrGrossMode: (m: 'net' | 'gross') => void;
   setNwSettings: (patch: Partial<NwSettings>) => void;
@@ -276,6 +296,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   assetDetail: null,
   assetError: null,
   assetOrigin: 'market',
+  lastMainView: 'market',
   optDisabled: new Set(),
   optManualFunds: [],
   optAcceptedSug: [],
@@ -304,11 +325,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ evaluation, loading: false });
   },
   setPortfolioScope: (portfolioScope) => {
-    set({ portfolioScope, rightState: 'portfolio', mobileTab: 'right' });
+    set({ portfolioScope, rightState: 'portfolio', mobileTab: 'right', lastMainView: 'portfolio' });
     scrollTopOnMobile();
   },
   setRightState: (rightState) => {
-    set({ rightState, mobileTab: 'right' });
+    set({
+      rightState,
+      mobileTab: 'right',
+      // La última vista principal se sigue acá y en los setters que
+      // fijan rightState por su cuenta (setPortfolioTab/Scope y
+      // selectAsset): es el destino de respaldo del «Volver» (v12).
+      ...(rightState !== 'asset' ? { lastMainView: rightState as MainView } : {}),
+    });
     scrollTopOnMobile();
     if (rightState === 'optimizer' && !get().optimizerData) {
       void get().loadOptimizer();
@@ -325,7 +353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setPortfolioTab: (portfolioTab) => {
-    set({ portfolioTab, rightState: 'portfolio', mobileTab: 'right' });
+    set({ portfolioTab, rightState: 'portfolio', mobileTab: 'right', lastMainView: 'portfolio' });
     scrollTopOnMobile();
   },
   setMobileTab: (mobileTab) => {
@@ -360,22 +388,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectAsset: async (symbol, range) => {
     const normSym = normalizeTradingViewSymbol(symbol);
     const r = range || get().selectedAssetRange || '1Y';
-    // Origen de la navegación: el «Volver» de la ficha regresa a la vista
-    // desde la que se llegó (Optimizer, Portafolio, Mercado o la lista de
-    // posiciones). Si ya estamos en una ficha, se conserva el origen.
+    // Origen de la navegación: el «Volver» de la ficha regresa a la
+    // vista en la que estaba el usuario antes del primer activo de la
+    // cadena. Lo decide computeAssetOrigin (v12): en móvil manda la
+    // pestaña Cartera si es la vista actual; en escritorio manda
+    // rightState, porque mobileTab es residual y sin significado
+    // visual (con el criterio viejo, la primera ficha de la sesión
+    // quedaba con origen 'holdings' viniera de donde viniera y su
+    // «Volver» era un no-op en escritorio).
     const cur = get();
-    const assetOrigin: AssetOrigin =
-      cur.mobileTab === 'holdings'
-        ? 'holdings'
-        : cur.rightState === 'asset'
-          ? cur.assetOrigin
-          : cur.rightState;
+    const assetOrigin: AssetOrigin = computeAssetOrigin(cur, isMobileViewport());
     set({
       selectedSymbol: normSym,
       selectedAssetRange: r,
       rightState: 'asset',
       mobileTab: 'right',
       assetOrigin,
+      // Al abandonar una vista principal queda registrada como última;
+      // en cadena (ya en una ficha) no se toca.
+      ...(cur.rightState !== 'asset'
+        ? { lastMainView: cur.rightState as MainView }
+        : {}),
       loading: true,
       assetError: null,
     });
@@ -405,6 +438,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         assetError: `No se pudo cargar el detalle de ${normSym}.`,
         loading: false,
       });
+    }
+  },
+  goBackFromAsset: (isMobile) => {
+    // Única lógica de vuelta de la ficha: la comparten el botón de
+    // AssetView y la barra «Volver» móvil de App, así nunca divergen.
+    const { assetOrigin, lastMainView } = get();
+    const target = resolveAssetBackTarget(assetOrigin, lastMainView, isMobile);
+    if (target.kind === 'holdings') {
+      set({ mobileTab: 'holdings' });
+      scrollTopOnMobile();
+    } else {
+      get().setRightState(target.view);
     }
   },
   setBenchmark: async (benchmark) => {

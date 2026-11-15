@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useAppStore } from './store';
+import { assetBackLabel } from './backNavigation';
 import { useIsMobile } from './hooks/useIsMobile';
 import { TopBar } from './components/layout/TopBar';
 import { MobileHeader } from './components/layout/MobileHeader';
@@ -20,27 +21,23 @@ export const App: React.FC = () => {
     rightState,
     mobileTab,
     setMobileTab,
-    setRightState,
     assetOrigin,
+    lastMainView,
+    goBackFromAsset,
     selectedSymbol,
     refreshAll,
     pricingMode,
   } = useAppStore();
   const isMobile = useIsMobile(1023);
 
-  // En la ficha de un activo, la barra «Volver» regresa a la vista de
-  // origen (p. ej. el Optimizer); en el resto, a la lista de posiciones.
-  const assetBackLabel =
-    assetOrigin === 'optimizer'
-      ? '← Volver al Optimizer'
-      : assetOrigin === 'portfolio'
-        ? '← Volver al Portafolio'
-        : assetOrigin === 'market'
-          ? '← Volver a Mercado'
-          : '← Volver a Cartera (Posiciones)';
+  // En la ficha de un activo, la barra «Volver» regresa a la vista
+  // previa a la cadena de activos, con la misma lógica y la misma
+  // etiqueta que el botón de la ficha (backNavigation, v12); en el
+  // resto de las vistas, a la lista de posiciones.
+  const assetBackText = '← ' + assetBackLabel(assetOrigin, lastMainView, true);
   const onMobileBack = () => {
-    if (rightState === 'asset' && assetOrigin !== 'holdings') {
-      setRightState(assetOrigin);
+    if (rightState === 'asset') {
+      goBackFromAsset(true);
     } else {
       setMobileTab('holdings');
     }
@@ -76,7 +73,7 @@ export const App: React.FC = () => {
                   onClick={onMobileBack}
                 >
                   <ArrowLeft size={14} />
-                  <span>{rightState === 'asset' ? assetBackLabel : '← Volver a Cartera (Posiciones)'}</span>
+                  <span>{rightState === 'asset' ? assetBackText : '← Volver a Cartera (Posiciones)'}</span>
                 </button>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {rightState === 'market'

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
+import { assetBackLabel } from '@/backNavigation';
 import { api, type AssetEarningsInfo } from '@/api';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
@@ -67,27 +68,20 @@ export const AssetView: React.FC = () => {
     currency,
     fxRates,
     openAddModal,
-    setRightState,
     assetOrigin,
-    setMobileTab,
+    lastMainView,
+    goBackFromAsset,
   } = useAppStore();
 
-  // El «Volver» regresa a la vista desde la que se llegó a esta ficha
-  // (Optimizer, Portafolio, Mercado o la lista de posiciones en móvil).
-  const backLabel =
-    assetOrigin === 'optimizer'
-      ? 'Volver al Optimizer'
-      : assetOrigin === 'portfolio'
-        ? 'Volver al Portafolio'
-        : assetOrigin === 'holdings'
-          ? 'Volver a Cartera (Posiciones)'
-          : 'Volver a Mercado';
-  const goBack = () => {
-    if (assetOrigin === 'holdings') setMobileTab('holdings');
-    else setRightState(assetOrigin);
-  };
-
   const isMobile = useLocalIsMobile(1023);
+
+  // El «Volver» regresa a la vista previa a la cadena de activos y su
+  // etiqueta nombra ese destino real: la lógica vive en el store y en
+  // backNavigation (v12), compartida con la barra móvil de App. En
+  // escritorio nunca es un no-op: si el origen fue la lista de
+  // posiciones, el panel principal va a la última vista principal.
+  const backLabel = assetBackLabel(assetOrigin, lastMainView, isMobile);
+  const goBack = () => goBackFromAsset(isMobile);
 
   useEffect(() => {
     if (!assetDetail && selectedSymbol) {
