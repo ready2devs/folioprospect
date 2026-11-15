@@ -1,22 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import {
   addWatchlistItem,
+  buildSeenSiglasSnapshot,
   buildWatchlistItemFromSearch,
   buildWatchlistItems,
   countWatchlistSiglas,
   detectWatchlistGroup,
+  diffWatchlistSiglas,
+  evaluateWatchlistAlerts,
   filterWatchlistItems,
   groupWatchlistItems,
+  reactivateWatchlistAlert,
+  removeWatchlistAlert,
   reorderWatchlistItem,
   rederiveVerdictSigla,
   removeWatchlistItem,
   resolveWatchlistConfig,
   seedWatchlistConfig,
+  sortWatchlistByDayDrop,
+  triggeredWatchlistAlerts,
+  upsertWatchlistAlert,
   verdictToSigla,
+  watchlistAlertFor,
   watchlistContains,
   WATCHLIST_CAPTURE_ORDER,
 } from '../watchlist.js';
-import type { WatchlistItem } from '../types.js';
+import type { WatchlistConfig, WatchlistItem } from '../types.js';
 
 describe('watchlist · semilla (SPEC-006 §2)', () => {
   const seed = seedWatchlistConfig();
@@ -364,5 +373,174 @@ describe('watchlist · reorderWatchlistItem (enmienda v9: arrastre)', () => {
     expect(grupoDe(out, 'CRIPTO')).toEqual([
       'BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD', 'ETH/BTC',
     ]);
+  });
+});
+
+// ── Enmienda v11: vista Watchlist (caídas, siglas vistas, alertas) ──
+
+const itemV = (ticker: string, symbol: string | null, group: WatchlistItem['group'] = 'ACCIONES'): WatchlistItem => ({
+  ticker,
+  symbol,
+  group,
+});
+
+describe('watchlist · sortWatchlistByDayDrop (enmienda v11: chip «▼ Caídas hoy»)', () => {
+  const items = [
+    itemV('GOOG', 'NASDAQ:GOOG'),
+    itemV('MU', 'NASDAQ:MU'),
+    itemV('NVDA', 'NASDAQ:NVDA'),
+    itemV('SPCX', null),
+  ];
+  const quotes = {
+    'NASDAQ:GOOG': { price: 100, changePct: -1.5 },
+    'NASDAQ:MU': { price: 100, changePct: -7.25 },
+    'NASDAQ:NVDA': { price: 100, changePct: 2 },
+  };
+
+  it('ordena de mayor caída a mayor suba; sin cotización al final', () => {
+    const out = sortWatchlistByDayDrop(items, quotes);
+    expect(out.map((i) => i.ticker)).toEqual(['MU', 'GOOG', 'NVDA', 'SPCX']);
+  });
+
+  it('es estable ante empates y no muta la entrada', () => {
+    const tied = [itemV('A', 'NASDAQ:A'), itemV('B', 'NASDAQ:B')];
+    const q = {
+      'NASDAQ:A': { price: 1, changePct: -3 },
+      'NASDAQ:B': { price: 1, changePct: -3 },
+    };
+    expect(sortWatchlistByDayDrop(tied, q).map((i) => i.ticker)).toEqual(['A', 'B']);
+    expect(items[0].ticker).toBe('GOOG');
+  });
+});
+
+describe('watchlist · snapshot de siglas vistas (enmienda v11)', () => {
+  const items = [
+    itemV('GOOG', 'NASDAQ:GOOG'),
+    itemV('MU', 'NASDAQ:MU'),
+    itemV('BTC/USD', 'BINANCE:BTCUSDT', 'CRIPTO'),
+  ];
+  const verdicts = {
+    'NASDAQ:GOOG': { sigla: 'CF', verdict: 'COMPRA FUERTE' },
+    'NASDAQ:MU': { sigla: 'M', verdict: 'MANTENER' },
+  };
+
+  it('buildSeenSiglasSnapshot guarda solo ACCIONES con sigla de veredicto', () => {
+    expect(buildSeenSiglasSnapshot(items, verdicts, null)).toEqual({ GOOG: 'CF', MU: 'M' });
+  });
+
+  it('sobre un snapshot previo conserva lo no cargado en esta pasada', () => {
+    const out = buildSeenSiglasSnapshot(items, { 'NASDAQ:GOOG': { sigla: 'C', verdict: 'COMPRAR' } }, { GOOG: 'CF', MU: 'M', VIEJO: 'V' });
+    expect(out).toEqual({ GOOG: 'C', MU: 'M', VIEJO: 'V' });
+  });
+
+  it('diffWatchlistSiglas marca solo cambios contra el snapshot', () => {
+    expect(diffWatchlistSiglas(items, verdicts, { GOOG: 'M', MU: 'M' })).toEqual([
+      { ticker: 'GOOG', from: 'M', to: 'CF' },
+    ]);
+    // Sin snapshot o sin entrada para el activo: sin marcas.
+    expect(diffWatchlistSiglas(items, verdicts, undefined)).toEqual([]);
+    expect(diffWatchlistSiglas(items, verdicts, { MU: 'M' })).toEqual([]);
+    // Sigla todavía no cargada: sin marca.
+    expect(diffWatchlistSiglas(items, {}, { GOOG: 'M', MU: 'C' })).toEqual([]);
+  });
+
+  it('resolveWatchlistConfig conserva snapshot y alertas válidos y descarta basura', () => {
+    const out = resolveWatchlistConfig({
+      watchlist: {
+        items: [itemV('GOOG', 'NASDAQ:GOOG')],
+        seenSiglas: { GOOG: 'CF', MAL: 'XX', '': 'C' },
+        alerts: [
+          { ticker: 'GOOG', belowPrice: 150 },
+          { ticker: 'GOOG', dropPct: 5 },
+          { ticker: 'MU', belowPrice: -3 },
+          { ticker: 'MU' },
+          'basura',
+        ],
+      } as any,
+    });
+    expect(out.seenSiglas).toEqual({ GOOG: 'CF' });
+    expect(out.alerts).toEqual([{ ticker: 'GOOG', belowPrice: 150 }]);
+    const limpia = resolveWatchlistConfig({ watchlist: { items: [] } as any });
+    expect(limpia.seenSiglas).toBeUndefined();
+    expect(limpia.alerts).toBeUndefined();
+  });
+
+  it('alta/baja/reorden conservan snapshot y alertas; la baja limpia los del activo', () => {
+    const base: WatchlistConfig = {
+      items: [itemV('GOOG', 'NASDAQ:GOOG'), itemV('MU', 'NASDAQ:MU')],
+      seenSiglas: { GOOG: 'CF', MU: 'M' },
+      alerts: [{ ticker: 'MU', dropPct: 5 }],
+    };
+    const re = reorderWatchlistItem(base, 'GOOG', 1);
+    expect(re.seenSiglas).toEqual(base.seenSiglas);
+    expect(re.alerts).toEqual(base.alerts);
+    const baja = removeWatchlistItem(base, 'MU');
+    expect(baja.alerts).toEqual([]);
+    expect(baja.seenSiglas).toEqual({ GOOG: 'CF' });
+  });
+});
+
+describe('watchlist · alertas de precio (enmienda v11)', () => {
+  const items = [itemV('NVDA', 'NASDAQ:NVDA'), itemV('MU', 'NASDAQ:MU'), itemV('SPCX', null)];
+  const base: WatchlistConfig = { items };
+
+  it('upsert crea, edita en el lugar y re-activa (limpia el disparo); inválida no toca', () => {
+    const c1 = upsertWatchlistAlert(base, { ticker: 'NVDA', belowPrice: 150 });
+    expect(c1.alerts).toEqual([{ ticker: 'NVDA', belowPrice: 150 }]);
+    const fired = {
+      ...c1,
+      alerts: [{ ticker: 'NVDA', belowPrice: 150, triggeredAt: '2026-11-15T10:00:00.000Z', triggeredPrice: 149 }],
+    };
+    const c2 = upsertWatchlistAlert(fired, { ticker: 'NVDA', dropPct: 6 });
+    expect(c2.alerts).toEqual([{ ticker: 'NVDA', dropPct: 6 }]);
+    expect(upsertWatchlistAlert(base, { ticker: 'NVDA' })).toBe(base);
+    expect(upsertWatchlistAlert(base, { ticker: 'NVDA', belowPrice: -1 })).toBe(base);
+  });
+
+  it('remove y reactivate', () => {
+    const c1 = upsertWatchlistAlert(base, { ticker: 'MU', dropPct: 5 });
+    expect(removeWatchlistAlert(c1, 'MU').alerts).toEqual([]);
+    expect(removeWatchlistAlert(c1, 'NVDA')).toBe(c1);
+    const firedCfg: WatchlistConfig = {
+      items,
+      alerts: [{ ticker: 'MU', dropPct: 5, triggeredAt: '2026-11-15T10:00:00.000Z', triggeredPrice: 300 }],
+    };
+    expect(reactivateWatchlistAlert(firedCfg, 'MU').alerts).toEqual([{ ticker: 'MU', dropPct: 5 }]);
+    expect(reactivateWatchlistAlert(c1, 'MU')).toBe(c1);
+    expect(triggeredWatchlistAlerts(firedCfg)).toHaveLength(1);
+    expect(watchlistAlertFor(firedCfg, 'MU')?.dropPct).toBe(5);
+  });
+
+  it('evaluate dispara por precio y por caída del día, una sola vez', () => {
+    const cfg: WatchlistConfig = {
+      items,
+      alerts: [
+        { ticker: 'NVDA', belowPrice: 150 },
+        { ticker: 'MU', dropPct: 5 },
+        { ticker: 'SPCX', belowPrice: 10 },
+      ],
+    };
+    const now = '2026-11-15T15:00:00.000Z';
+    const r1 = evaluateWatchlistAlerts(cfg, items, {
+      'NASDAQ:NVDA': { price: 149.5, changePct: -1 },
+      'NASDAQ:MU': { price: 380, changePct: -5.5 },
+    }, now);
+    expect(r1.fired.map((a) => a.ticker)).toEqual(['NVDA', 'MU']);
+    expect(r1.fired[0]).toMatchObject({ triggeredAt: now, triggeredPrice: 149.5 });
+    // SPCX no tiene símbolo: nunca se evalúa.
+    expect(r1.alerts.find((a) => a.ticker === 'SPCX')?.triggeredAt).toBeUndefined();
+    // Segunda pasada con las mismas cotizaciones: no re-dispara.
+    const r2 = evaluateWatchlistAlerts({ ...cfg, alerts: r1.alerts }, items, {
+      'NASDAQ:NVDA': { price: 140, changePct: -2 },
+      'NASDAQ:MU': { price: 370, changePct: -6 },
+    }, '2026-11-15T15:00:15.000Z');
+    expect(r2.fired).toEqual([]);
+    expect(r2.alerts).toBe(r1.alerts);
+    // Sin cruzar umbrales: nada.
+    const r3 = evaluateWatchlistAlerts(cfg, items, {
+      'NASDAQ:NVDA': { price: 151, changePct: -4.9 },
+      'NASDAQ:MU': { price: 380, changePct: -4.9 },
+    }, now);
+    expect(r3.fired).toEqual([]);
   });
 });

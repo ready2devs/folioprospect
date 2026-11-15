@@ -12,7 +12,9 @@ import { HoldingActionMenu } from './components/left/HoldingActionMenu';
 import { MarketView } from './components/market/MarketView';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { AssetView } from './components/asset/AssetView';
+import { WatchlistView } from './components/asset/WatchlistView';
 import { OptimizerView } from './components/optimizer/OptimizerView';
+import { useWatchlistAlerts } from './hooks/useWatchlistAlerts';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { ArrowLeft } from 'lucide-react';
 
@@ -48,6 +50,10 @@ export const App: React.FC = () => {
     void useAppStore.getState().hydrateNwSettings();
   }, []);
 
+  // Alertas de precio de la watchlist (SPEC-006 v11): evaluación
+  // global cada 15 s con la app abierta.
+  useWatchlistAlerts();
+
   // Poll live quotes every 15 seconds when in live mode
   useEffect(() => {
     if (pricingMode !== 'live') return;
@@ -82,6 +88,8 @@ export const App: React.FC = () => {
                     ? 'Portafolio Financiero'
                     : rightState === 'optimizer'
                     ? 'Optimizador de cartera'
+                    : rightState === 'watchlist'
+                    ? 'Watchlist'
                     : selectedSymbol}
                 </span>
               </div>
@@ -89,6 +97,7 @@ export const App: React.FC = () => {
                 {rightState === 'market' && <MarketView />}
                 {rightState === 'portfolio' && <PortfolioView />}
                 {rightState === 'asset' && <AssetView />}
+                {rightState === 'watchlist' && <WatchlistView isMobile={true} />}
                 {rightState === 'optimizer' && <OptimizerView />}
               </ErrorBoundary>
             </main>
@@ -112,6 +121,7 @@ export const App: React.FC = () => {
             {rightState === 'market' && <MarketView />}
             {rightState === 'portfolio' && <PortfolioView />}
             {rightState === 'asset' && <AssetView />}
+            {rightState === 'watchlist' && <WatchlistView isMobile={false} />}
             {rightState === 'optimizer' && <OptimizerView />}
           </ErrorBoundary>
         </main>

@@ -12,6 +12,10 @@ import {
   resolveSubPortfolioConfig,
 } from '@shared/engine/subPortfolios';
 import { NwLiquidCard } from '@/components/left/NwLiquidCard';
+import {
+  resolveWatchlistConfig,
+  triggeredWatchlistAlerts,
+} from '@shared/engine/watchlist';
 import { computeNwPatrimony, financialCompositionShares } from '@shared/engine/nw';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
@@ -115,6 +119,12 @@ export const LeftPanel: React.FC = () => {
     settings: nwSettings,
   });
 
+  // Alertas de la watchlist ya disparadas (SPEC-006 v11): distintivo
+  // en la opción «Watchlist» del selector inicial.
+  const wlTriggeredCount = triggeredWatchlistAlerts(
+    resolveWatchlistConfig(nwSettings)
+  ).length;
+
   // % de cada componente sobre el Portafolio Financiero líquido total
   // (tenencias brutas + cash comitente), desde los USD subyacentes.
   const compShares = financialCompositionShares(kpis.grossHoldingsValue, nw.brokerCashUsd);
@@ -203,9 +213,18 @@ export const LeftPanel: React.FC = () => {
                 width: isMobile ? '100%' : undefined,
                 minWidth: 0,
               }}
-              value={portfolioScope}
+              value={rightState === 'watchlist' ? 'watchlist' : portfolioScope}
               onChange={(e) => {
-                setPortfolioScope(e.target.value as 'personal' | 'overview');
+                const v = e.target.value;
+                // Tercera vista (SPEC-006, enmienda v11): la
+                // watchlist a pantalla completa en el panel
+                // principal; las otras dos siguen abriendo el
+                // Portafolio con su alcance, como siempre.
+                if (v === 'watchlist') {
+                  setRightState('watchlist');
+                  return;
+                }
+                setPortfolioScope(v as 'personal' | 'overview');
                 setRightState('portfolio');
               }}
             >
@@ -213,7 +232,30 @@ export const LeftPanel: React.FC = () => {
                 {isTvLabel ? 'Portafolio Financiero (TV)' : 'Portafolio Financiero'}
               </option>
               <option value="overview">Vista General Consolidada</option>
+              <option value="watchlist">
+                {wlTriggeredCount > 0
+                  ? `Watchlist · 🔔 ${wlTriggeredCount} alerta${wlTriggeredCount === 1 ? '' : 's'}`
+                  : 'Watchlist'}
+              </option>
             </select>
+            {wlTriggeredCount > 0 && (
+              <span
+                data-wl-selector-badge=""
+                title={`${wlTriggeredCount} alerta${wlTriggeredCount === 1 ? '' : 's'} de la watchlist disparada${wlTriggeredCount === 1 ? '' : 's'}`}
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  color: 'var(--neg-bright)',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.40)',
+                  borderRadius: 999,
+                  padding: '2px 7px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                🔔 {wlTriggeredCount}
+              </span>
+            )}
 
             {!isMobile && (
               <>

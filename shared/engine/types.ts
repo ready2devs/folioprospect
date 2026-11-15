@@ -383,8 +383,36 @@ export interface WatchlistItem {
   group: WatchlistGroupId;
 }
 
+/**
+ * Alerta de precio de la watchlist (SPEC-006, enmienda v11: vista
+ * Watchlist + alertas dentro de la app). Una alerta por activo y por
+ * tipo: `belowPrice` avisa si el precio baja de ese valor en US$;
+ * `dropPct` avisa si la caída del día llega a ese porcentaje. Una
+ * misma alerta puede llevar los dos umbrales (se dispara por el
+ * primero que se cumpla). Al dispararse quedan `triggeredAt` (ISO) y
+ * `triggeredPrice` (precio de la cotización que la disparó): la
+ * alerta no vuelve a disparar hasta que el dueño la re-activa
+ * (limpia esos dos campos) o la borra.
+ */
+export interface WatchlistPriceAlert {
+  ticker: string;
+  belowPrice?: number;
+  dropPct?: number;
+  triggeredAt?: string | null;
+  triggeredPrice?: number | null;
+}
+
 export interface WatchlistConfig {
   items: WatchlistItem[];
+  /** Snapshot de la última sigla de veredicto VISTA por activo
+   *  (enmienda v11), por ticker ('GOOG' → 'CF'). Ausente = todavía
+   *  no se sembró: la vista Watchlist lo siembra con las siglas
+   *  cargadas, sin marcas. La fila marca «anterior → actual» cuando
+   *  la sigla cargada difiere de la guardada; el botón «Marcar
+   *  vistos» actualiza el snapshot. */
+  seenSiglas?: Record<string, string>;
+  /** Alertas de precio dentro de la app (enmienda v11). */
+  alerts?: WatchlistPriceAlert[];
 }
 
 export interface NwSettings {

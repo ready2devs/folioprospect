@@ -341,3 +341,78 @@ caso de producción (91,38 / FV 96,94 → MANTENER en ambos lados);
 (c) tiempos frío/caliente de la tanda de 6 (arriba). Tests nuevos de
 la caché en memoria y del descarte del campo heredado en
 `server/__tests__/verdictCache.test.ts`.
+
+## 10. Enmienda v11 (2026-11-15) — Vista Watchlist a pantalla completa + alertas dentro de la app
+
+Pedido del dueño (2026-11-15): la watchlist tiene que estar «a mano»
+para vigilar dos cosas — si alguna posición de interés baja mucho un
+día (posible oportunidad de compra) y si alguna cambia de veredicto
+(de Mantener a Compra, de Compra a Compra Fuerte) — con alertas de
+precio estilo TradingView. Descartó la sección extensible bajo las
+posiciones en Cartera y eligió la **tercera vista en el selector
+inicial + alertas dentro de la app**. El aviso con la app cerrada
+(push) queda como etapa posterior, fuera de esta enmienda.
+
+Diseño, tal como quedó publicado:
+
+- **Tercera vista**: el selector de LeftPanel («Portafolio
+  Financiero / Vista General Consolidada») suma la opción
+  «Watchlist». Elegirla abre la watchlist a pantalla completa en el
+  panel principal (`rightState: 'watchlist'`; en el celular ocupa el
+  lugar donde se abre el Portafolio). La vista reutiliza el
+  WatchlistPanel en variante `'view'` (grupos, orden, filtros por
+  veredicto, alta/baja y reorden, todo igual); la tarjeta que vive al
+  fondo de la ficha del activo sigue en variante `'panel'`, sin
+  cambios de comportamiento. Abrir una ficha desde la vista registra
+  origen 'watchlist' y el «Volver» regresa a la vista (backNavigation
+  v12 extendido: etiqueta «Volver a la Watchlist»).
+- **«▼ Caídas hoy»**: chip de la variante view que reordena las filas
+  de cada grupo por variación del día ascendente (mayor caída
+  primero) con el `changePct` que ya trae /api/quotes (refresco
+  15 s); función pura `sortWatchlistByDayDrop`, estable, sin
+  cotización al final.
+- **Cambios de veredicto**: la config suma `seenSiglas` (snapshot de
+  la última sigla vista por ticker). La vista lo **siembra** la
+  primera vez que abre con los veredictos resueltos (sin marcas) y
+  desde ahí marca en la fila «M → CF» cuando la sigla cargada difiere
+  de la guardada, con una barra resumen; las marcas **no** se borran
+  solas: el botón «Marcar vistos» actualiza el snapshot. Funciones
+  puras `buildSeenSiglasSnapshot` / `diffWatchlistSiglas`.
+- **Alertas dentro de la app**: la config suma `alerts`
+  (`WatchlistPriceAlert`: una por activo, con `belowPrice` — baja de
+  US$ X — y/o `dropPct` — cae ≥ Y% en el día — y el registro de
+  disparo `triggeredAt`/`triggeredPrice`). Se crean/editan/borran
+  desde la campana de cada fila de la vista; editar o re-activar
+  limpia el disparo. Un hook global (`useWatchlistAlerts`, montado en
+  App) evalúa cada 15 s con la app abierta, pidiendo cotizaciones
+  solo de los activos con alerta activa, con la función pura
+  `evaluateWatchlistAlerts`; al dispararse, la alerta queda
+  registrada y no re-dispara hasta re-activarla. El aviso se ve como
+  banner en la vista, marca en la fila y distintivo «🔔 n» en la
+  opción «Watchlist» del selector. La baja de un activo elimina
+  también su alerta y su sigla vista.
+- **Persistencia**: los dos campos nuevos atraviesan las tres capas
+  con los validadores del motor (`normalizeWatchlistSeenSiglas` /
+  `normalizeWatchlistAlerts`): `resolveWatchlistConfig` los conserva
+  y `sanitizeWatchlist` (server/db.ts) los valida igual; alta/baja/
+  reorden de items ahora preservan el resto de la config. Campos
+  ausentes o vacíos = comportamiento anterior exacto.
+
+**QA v11** (registros en `qa-result.json` y `qa-d-result.json`,
+carpeta `qa-watchlist-vista-2026-11-15`; cotizaciones y veredictos
+interceptados con datos de control, persistencia real contra el
+servidor local): (A) móvil 390 — la vista abre desde el selector, el
+snapshot se siembra y persiste en el servidor (74 siglas, sin marcas
+recién sembrado) y «Caídas hoy» ordena NVDA (−8,5%) y MU (−6,2%)
+primeros; (B) contexto nuevo con GOOG pasando a CF — marca
+«M → CF» en la fila y barra de cambios, y «Marcar vistos» actualiza
+el snapshot (GOOG=CF) y limpia las marcas; (C) alerta NVDA «baja de
+US$ 150» con cotización en 140 — el hook global la dispara solo
+(banner con hora y precio, marca en la fila) y el selector en
+Cartera muestra el distintivo «🔔 1»; (D) escritorio — la vista abre
+desde el selector, la ficha de GOOG muestra «Volver» con destino
+Watchlist y el regreso vuelve a la vista (la verificación original
+buscaba la etiqueta como texto y en escritorio vive en el `title`
+del botón, patrón v12: corregida la verificación, 3/3). Suite
+completa: 583/583 tests (568 previos + 15 nuevos del motor, el
+sanitizador y la navegación), build limpio.

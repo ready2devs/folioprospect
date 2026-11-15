@@ -3,18 +3,25 @@ import { useAppStore } from '@/store';
 import { api, type WatchlistQuote, type WatchlistVerdictEntry } from '@/api';
 import { formatMoney, formatNumber, formatPct } from '@shared/engine/format';
 import {
+  buildSeenSiglasSnapshot,
   buildWatchlistItemFromSearch,
   countWatchlistSiglas,
+  diffWatchlistSiglas,
   filterWatchlistItems,
   groupWatchlistItems,
   resolveWatchlistConfig,
   siglaFilterName,
+  sortWatchlistByDayDrop,
+  triggeredWatchlistAlerts,
+  watchlistAlertFor,
   watchlistItemSigla,
   WATCHLIST_SIGLA_FILTERS,
   type WatchlistSiglaFilter,
 } from '@shared/engine/watchlist';
 import type { WatchlistItem } from '@shared/engine/types';
 import {
+  Bell,
+  BellRing,
   Check,
   ChevronDown,
   GripVertical,
@@ -22,6 +29,7 @@ import {
   Pencil,
   Plus,
   Search,
+  TrendingDown,
   X,
 } from 'lucide-react';
 
@@ -175,7 +183,15 @@ interface WlDragUi {
   fromIndex: number;
 }
 
-export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
+export const WatchlistPanel: React.FC<{
+  isMobile: boolean;
+  /** 'panel' (default): la tarjeta al fondo de la ficha del activo,
+   *  sin cambios desde la v10. 'view': la vista Watchlist a pantalla
+   *  completa (enmienda v11), que suma el orden por caídas del día,
+   *  las marcas de cambio de veredicto y las alertas de precio. */
+  variant?: 'panel' | 'view';
+}> = ({ isMobile, variant = 'panel' }) => {
+  const isView = variant === 'view';
   const {
     nwSettings,
     selectedSymbol,
@@ -185,12 +201,25 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     addWatchlistItem,
     removeWatchlistItem,
     reorderWatchlistItem,
+    setWatchlistSeenSiglas,
+    upsertWatchlistAlert,
+    removeWatchlistAlert,
+    reactivateWatchlistAlert,
   } = useAppStore();
   const config = useMemo(() => resolveWatchlistConfig(nwSettings), [nwSettings]);
   const groups = useMemo(() => groupWatchlistItems(config.items), [config]);
 
   const [quotes, setQuotes] = useState<Record<string, WatchlistQuote>>({});
   const [verdicts, setVerdicts] = useState<Record<string, WatchlistVerdictEntry>>({});
+  // Enmienda v11 (solo vista): orden por caídas, editor de alerta
+  // abierto y sus campos, y ronda de carga de veredictos terminada
+  // (dispara la siembra del snapshot de siglas).
+  const [dropSort, setDropSort] = useState(false);
+  const [alertEditTicker, setAlertEditTicker] = useState<string | null>(null);
+  const [alertBelow, setAlertBelow] = useState('');
+  const [alertDrop, setAlertDrop] = useState('');
+  const [verdictRound, setVerdictRound] = useState(0);
+  const seededSiglasRef = useRef(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Enmienda v8: filtro por veredicto, modo edición y buscador de alta.
   const [filter, setFilter] = useState<WatchlistSiglaFilter>('TODOS');
@@ -221,17 +250,40 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
   );
 
   // Grupos visibles según el filtro: los grupos que quedan sin filas
-  // visibles se ocultan enteros.
+  // visibles se ocultan enteros. En la vista (v11), el chip «▼ Caídas
+  // hoy» reordena las filas de cada grupo por variación del día.
   const visibleGroups = useMemo(
     () =>
       groups
-        .map((g) => ({
-          group: g.group,
-          total: g.items.length,
-          items: filterWatchlistItems(g.items, verdicts, filter),
-        }))
+        .map((g) => {
+          const filtered = filterWatchlistItems(g.items, verdicts, filter);
+          return {
+            group: g.group,
+            total: g.items.length,
+            items:
+              isView && dropSort ? sortWatchlistByDayDrop(filtered, quotes) : filtered,
+          };
+        })
         .filter((g) => g.items.length > 0),
-    [groups, verdicts, filter]
+    [groups, verdicts, filter, isView, dropSort, quotes]
+  );
+
+  // Cambios de veredicto (v11, solo vista): sigla guardada → actual.
+  const siglaChanges = useMemo(
+    () => (isView ? diffWatchlistSiglas(config.items, verdicts, config.seenSiglas) : []),
+    [isView, config, verdicts]
+  );
+  const siglaChangeByTicker = useMemo(() => {
+    const map = new Map<string, { from: string; to: string }>();
+    for (const c of siglaChanges) map.set(c.ticker, { from: c.from, to: c.to });
+    return map;
+  }, [siglaChanges]);
+
+  // Alertas disparadas (v11): banner de la vista y distintivo del
+  // selector (este último lo lee LeftPanel desde la misma config).
+  const triggeredAlerts = useMemo(
+    () => triggeredWatchlistAlerts(config),
+    [config]
   );
 
   const showNotice = (text: string) => {
@@ -443,7 +495,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     item: WatchlistItem,
     indexInGroup: number
   ) => {
-    if (!editing || filter !== 'TODOS') return;
+    if (!editing || filter !== 'TODOS' || dropSort) return;
     if (e.button !== undefined && e.button !== 0) return;
     // La presión tiene que nacer sobre la fila, no sobre un botón
     // (la × de quitar tiene su propio toque).
@@ -595,8 +647,26 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           setVerdicts((prev) => ({ ...prev, ...res }));
         }
       }
+      if (gen === loopGenRef.current) setVerdictRound((r) => r + 1);
     })();
   }, [config]);
+
+  // Siembra del snapshot de siglas (v11, solo vista): la primera vez
+  // que la vista abre con los veredictos ya resueltos y todavía no
+  // hay snapshot guardado, se guarda el actual SIN marcas (los
+  // cambios se detectan contra esta foto en visitas siguientes).
+  useEffect(() => {
+    if (!isView || verdictRound === 0 || seededSiglasRef.current) return;
+    if (config.seenSiglas && Object.keys(config.seenSiglas).length > 0) return;
+    const pendingLeft = config.items.some(
+      (it) => it.group === 'ACCIONES' && it.symbol && !resolvedRef.current.has(it.symbol)
+    );
+    if (pendingLeft) return;
+    seededSiglasRef.current = true;
+    const snapshot = buildSeenSiglasSnapshot(config.items, verdicts, null);
+    if (Object.keys(snapshot).length > 0) setWatchlistSeenSiglas(snapshot);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isView, verdictRound, config, verdicts]);
 
   // Al montar, dejar visible la fila del activo abierto (una sola vez,
   // sin tocar el scroll en navegaciones posteriores).
@@ -670,6 +740,10 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
   const renderRow = (item: WatchlistItem, indexInGroup: number) => {
     const q = item.symbol ? quotes[item.symbol] : undefined;
     const isActive = Boolean(item.symbol) && item.symbol === selectedSymbol;
+    // Enmienda v11 (solo vista): cambio de veredicto y alerta del activo.
+    const siglaChange = isView ? siglaChangeByTicker.get(item.ticker) : undefined;
+    const alert = isView ? watchlistAlertFor(config, item.ticker) : undefined;
+    const alertOpen = isView && alertEditTicker === item.ticker;
     const unavailable = item.symbol === null;
     // Sigla: las ACCIONES con símbolo la resuelven contra el servidor;
     // el resto (cripto, par, ETFs, sin símbolo) es «—» definitivo.
@@ -702,9 +776,34 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         shiftY = dragUi.rowHeight;
       }
     }
+    const openAlertEditor = () => {
+      if (alertOpen) {
+        setAlertEditTicker(null);
+        return;
+      }
+      setAlertBelow(alert?.belowPrice != null ? String(alert.belowPrice) : '');
+      setAlertDrop(alert?.dropPct != null ? String(alert.dropPct) : '');
+      setAlertEditTicker(item.ticker);
+    };
+    const saveAlert = () => {
+      const below = parseFloat(alertBelow.replace(',', '.'));
+      const drop = parseFloat(alertDrop.replace(',', '.'));
+      const payload: { ticker: string; belowPrice?: number; dropPct?: number } = {
+        ticker: item.ticker,
+      };
+      if (Number.isFinite(below) && below > 0) payload.belowPrice = below;
+      if (Number.isFinite(drop) && drop > 0) payload.dropPct = drop;
+      if (payload.belowPrice === undefined && payload.dropPct === undefined) {
+        showNotice('Completá al menos un umbral para la alerta');
+        return;
+      }
+      upsertWatchlistAlert(payload);
+      setAlertEditTicker(null);
+      showNotice(`Alerta guardada para ${item.ticker}`);
+    };
     return (
+      <React.Fragment key={item.ticker}>
       <div
-        key={item.ticker}
         data-wl-row={item.ticker}
         data-wl-group={item.group}
         data-wl-active={isActive ? 'true' : undefined}
@@ -771,7 +870,85 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
               {item.ticker}
             </span>
             <SiglaPill sigla={sigla} verdict={verdict} />
+            {siglaChange && (
+              <span
+                data-wl-sigla-change={item.ticker}
+                title={`El veredicto cambió desde tu última marca: ${siglaChange.from} → ${siglaChange.to}`}
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.03em',
+                  padding: '1px 5px',
+                  borderRadius: 999,
+                  lineHeight: 1.5,
+                  flexShrink: 0,
+                  background: 'rgba(56, 189, 248, 0.14)',
+                  color: 'var(--accent-cyan)',
+                  border: '1px solid rgba(56, 189, 248, 0.45)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {siglaChange.from} → {siglaChange.to}
+              </span>
+            )}
+            {isView && !editing && (
+              <button
+                type="button"
+                data-wl-alert-btn={item.ticker}
+                aria-label={`Alerta de precio para ${item.ticker}`}
+                aria-expanded={alertOpen}
+                title={
+                  alert?.triggeredAt
+                    ? 'Alerta disparada: tocá para ver o re-activar'
+                    : alert
+                      ? 'Alerta activa: tocá para editarla'
+                      : 'Crear una alerta de precio'
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAlertEditor();
+                }}
+                style={{
+                  width: 26,
+                  height: 26,
+                  minWidth: 26,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 7,
+                  border: '1px solid transparent',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  color: alert?.triggeredAt
+                    ? 'var(--neg-bright)'
+                    : alert
+                      ? '#FBBF24'
+                      : 'var(--text-muted)',
+                }}
+              >
+                {alert?.triggeredAt ? <BellRing size={14} /> : <Bell size={14} />}
+              </button>
+            )}
           </div>
+          {alert?.triggeredAt && (
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                color: 'var(--neg-bright)',
+                marginTop: 1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              Alerta disparada
+              {alert.triggeredPrice != null
+                ? ` a ${formatMoney(alert.triggeredPrice, currency, fxRates, { decimals: 2 })}`
+                : ''}
+            </div>
+          )}
           {q?.name && (
             <div
               style={{
@@ -840,6 +1017,110 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           </div>
         )}
       </div>
+      {alertOpen && (
+        <div
+          data-wl-alert-editor={item.ticker}
+          style={{
+            padding: '10px 12px',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700 }}>
+            Alerta para {item.ticker}
+            {alert?.triggeredAt && (
+              <span style={{ color: 'var(--neg-bright)', fontWeight: 700 }}>
+                {' '}
+                · disparada el{' '}
+                {new Date(alert.triggeredAt).toLocaleString('es-AR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                {alert.triggeredPrice != null
+                  ? ` a ${formatMoney(alert.triggeredPrice, currency, fxRates, { decimals: 2 })}`
+                  : ''}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 11.5, color: 'var(--text-secondary)', flex: '1 1 130px' }}>
+              Avisar si baja de US$
+              <input
+                className="input"
+                data-wl-alert-below={item.ticker}
+                inputMode="decimal"
+                placeholder="ej. 150"
+                value={alertBelow}
+                onChange={(e) => setAlertBelow(e.target.value)}
+                style={{ width: '100%', marginTop: 3, minHeight: 34 }}
+              />
+            </label>
+            <label style={{ fontSize: 11.5, color: 'var(--text-secondary)', flex: '1 1 130px' }}>
+              o si cae en el día ≥ %
+              <input
+                className="input"
+                data-wl-alert-drop={item.ticker}
+                inputMode="decimal"
+                placeholder="ej. 5"
+                value={alertDrop}
+                onChange={(e) => setAlertDrop(e.target.value)}
+                style={{ width: '100%', marginTop: 3, minHeight: 34 }}
+              />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" style={headerBtnStyle} data-wl-alert-save={item.ticker} onClick={saveAlert}>
+              <Check size={13} /> Guardar alerta
+            </button>
+            {alert?.triggeredAt && (
+              <button
+                type="button"
+                style={headerBtnStyle}
+                data-wl-alert-reactivate={item.ticker}
+                onClick={() => {
+                  reactivateWatchlistAlert(item.ticker);
+                  setAlertEditTicker(null);
+                  showNotice(`Alerta de ${item.ticker} re-activada`);
+                }}
+              >
+                <Bell size={13} /> Re-activar
+              </button>
+            )}
+            {alert && (
+              <button
+                type="button"
+                style={{ ...headerBtnStyle, color: 'var(--neg-bright)' }}
+                data-wl-alert-delete={item.ticker}
+                onClick={() => {
+                  removeWatchlistAlert(item.ticker);
+                  setAlertEditTicker(null);
+                  showNotice(`Alerta de ${item.ticker} eliminada`);
+                }}
+              >
+                <X size={13} /> Borrar
+              </button>
+            )}
+            <button
+              type="button"
+              style={headerBtnStyle}
+              onClick={() => setAlertEditTicker(null)}
+            >
+              Cerrar
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+            Se evalúa cada 15 segundos con la app abierta; al dispararse queda
+            registrada y no vuelve a avisar hasta re-activarla.
+          </div>
+        </div>
+      )}
+      </React.Fragment>
     );
   };
 
@@ -851,7 +1132,7 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         overflow: 'hidden',
         alignSelf: 'start',
         width: '100%',
-        ...(isMobile ? {} : { position: 'sticky', top: 12 }),
+        ...(isView || isMobile ? {} : { position: 'sticky', top: 12 }),
       }}
     >
       <div
@@ -888,7 +1169,10 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
             // Al entrar a edición se ve la lista completa: el
             // arrastre reordena por índice dentro del grupo y con un
             // filtro de veredicto activo ese índice no sería el real.
-            if (next) setFilter('TODOS');
+            if (next) {
+              setFilter('TODOS');
+              setDropSort(false);
+            }
           }}
         >
           {editing ? (
@@ -937,6 +1221,111 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
           }}
         >
           {notice}
+        </div>
+      )}
+
+      {/* Alertas disparadas (v11, solo vista): quedan registradas
+          hasta que el dueño las re-activa o las borra desde la fila. */}
+      {isView && triggeredAlerts.length > 0 && (
+        <div
+          data-wl-triggered-banner=""
+          style={{
+            padding: '8px 12px',
+            background: 'rgba(239, 68, 68, 0.10)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          {triggeredAlerts.map((a) => (
+            <div
+              key={a.ticker}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--neg-bright)',
+                flexWrap: 'wrap',
+              }}
+            >
+              <BellRing size={13} style={{ flexShrink: 0 }} />
+              <span>
+                {a.ticker}: alerta disparada
+                {a.triggeredPrice != null
+                  ? ` a ${formatMoney(a.triggeredPrice, currency, fxRates, { decimals: 2 })}`
+                  : ''}
+                {a.triggeredAt
+                  ? ` · ${new Date(a.triggeredAt).toLocaleString('es-AR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`
+                  : ''}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                data-wl-alert-reactivate={a.ticker}
+                onClick={() => reactivateWatchlistAlert(a.ticker)}
+                style={{
+                  padding: '3px 9px',
+                  minHeight: 28,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  background: 'transparent',
+                  color: 'var(--neg-bright)',
+                }}
+              >
+                Re-activar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Cambios de veredicto sin ver (v11, solo vista): las marcas
+          no se borran solas; «Marcar vistos» actualiza el snapshot. */}
+      {isView && siglaChanges.length > 0 && (
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            fontSize: 12,
+          }}
+        >
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {siglaChanges.length}{' '}
+            {siglaChanges.length === 1 ? 'activo cambió' : 'activos cambiaron'} de
+            veredicto desde tu última marca:{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>
+              {siglaChanges.map((c) => `${c.ticker} ${c.from} → ${c.to}`).join(' · ')}
+            </strong>
+          </span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            data-wl-mark-seen=""
+            style={headerBtnStyle}
+            onClick={() => {
+              const snapshot = buildSeenSiglasSnapshot(config.items, verdicts, config.seenSiglas ?? null);
+              setWatchlistSeenSiglas(snapshot);
+              showNotice('Veredictos marcados como vistos');
+            }}
+          >
+            <Check size={13} /> Marcar vistos
+          </button>
         </div>
       )}
 
@@ -1098,6 +1487,35 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
             </button>
           );
         })}
+        {/* Orden por caídas del día (v11, solo vista): mayor caída
+            primero, con las cotizaciones ya cargadas (refresco 15 s). */}
+        {isView && (
+          <button
+            type="button"
+            data-wl-drop-sort=""
+            aria-pressed={dropSort}
+            onClick={() => setDropSort((v) => !v)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              minHeight: 30,
+              fontSize: 11.5,
+              fontWeight: dropSort ? 800 : 600,
+              borderRadius: 999,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              background: dropSort ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+              color: 'var(--neg-bright)',
+              boxShadow: dropSort ? 'inset 0 0 0 1px currentColor' : undefined,
+              opacity: dropSort ? 1 : 0.8,
+            }}
+          >
+            <TrendingDown size={12} /> Caídas hoy
+          </button>
+        )}
       </div>
 
       <div
@@ -1105,7 +1523,13 @@ export const WatchlistPanel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
         style={{
           overflowY: 'auto',
           overflowX: 'hidden',
-          maxHeight: isMobile ? 360 : 'calc(100vh - 140px)',
+          maxHeight: isView
+            ? isMobile
+              ? 'calc(100dvh - 330px)'
+              : 'calc(100vh - 230px)'
+            : isMobile
+              ? 360
+              : 'calc(100vh - 140px)',
           minHeight: 120,
         }}
       >

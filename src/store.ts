@@ -18,10 +18,14 @@ import {
 } from '@shared/engine/subPortfolios';
 import {
   addWatchlistItem as addWatchlistItemToConfig,
+  reactivateWatchlistAlert as reactivateWatchlistAlertInConfig,
+  removeWatchlistAlert as removeWatchlistAlertFromConfig,
   reorderWatchlistItem as reorderWatchlistItemInConfig,
   removeWatchlistItem as removeWatchlistItemFromConfig,
   resolveWatchlistConfig,
+  upsertWatchlistAlert as upsertWatchlistAlertInConfig,
 } from '@shared/engine/watchlist';
+import type { WatchlistPriceAlert } from '@shared/engine/types';
 import {
   api,
   type AssetDetailResponse,
@@ -37,7 +41,7 @@ import { mergeAssetDetailPreservingExtras } from './assetDetailMerge';
 
 export type { ArgFxQuote, ArgFxResponse, NwSettings };
 
-export type RightPanelState = 'market' | 'portfolio' | 'asset' | 'optimizer';
+export type RightPanelState = 'market' | 'portfolio' | 'asset' | 'optimizer' | 'watchlist';
 export type PortfolioTab = 'overview' | 'holdings' | 'transactions' | 'analysis' | 'prospectiva';
 export type MobileTab = 'holdings' | 'right';
 /** Vista desde la que se abrió la ficha del activo: el «Volver» regresa ahí. */
@@ -259,6 +263,16 @@ export interface AppState {
    *  v9); persiste el orden completo una sola vez al soltar, como
    *  el alta/baja. */
   reorderWatchlistItem: (ticker: string, targetIndexInGroup: number) => void;
+  /** Vista Watchlist (SPEC-006, enmienda v11): guarda el snapshot de
+   *  siglas vistas (siembra o «Marcar vistos») y persiste en el acto. */
+  setWatchlistSeenSiglas: (seen: Record<string, string>) => void;
+  /** Alertas dentro de la app (enmienda v11): alta/edición (vuelve a
+   *  estado activa), baja y re-activación de una disparada; el hook
+   *  global guarda la lista ya evaluada cuando alguna se dispara. */
+  upsertWatchlistAlert: (alert: WatchlistPriceAlert) => void;
+  removeWatchlistAlert: (ticker: string) => void;
+  reactivateWatchlistAlert: (ticker: string) => void;
+  saveWatchlistAlerts: (alerts: WatchlistPriceAlert[]) => void;
   setCashModalTarget: (target: CashModalTarget) => void;
   closeAddModal: () => void;
   refreshAll: (background?: boolean) => Promise<void>;
@@ -608,6 +622,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = reorderWatchlistItemInConfig(config, ticker, targetIndexInGroup);
     if (next === config) return; // mismo puesto, borde o ticker inexistente
     get().setNwSettings({ watchlist: next });
+  },
+  setWatchlistSeenSiglas: (seen) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    get().setNwSettings({ watchlist: { ...config, seenSiglas: seen } });
+  },
+  upsertWatchlistAlert: (alert) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const next = upsertWatchlistAlertInConfig(config, alert);
+    if (next === config) return; // alerta inválida
+    get().setNwSettings({ watchlist: next });
+  },
+  removeWatchlistAlert: (ticker) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const next = removeWatchlistAlertFromConfig(config, ticker);
+    if (next === config) return;
+    get().setNwSettings({ watchlist: next });
+  },
+  reactivateWatchlistAlert: (ticker) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    const next = reactivateWatchlistAlertInConfig(config, ticker);
+    if (next === config) return;
+    get().setNwSettings({ watchlist: next });
+  },
+  saveWatchlistAlerts: (alerts) => {
+    const config = resolveWatchlistConfig(get().nwSettings);
+    get().setNwSettings({ watchlist: { ...config, alerts } });
   },
   setCashModalTarget: (cashModalTarget) => set({ cashModalTarget }),
   closeAddModal: () =>

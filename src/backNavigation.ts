@@ -78,5 +78,6 @@ export function assetBackLabel(
   if (target.kind === 'holdings') return 'Volver a Cartera (Posiciones)';
   if (target.view === 'optimizer') return 'Volver al Optimizer';
   if (target.view === 'portfolio') return 'Volver al Portafolio';
+  if (target.view === 'watchlist') return 'Volver a la Watchlist';
   return 'Volver a Mercado';
 }

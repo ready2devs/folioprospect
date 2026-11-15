@@ -68,3 +68,57 @@ describe('sanitizeWatchlist', () => {
     expect(sinCampo?.watchlist).toBeUndefined();
   });
 });
+
+describe('sanitizeWatchlist · enmienda v11 (siglas vistas y alertas)', () => {
+  it('preserva snapshot y alertas válidos, con disparo incluido', () => {
+    const out = sanitizeWatchlist({
+      items: [{ symbol: 'NASDAQ:NVDA', ticker: 'NVDA', group: 'ACCIONES' }],
+      seenSiglas: { NVDA: 'M', GOOG: 'XX' },
+      alerts: [
+        {
+          ticker: 'NVDA',
+          belowPrice: 150,
+          dropPct: 5,
+          triggeredAt: '2026-11-15T15:00:00.000Z',
+          triggeredPrice: 149.5,
+        },
+      ],
+    });
+    expect(out?.seenSiglas).toEqual({ NVDA: 'M' });
+    expect(out?.alerts).toEqual([
+      {
+        ticker: 'NVDA',
+        belowPrice: 150,
+        dropPct: 5,
+        triggeredAt: '2026-11-15T15:00:00.000Z',
+        triggeredPrice: 149.5,
+      },
+    ]);
+  });
+
+  it('descarta alertas inválidas o duplicadas y snapshot basura', () => {
+    const out = sanitizeWatchlist({
+      items: [],
+      seenSiglas: 'basura',
+      alerts: [
+        { ticker: 'NVDA', belowPrice: 150 },
+        { ticker: 'NVDA', dropPct: 5 },
+        { ticker: 'MU', belowPrice: -2 },
+        { ticker: 'MU' },
+        { ticker: '', belowPrice: 10 },
+        42,
+      ],
+    });
+    expect(out?.seenSiglas).toBeUndefined();
+    expect(out?.alerts).toEqual([{ ticker: 'NVDA', belowPrice: 150 }]);
+  });
+
+  it('sin campos nuevos, la salida es la de siempre (retrocompatible)', () => {
+    const out = sanitizeWatchlist({
+      items: [{ symbol: 'NASDAQ:GOOG', ticker: 'GOOG', group: 'ACCIONES' }],
+    });
+    expect(out).toEqual({
+      items: [{ symbol: 'NASDAQ:GOOG', ticker: 'GOOG', group: 'ACCIONES' }],
+    });
+  });
+});

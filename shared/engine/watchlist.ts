@@ -3,6 +3,7 @@ import type {
   WatchlistConfig,
   WatchlistGroupId,
   WatchlistItem,
+  WatchlistPriceAlert,
 } from './types.js';
 
 /**
@@ -199,6 +200,85 @@ export function seedWatchlistConfig(): WatchlistConfig {
   return { items: buildWatchlistItems() };
 }
 
+// ── Enmienda v11: snapshot de siglas vistas y alertas de precio ─────
+// Los dos campos nuevos de la config atraviesan las mismas capas que
+// los items: validación/normalización acá (motor puro, lo comparten
+// el cliente al resolver y el servidor al sanitizar).
+
+/** Siglas que un snapshot puede guardar: las cuatro de veredicto. */
+export const WATCHLIST_SEEN_SIGLAS: readonly string[] = ['CF', 'C', 'M', 'V'];
+
+/** Valida y normaliza el snapshot de siglas vistas: claves ticker
+ *  válidas (mayúsculas), valores dentro de las cuatro siglas, tope
+ *  de entradas = tope de items. Basura → objeto vacío. */
+export function normalizeWatchlistSeenSiglas(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Object.keys(out).length >= MAX_WATCHLIST_ITEMS) break;
+    const ticker = String(key || '').trim().toUpperCase();
+    if (!ticker || ticker.length > MAX_WATCHLIST_TICKER || !WATCHLIST_TICKER_RE.test(ticker)) {
+      continue;
+    }
+    if (typeof value !== 'string' || !WATCHLIST_SEEN_SIGLAS.includes(value)) continue;
+    out[ticker] = value;
+  }
+  return out;
+}
+
+/** Una alerta válida: ticker válido y al menos un umbral numérico
+ *  finito y positivo (precio en US$ o % de caída del día, con topes
+ *  sanos). Los campos de disparo, si vienen, se conservan solo con
+ *  forma válida (fecha ISO parseable y precio finito). */
+export function isValidWatchlistAlertShape(a: any): a is WatchlistPriceAlert {
+  if (!a || typeof a !== 'object') return false;
+  const ticker = typeof a.ticker === 'string' ? a.ticker.trim().toUpperCase() : '';
+  if (!ticker || ticker.length > MAX_WATCHLIST_TICKER || !WATCHLIST_TICKER_RE.test(ticker)) {
+    return false;
+  }
+  const belowOk =
+    a.belowPrice === undefined ||
+    (typeof a.belowPrice === 'number' && Number.isFinite(a.belowPrice) && a.belowPrice > 0 && a.belowPrice <= 1_000_000);
+  const dropOk =
+    a.dropPct === undefined ||
+    (typeof a.dropPct === 'number' && Number.isFinite(a.dropPct) && a.dropPct > 0 && a.dropPct <= 100);
+  if (!belowOk || !dropOk) return false;
+  if (a.belowPrice === undefined && a.dropPct === undefined) return false;
+  return true;
+}
+
+/** Normaliza una alerta válida (ticker en mayúsculas; disparo solo
+ *  si la fecha parsea y el precio es finito). */
+export function normalizeWatchlistAlert(a: WatchlistPriceAlert): WatchlistPriceAlert {
+  const out: WatchlistPriceAlert = { ticker: a.ticker.trim().toUpperCase() };
+  if (typeof a.belowPrice === 'number' && Number.isFinite(a.belowPrice)) out.belowPrice = a.belowPrice;
+  if (typeof a.dropPct === 'number' && Number.isFinite(a.dropPct)) out.dropPct = a.dropPct;
+  const at = typeof a.triggeredAt === 'string' ? a.triggeredAt : null;
+  const price = typeof a.triggeredPrice === 'number' && Number.isFinite(a.triggeredPrice) ? a.triggeredPrice : null;
+  if (at && Number.isFinite(Date.parse(at))) {
+    out.triggeredAt = at;
+    out.triggeredPrice = price;
+  }
+  return out;
+}
+
+/** Valida y normaliza la lista de alertas: una por ticker (gana la
+ *  primera), tope = tope de items. Basura → lista vacía. */
+export function normalizeWatchlistAlerts(raw: unknown): WatchlistPriceAlert[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WatchlistPriceAlert[] = [];
+  const seen = new Set<string>();
+  for (const a of raw) {
+    if (out.length >= MAX_WATCHLIST_ITEMS) break;
+    if (!isValidWatchlistAlertShape(a)) continue;
+    const norm = normalizeWatchlistAlert(a);
+    if (seen.has(norm.ticker)) continue;
+    seen.add(norm.ticker);
+    out.push(norm);
+  }
+  return out;
+}
+
 const WATCHLIST_SYMBOL_RE = /^[A-Z]{2,10}:[A-Z0-9][A-Z0-9.\-]{0,15}$/;
 const WATCHLIST_TICKER_RE = /^[A-Z0-9][A-Z0-9./\-]{0,15}$/;
 
@@ -249,7 +329,15 @@ export function resolveWatchlistConfig(
       items.push(norm);
     }
   }
-  return { items };
+  const out: WatchlistConfig = { items };
+  // Enmienda v11: el snapshot de siglas y las alertas se conservan
+  // (validados); solo se incluyen si traen contenido, para que una
+  // config vieja resuelva exactamente igual que antes.
+  const seenSiglas = normalizeWatchlistSeenSiglas(raw.seenSiglas);
+  if (Object.keys(seenSiglas).length > 0) out.seenSiglas = seenSiglas;
+  const alerts = normalizeWatchlistAlerts(raw.alerts);
+  if (alerts.length > 0) out.alerts = alerts;
+  return out;
 }
 
 /** Agrupa los items por etiqueta en el orden fijo de secciones,
@@ -448,17 +536,29 @@ export function addWatchlistItem(
   if (config.items.length >= MAX_WATCHLIST_ITEMS) return { config, added: false };
   const norm = normalizeWatchlistItem(item);
   if (watchlistContains(config, norm)) return { config, added: false };
-  return { config: { items: [...config.items, norm] }, added: true };
+  return { config: { ...config, items: [...config.items, norm] }, added: true };
 }
 
-/** Baja de un activo por ticker (enmienda v8). */
+/** Baja de un activo por ticker (enmienda v8). Con la baja se van
+ *  también su alerta y su sigla vista (enmienda v11): no queda
+ *  estado colgando de un activo que ya no se sigue. */
 export function removeWatchlistItem(
   config: WatchlistConfig,
   ticker: string
 ): WatchlistConfig {
   const t = String(ticker || '').trim().toUpperCase();
   if (!t) return config;
-  return { items: config.items.filter((it) => it.ticker !== t) };
+  const out: WatchlistConfig = {
+    ...config,
+    items: config.items.filter((it) => it.ticker !== t),
+  };
+  if (out.alerts) out.alerts = out.alerts.filter((a) => a.ticker !== t);
+  if (out.seenSiglas && t in out.seenSiglas) {
+    const next = { ...out.seenSiglas };
+    delete next[t];
+    out.seenSiglas = next;
+  }
+  return out;
 }
 
 /**
@@ -502,5 +602,218 @@ export function reorderWatchlistItem(
   const items = config.items.map((it) =>
     it.group === group ? reorderedGroup[cursor++] : it
   );
-  return { items };
+  return { ...config, items };
+}
+
+// ── Enmienda v11: vista Watchlist (caídas, cambios de veredicto,
+// alertas dentro de la app) — funciones puras ────────────────────────
+
+/** Cotización mínima que consumen el orden por caída y las alertas
+ *  (estructural: coincide con `WatchlistQuote` de la API). */
+export interface WatchlistQuoteLike {
+  price: number;
+  changePct: number;
+}
+
+/**
+ * Orden «▼ Caídas hoy» de la vista Watchlist: variación del día
+ * ascendente (mayor caída primero). Los items sin cotización (sin
+ * símbolo o todavía sin precio) van al final, conservando su orden
+ * relativo; el orden entre cotizados con igual variación también se
+ * conserva (orden estable). No muta la entrada.
+ */
+export function sortWatchlistByDayDrop<T extends Pick<WatchlistItem, 'symbol'>>(
+  items: readonly T[],
+  quotes: Record<string, WatchlistQuoteLike | undefined>
+): T[] {
+  return items
+    .map((it, idx) => {
+      const q = it.symbol ? quotes[it.symbol] : undefined;
+      const change =
+        q && Number.isFinite(q.changePct) ? q.changePct : null;
+      return { it, idx, change };
+    })
+    .sort((a, b) => {
+      if (a.change === null && b.change === null) return a.idx - b.idx;
+      if (a.change === null) return 1;
+      if (b.change === null) return -1;
+      if (a.change !== b.change) return a.change - b.change;
+      return a.idx - b.idx;
+    })
+    .map((r) => r.it);
+}
+
+/**
+ * Snapshot de siglas vistas a partir de las siglas YA CARGADAS:
+ * entran solo las ACCIONES con sigla de veredicto (CF/C/M/V); las
+ * que todavía cargan («··») o no tienen evaluación («—») no entran.
+ * Sobre un snapshot previo, las entradas de activos sin sigla
+ * cargada en esta pasada se conservan (no se pierde lo visto).
+ */
+export function buildSeenSiglasSnapshot(
+  items: readonly Pick<WatchlistItem, 'ticker' | 'group' | 'symbol'>[],
+  verdicts: Record<string, WatchlistVerdictLike | undefined>,
+  prev?: Record<string, string> | null
+): Record<string, string> {
+  const out: Record<string, string> = { ...(prev ?? {}) };
+  for (const it of items) {
+    const sigla = watchlistItemSigla(it, verdicts);
+    if (sigla && WATCHLIST_SEEN_SIGLAS.includes(sigla)) {
+      out[it.ticker] = sigla;
+    }
+  }
+  return out;
+}
+
+/** Un cambio de veredicto visible en la fila: sigla guardada →
+ *  sigla actual. */
+export interface WatchlistSiglaChange {
+  ticker: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Diff de siglas de la vista Watchlist: un cambio por activo cuya
+ * sigla cargada (CF/C/M/V) difiere de la guardada en el snapshot.
+ * Sin snapshot (o sin entrada para el activo) no hay marca: el
+ * snapshot se siembra antes de que pueda haber cambios. Las siglas
+ * todavía no cargadas tampoco marcan.
+ */
+export function diffWatchlistSiglas(
+  items: readonly Pick<WatchlistItem, 'ticker' | 'group' | 'symbol'>[],
+  verdicts: Record<string, WatchlistVerdictLike | undefined>,
+  seen: Record<string, string> | undefined | null
+): WatchlistSiglaChange[] {
+  if (!seen) return [];
+  const out: WatchlistSiglaChange[] = [];
+  for (const it of items) {
+    const from = seen[it.ticker];
+    if (!from) continue;
+    const to = watchlistItemSigla(it, verdicts);
+    if (!to || !WATCHLIST_SEEN_SIGLAS.includes(to)) continue;
+    if (to !== from) out.push({ ticker: it.ticker, from, to });
+  }
+  return out;
+}
+
+/** La alerta de un activo (o undefined si no tiene). */
+export function watchlistAlertFor(
+  config: WatchlistConfig,
+  ticker: string
+): WatchlistPriceAlert | undefined {
+  const t = String(ticker || '').trim().toUpperCase();
+  return (config.alerts ?? []).find((a) => a.ticker === t);
+}
+
+/**
+ * Alta o edición de la alerta de un activo (una por ticker): si ya
+ * había una, se reemplaza EN el lugar y vuelve a estado activa (los
+ * datos de disparo se limpian: editar = re-definir la vigilancia).
+ * Devuelve la misma config si la alerta es inválida.
+ */
+export function upsertWatchlistAlert(
+  config: WatchlistConfig,
+  alert: WatchlistPriceAlert
+): WatchlistConfig {
+  if (!isValidWatchlistAlertShape(alert)) return config;
+  const norm = normalizeWatchlistAlert({
+    ticker: alert.ticker,
+    belowPrice: alert.belowPrice,
+    dropPct: alert.dropPct,
+  });
+  const alerts = [...(config.alerts ?? [])];
+  const idx = alerts.findIndex((a) => a.ticker === norm.ticker);
+  if (idx >= 0) alerts[idx] = norm;
+  else alerts.push(norm);
+  return { ...config, alerts };
+}
+
+/** Borra la alerta de un activo (si no tenía, misma config). */
+export function removeWatchlistAlert(
+  config: WatchlistConfig,
+  ticker: string
+): WatchlistConfig {
+  const t = String(ticker || '').trim().toUpperCase();
+  const alerts = config.alerts ?? [];
+  if (!alerts.some((a) => a.ticker === t)) return config;
+  return { ...config, alerts: alerts.filter((a) => a.ticker !== t) };
+}
+
+/** Re-activa una alerta disparada: limpia el registro de disparo
+ *  para que pueda volver a disparar. Si no estaba disparada o no
+ *  existe, misma config. */
+export function reactivateWatchlistAlert(
+  config: WatchlistConfig,
+  ticker: string
+): WatchlistConfig {
+  const t = String(ticker || '').trim().toUpperCase();
+  const alerts = config.alerts ?? [];
+  const idx = alerts.findIndex((a) => a.ticker === t);
+  if (idx < 0 || !alerts[idx].triggeredAt) return config;
+  const next = [...alerts];
+  const { triggeredAt: _at, triggeredPrice: _p, ...rest } = next[idx];
+  next[idx] = rest;
+  return { ...config, alerts: next };
+}
+
+/** Alertas ya disparadas (para el banner de la vista y el
+ *  distintivo del selector). */
+export function triggeredWatchlistAlerts(
+  config: WatchlistConfig
+): WatchlistPriceAlert[] {
+  return (config.alerts ?? []).filter((a) => Boolean(a.triggeredAt));
+}
+
+/** Resultado de evaluar las alertas contra cotizaciones frescas. */
+export interface WatchlistAlertEvaluation {
+  /** Alertas que se dispararon en ESTA evaluación. */
+  fired: WatchlistPriceAlert[];
+  /** Lista de alertas resultante (la misma referencia si no se
+   *  disparó ninguna: el llamador persiste solo si fired > 0). */
+  alerts: WatchlistPriceAlert[];
+}
+
+/**
+ * Evaluación de alertas dentro de la app (la corre el hook global
+ * cada 15 s con la app abierta): por cada alerta ACTIVA (no
+ * disparada) con cotización de su símbolo, se dispara si el precio
+ * bajó del umbral (`price <= belowPrice`) o si la caída del día
+ * llegó al umbral (`changePct <= -dropPct`). Al disparar quedan la
+ * hora (ISO recibida) y el precio que la disparó. Las alertas sin
+ * cotización o sin símbolo no se evalúan. Función pura: no muta.
+ */
+export function evaluateWatchlistAlerts(
+  config: WatchlistConfig,
+  items: readonly Pick<WatchlistItem, 'ticker' | 'symbol'>[],
+  quotes: Record<string, WatchlistQuoteLike | undefined>,
+  nowIso: string
+): WatchlistAlertEvaluation {
+  const alerts = config.alerts ?? [];
+  if (alerts.length === 0) return { fired: [], alerts };
+  const symbolByTicker = new Map<string, string | null>(
+    items.map((it) => [it.ticker, it.symbol])
+  );
+  const fired: WatchlistPriceAlert[] = [];
+  const next = alerts.map((a) => {
+    if (a.triggeredAt) return a;
+    const symbol = symbolByTicker.get(a.ticker);
+    if (!symbol) return a;
+    const q = quotes[symbol];
+    if (!q || !Number.isFinite(q.price)) return a;
+    const byPrice = a.belowPrice !== undefined && q.price <= a.belowPrice;
+    const byDrop =
+      a.dropPct !== undefined &&
+      Number.isFinite(q.changePct) &&
+      q.changePct <= -a.dropPct;
+    if (!byPrice && !byDrop) return a;
+    const hit: WatchlistPriceAlert = {
+      ...a,
+      triggeredAt: nowIso,
+      triggeredPrice: q.price,
+    };
+    fired.push(hit);
+    return hit;
+  });
+  return { fired, alerts: fired.length > 0 ? next : alerts };
 }

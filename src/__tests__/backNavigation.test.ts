@@ -109,3 +109,32 @@ describe('assetBackLabel', () => {
     expect(assetBackLabel('holdings', 'optimizer', false)).toBe('Volver al Optimizer');
   });
 });
+
+describe('vista Watchlist (SPEC-006, enmienda v11)', () => {
+  it('abrir una ficha desde la Watchlist registra ese origen y el «Volver» regresa ahí', () => {
+    for (const isMobile of [false, true]) {
+      expect(
+        computeAssetOrigin(snap({ rightState: 'watchlist', mobileTab: 'right' }), isMobile)
+      ).toBe('watchlist');
+    }
+    expect(resolveAssetBackTarget('watchlist', 'market', false)).toEqual({
+      kind: 'view',
+      view: 'watchlist',
+    });
+    expect(resolveAssetBackTarget('watchlist', 'portfolio', true)).toEqual({
+      kind: 'view',
+      view: 'watchlist',
+    });
+    expect(assetBackLabel('watchlist', 'market', false)).toBe('Volver a la Watchlist');
+    expect(assetBackLabel('watchlist', 'market', true)).toBe('Volver a la Watchlist');
+  });
+
+  it('la cadena activo → activo conserva el origen Watchlist', () => {
+    expect(
+      computeAssetOrigin(
+        snap({ rightState: 'asset', mobileTab: 'right', assetOrigin: 'watchlist' }),
+        true
+      )
+    ).toBe('watchlist');
+  });
+});

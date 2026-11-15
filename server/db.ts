@@ -17,7 +17,9 @@ import {
 import {
   isValidWatchlistItemShape,
   MAX_WATCHLIST_ITEMS,
+  normalizeWatchlistAlerts,
   normalizeWatchlistItem,
+  normalizeWatchlistSeenSiglas,
 } from '../shared/engine/watchlist.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -184,7 +186,15 @@ export function sanitizeWatchlist(raw: any): WatchlistConfig | undefined {
       seen.add(norm.ticker);
       items.push(norm);
     }
-    return { items };
+    const out: WatchlistConfig = { items };
+    // Enmienda v11: snapshot de siglas vistas y alertas de precio,
+    // con los mismos validadores del motor que usa el cliente; solo
+    // se incluyen si traen contenido válido.
+    const seenSiglas = normalizeWatchlistSeenSiglas(raw.seenSiglas);
+    if (Object.keys(seenSiglas).length > 0) out.seenSiglas = seenSiglas;
+    const alerts = normalizeWatchlistAlerts(raw.alerts);
+    if (alerts.length > 0) out.alerts = alerts;
+    return out;
   } catch {
     return empty;
   }
