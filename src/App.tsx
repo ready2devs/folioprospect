@@ -36,7 +36,7 @@ export const App: React.FC = () => {
   // previa a la cadena de activos, con la misma lógica y la misma
   // etiqueta que el botón de la ficha (backNavigation, v12); en el
   // resto de las vistas, a la lista de posiciones.
-  const assetBackText = '← ' + assetBackLabel(assetOrigin, lastMainView, true);
+  const assetBackText = assetBackLabel(assetOrigin, lastMainView, true);
   const onMobileBack = () => {
     if (rightState === 'asset') {
       goBackFromAsset(true);
@@ -79,7 +79,7 @@ export const App: React.FC = () => {
                   onClick={onMobileBack}
                 >
                   <ArrowLeft size={14} />
-                  <span>{rightState === 'asset' ? assetBackText : '← Volver a Cartera (Posiciones)'}</span>
+                  <span>{rightState === 'asset' ? assetBackText : 'Volver a Cartera (Posiciones)'}</span>
                 </button>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {rightState === 'market'
