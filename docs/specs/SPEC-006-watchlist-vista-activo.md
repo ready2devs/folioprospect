@@ -530,3 +530,26 @@ El % hasta el Fair Value (upside) se mantiene como número titular.
 incluida la regla del caso TMDX) y los casos de
 `fairValueDiscountPhrase` en `opportunity.test.ts`. La v13 y la v14
 se publican juntas, como pidió el dueño.
+
+## 14. Enmienda v15 (2026-11-15) — la foto del FV guarda la calidad del cómputo
+
+- **Disparador:** tras desplegar la v13, la primera foto de TMDX
+  salió de una corrida degradada (sin Finviz y con el contexto
+  sectorial parcial) y quedó congelada 15 minutos en US$80,36
+  (pesimista US$41,92) mientras el cálculo sano daba US$96,94: la
+  ficha mostraba los dos números a la vez (su bloque de valor justo
+  fresco contra la vista del motor de la foto).
+- **Calidad del cómputo (0–5):** la declara `buildAssetInput` desde
+  el `fund` ya enriquecido — completitud del contexto sectorial
+  aplicado (P/E forward, ROIC y crecimiento: 0–3) + Finviz presente
+  (target alternativo o P/E forward) + target de TradingView
+  presente. Viaja con el input (`motorFvQualityOf`) y la expone
+  `buildAssetOptimizerFvScored`.
+- **Regla:** la foto guarda `{view, at, quality}` en memoria y en KV
+  (la clave vive 24 h; la frescura de 15 min la juzga el `at`). Foto
+  vencida → se recomputa; el cómputo nuevo solo desplaza a la
+  guardada si su calidad es al menos la de ella o si la guardada
+  pasó las 24 h de guarda. Cómputo nulo cede ante la foto guardada.
+  Una foto buena ya no la congela una corrida degradada.
+- **Tests:** `server/__tests__/motorFvSnapshot.test.ts` suma la
+  regla del caso TMDX, la guarda de 24 h y el cómputo nulo.

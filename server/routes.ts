@@ -49,7 +49,7 @@ import {
   normalizeTradingViewSymbol,
   findCatalogEntry,
 } from '../shared/engine/index.js';
-import { buildAssetOptimizerFv, buildOptimizerResult } from './optimizerData.js';
+import { buildAssetOptimizerFvScored, buildOptimizerResult } from './optimizerData.js';
 import { getOrComputeMotorFv } from './motorFvSnapshot.js';
 import { resolveAnchorFromFundamentals } from './cashAnchor.js';
 import type {
@@ -794,7 +794,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     const optimizerFv = isCryptoAsset
       ? null
       : await getOrComputeMotorFv(matchedKey, () =>
-          buildAssetOptimizerFv(matchedKey, quote.price)
+          buildAssetOptimizerFvScored(matchedKey, quote.price)
         );
     const anchorFcfDetail = isCryptoAsset ? null : resolveAnchorFromFundamentals(fundInput);
     const cashAnchor = isCryptoAsset
@@ -1021,7 +1021,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { quotes } = await fetchQuotesWithSparklines([sym]);
       const price = quotes[sym]?.price;
       if (!price || !Number.isFinite(price) || price <= 0) return none;
-      const view = await getOrComputeMotorFv(sym, () => buildAssetOptimizerFv(sym, price));
+      const view = await getOrComputeMotorFv(sym, () => buildAssetOptimizerFvScored(sym, price));
       if (!view || !(view.fv > 0)) return none;
       const result = computeOpportunity({
         price,
