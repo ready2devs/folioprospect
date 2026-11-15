@@ -81,3 +81,27 @@ reglas automáticas, sin tocar candados ni cripto:
 
 Las tarjetas manuales/sugeridas se quitan con «Quitar» (sin toggle); las
 automáticas conservan el toggle Activo/Desactivado.
+
+## Enmienda v11 — InfoTip: popover en portal (2026-11-15)
+
+Defecto (reportado por el dueño con captura de escritorio, ficha de FIX): los
+popovers ⓘ se veían cortados contra el borde derecho del panel. Mecanismo: el
+popover era `position:absolute` dentro de un span y el único clamp comparaba
+contra `window.innerWidth`; pero el layout vive dentro de ancestros con
+overflow (`.right-panel`, la raíz de la vista del activo con `overflowX:
+hidden`, `.workspace-grid`, `.app-shell`) cuyo borde derecho queda ~120 px
+antes que el de la ventana, y esos ancestros recortaban el popover aunque el
+clamp dijera que «entraba» (medido: 13 de 53 popovers de la ficha recortados
+en 1920×1080).
+
+Corrección estructural: el popover se renderiza en un portal sobre
+`document.body` con `position:fixed`, posicionado desde el
+`getBoundingClientRect` del botón por la función pura
+`computePopoverPlacement` (`src/components/optimizer/popoverPosition.ts`,
+con tests): nunca fuera del viewport (margen 8 px), hacia abajo si entra y
+hacia arriba si no, con alto capado y scroll interno si el texto es muy
+largo. La API del componente no cambió (props `k`/`title`/`body`/`label`).
+Se cierra con la ×, con click afuera, con resize, o cuando un scroll
+desplaza al botón (un scroll que no lo mueve —otra columna, asentamiento
+del panel— no lo cierra: el popover sigue bien ubicado). Ningún ancestro
+con overflow puede volver a recortarlo.
