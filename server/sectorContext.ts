@@ -1,1 +1,256 @@
-LyoqCiAqIENvbnRleHRvIGRlbCBzZWN0b3IgcGFyYSBlbCBtw7psdGlwbG8ganVzdGlmaWNhZG8gKFIxMSwKICogZG9jcy9WQUxVQVRJT04tUlVMRVMubWQpOiBsYXMgbWVkaWFuYXMgZGUgbGEgaW5kdXN0cmlhIGRlIEZpbnZpegogKiAobG9zIHBhcmVzIG3DoXMgZ3JhbmRlcyBwb3IgY2FwaXRhbGl6YWNpw7NuKSDigJQgUC9FIGZvcndhcmQsIFJPSUMgeQogKiBjcmVjaW1pZW50byBkZSBFUFMgYSA1IGHDsW9zLiBFcyBsYSBjb25jZXNpw7NuIMKrcG9yIHNlY3RvcsK7IGRlbAogKiBzaXN0ZW1hOiBsbyBxdWUgZWwgc2VjdG9yIHZhbGUgbG8gcG9uZSBlbCBtZXJjYWRvLCB5IGxhIGVtcHJlc2Egc2UKICogY29tcGFyYSBjb250cmEgZXNhcyBtZWRpYW5hcyBjb24gbGEgZsOzcm11bGEganVzdGlmaWNhZGEuCiAqCiAqIEZ1ZW50ZSBwcmltYXJpYTogRmludml6IChlbCBzY3JlZW5lciBkYSBsb3MgcGFyZXMgeSBsYSBmaWNoYSBkZQogKiBjYWRhIHBhciB0cmFlIGxvcyB0cmVzIGRhdG9zKSwgY2FjaMOpIGRlIDYgaCBwb3IgaW5kdXN0cmlhLiBTaSBlbAogKiBzY3JlZW5lciBubyByZXNwb25kZSAoZW4gcHJvZHVjY2nDs24gc2Ugb2JzZXJ2w7MgcXVlIEZpbnZpeiBubwogKiBzaXJ2ZSBlc2EgcMOhZ2luYSBhIGxhcyBJUCBkZWwgaG9zdGluZyBhdW5xdWUgc8OtIHNpcnZlIGxhcyBmaWNoYXMKICogaW5kaXZpZHVhbGVzKSwgZWwgREVTQ1VCUklNSUVOVE8gZGUgcGFyZXMgY2FlIGFsIHNjYW5uZXIgZGUKICogVHJhZGluZ1ZpZXcgKGluZHVzdHJpYSB5IHJhbmtpbmcgcG9yIGNhcGl0YWxpemFjacOzbikgeSBsYXMKICogbWVkaWFuYXMgc2Ugc2lndWVuIGNhbGN1bGFuZG8gY29uIGxhcyBmaWNoYXMgZGUgRmludml6IGRlIGNhZGEKICogcGFyOiBsYSBiYXNlIGRlIG1lZGljacOzbiBubyBjYW1iaWEsIHNvbG8gcXVpw6luIG5vbWJyYSBhIGxvcwogKiBwYXJlcy4gTnVuY2EgbGFuemE6IHNpbiBjb250ZXh0bywgZWwgbW90b3IgY2FlIHBvciBzdSBlc2NhbGVyYSBkZQogKiByZXNwYWxkbyBkb2N1bWVudGFkYSAoanVzdGlmaWNhZG8gcHJvcGlvIOKGkiBQL0UgcHJvcGlvIOKGkiB0YWJsYSkuCiAqCiAqIEVubWllbmRhIHYxNCAoMjAyNi0xMS0xNSk6IGVsIGNvbnRleHRvIHlhIG5vIHZpdmUgZW4gdW5hIGNhY2jDqSBwb3IKICogaW5zdGFuY2lhIOKAlCBwYXNhIHBvciBsYSBmb3RvIGNvbXBhcnRpZGEgZGUKICogc2VydmVyL3NlY3RvckN0eFNuYXBzaG90LnRzIChtZW1vcmlhICsgS1YsIGNvbXBsZXRpdHVkIG1hbmRhKSwKICogcG9ycXVlIHZlcnNpb25lcyBwYXJjaWFsZXMgZGVsIGNvbnRleHRvIGVudHJlIGluc3RhbmNpYXMgaGFjw61hbgogKiBzYWx0YXIgZWwgRmFpciBWYWx1ZSAoY2FzbyBUTURYOiA5Niw5NCDihpQgODAsMzYgY29uIHByZWNpbyBxdWlldG8pLgogKi8KaW1wb3J0IHsgY2xlYW5UaWNrZXIgfSBmcm9tICcuLi9zaGFyZWQvZW5naW5lL2Zvcm1hdC5qcyc7CmltcG9ydCB7IGZldGNoRmludml6RnVuZGFtZW50YWxzIH0gZnJvbSAnLi9maW52aXouanMnOwppbXBvcnQgeyBnZXRPckNvbXB1dGVTZWN0b3JDdHggfSBmcm9tICcuL3NlY3RvckN0eFNuYXBzaG90LmpzJzsKCmNvbnN0IFVBID0KICAnTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEzMS4wLjAuMCBTYWZhcmkvNTM3LjM2JzsKCmV4cG9ydCBpbnRlcmZhY2UgU2VjdG9yQ29udGV4dCB7CiAgLyoqIE1lZGlhbmEgZGVsIFAvRSBmb3J3YXJkIGRlIGxvcyBwYXJlcyAoc2luIGVsIHByb3BpbyBhY3Rpdm8pLiAqLwogIGZvcndhcmRQZTogbnVtYmVyIHwgbnVsbDsKICAvKiogTWVkaWFuYSBkZWwgUk9JQyAlIGRlIGxvcyBwYXJlcy4gKi8KICByb2ljUGN0OiBudW1iZXIgfCBudWxsOwogIC8qKiBNZWRpYW5hIGRlbCBjcmVjaW1pZW50byBkZSBFUFMgYSA1IGHDsW9zICUgZGUgbG9zIHBhcmVzLiAqLwogIGdyb3d0aDV5UGN0OiBudW1iZXIgfCBudWxsOwogIC8qKiBDYW50aWRhZCBkZSBwYXJlcyBxdWUgYXBvcnRhcm9uIGFsIG1lbm9zIHVuIGRhdG8uICovCiAgcGVlcnNVc2VkOiBudW1iZXI7CiAgLyoqIFNsdWcgZGUgaW5kdXN0cmlhIGRlIEZpbnZpeiAoaW5kXy4uLikgZGVsIHF1ZSBzYWxlbiBsYXMgbWVkaWFuYXMuICovCiAgaW5kdXN0cnlTbHVnOiBzdHJpbmc7CiAgLyoqIEPDs21vIHNlIGRlc2N1YnJpZXJvbiBsb3MgcGFyZXM6IGVsIHNjcmVlbmVyIGRlIEZpbnZpeiBvLCBlbiBzdQogICAqICBkZWZlY3RvLCBlbCBzY2FubmVyIGRlIFRyYWRpbmdWaWV3IChsYXMgbWVkaWFuYXMgc29uIHNpZW1wcmUgZGUKICAgKiAgZmljaGFzIEZpbnZpeikuICovCiAgc291cmNlPzogJ2ZpbnZpeicgfCAndHJhZGluZ3ZpZXcnOwp9Cgpjb25zdCBtZWRpYW5PZiA9ICh4czogbnVtYmVyW10pOiBudW1iZXIgfCBudWxsID0+IHsKICBpZiAoeHMubGVuZ3RoID09PSAwKSByZXR1cm4gbnVsbDsKICBjb25zdCBzID0gWy4uLnhzXS5zb3J0KChhLCBiKSA9PiBhIC0gYik7CiAgY29uc3QgbSA9IE1hdGguZmxvb3Iocy5sZW5ndGggLyAyKTsKICByZXR1cm4gcy5sZW5ndGggJSAyID8gc1ttXSA6IChzW20gLSAxXSArIHNbbV0pIC8gMjsKfTsKCmNvbnN0IHNsdWdDYWNoZSA9IG5ldyBNYXA8c3RyaW5nLCB7IHNsdWc6IHN0cmluZyB8IG51bGw7IGF0OiBudW1iZXIgfT4oKTsKY29uc3QgU0xVR19UVExfTVMgPSA2ICogMzYwMCAqIDEwMDA7Ci8qKiBDYWNow6kgbmVnYXRpdmEgY29ydGEgU09MTyBlbiBtZW1vcmlhOiBzaW4gY29udGV4dG8gbm8gc2UgZ3VhcmRhCiAqICBmb3RvIChlbm1pZW5kYSB2MTQpIHkgZXN0byBldml0YSByZS1yYXNwYXIgZW4gY2FkYSBwZWRpZG8uICovCmNvbnN0IG51bGxDdHhDYWNoZSA9IG5ldyBNYXA8c3RyaW5nLCBudW1iZXI+KCk7CmNvbnN0IE5VTExfQ1RYX1RUTF9NUyA9IDEwICogNjAgKiAxMDAwOwoKLyoqIFNsdWcgZGUgaW5kdXN0cmlhIGRlIEZpbnZpeiAoaW5kXy4uLikgZGVzZGUgbGEgcMOhZ2luYSBkZSBsYSBhY2Npw7NuLiAqLwpleHBvcnQgYXN5bmMgZnVuY3Rpb24gZmludml6SW5kdXN0cnlTbHVnKHRpY2tlcjogc3RyaW5nKTogUHJvbWlzZTxzdHJpbmcgfCBudWxsPiB7CiAgY29uc3QgdCA9ICh0aWNrZXIgfHwgJycpLnRvVXBwZXJDYXNlKCk7CiAgY29uc3QgYyA9IHNsdWdDYWNoZS5nZXQodCk7CiAgaWYgKGMgJiYgRGF0ZS5ub3coKSAtIGMuYXQgPCBTTFVHX1RUTF9NUykgcmV0dXJuIGMuc2x1ZzsKICBsZXQgc2x1Zzogc3RyaW5nIHwgbnVsbCA9IG51bGw7CiAgdHJ5IHsKICAgIGNvbnN0IHJlcyA9IGF3YWl0IGZldGNoKGBodHRwczovL2ZpbnZpei5jb20vcXVvdGUuYXNoeD90PSR7ZW5jb2RlVVJJQ29tcG9uZW50KHQpfSZwPWRgLCB7CiAgICAgIGhlYWRlcnM6IHsgJ3VzZXItYWdlbnQnOiBVQSB9LAogICAgICBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoNzAwMCksCiAgICB9KTsKICAgIGlmIChyZXMub2spIHsKICAgICAgY29uc3QgaHRtbCA9IGF3YWl0IHJlcy50ZXh0KCk7CiAgICAgIGNvbnN0IG0gPSBodG1sLm1hdGNoKC9mPWluZF8oW2EtejAtOV9dKykvaSk7CiAgICAgIHNsdWcgPSBtID8gbVsxXSA6IG51bGw7CiAgICB9CiAgfSBjYXRjaCB7CiAgICBzbHVnID0gbnVsbDsKICB9CiAgc2x1Z0NhY2hlLnNldCh0LCB7IHNsdWcsIGF0OiBEYXRlLm5vdygpIH0pOwogIHJldHVybiBzbHVnOwp9CgovKioKICogTWVkaWFuYXMgc2VjdG9yaWFsZXMgcGFyYSB1biB0aWNrZXI6IHNjcmVlbmVyIGRlIHN1IGluZHVzdHJpYQogKiBvcmRlbmFkbyBwb3IgY2FwaXRhbGl6YWNpw7NuLCBoYXN0YSA4IHBhcmVzIChzaW4gZWwgcHJvcGlvIGFjdGl2byksCiAqIGNvbiBsb3MgZnVuZGFtZW50YWxlcyBkZSBGaW52aXogZGUgY2FkYSB1bm8uIENvbiBtZW5vcyBkZSAyIHBhcmVzCiAqIGNvbiBQL0UgZm9yd2FyZCB2w6FsaWRvLCBlbCBQL0Ugc2VjdG9yaWFsIHF1ZWRhIG51bGwgKGxhIGVzY2FsZXJhCiAqIGRlbCBtb3RvciBkZWNpZGUpOyBsYXMgZGVtw6FzIG1lZGlhbmFzIHNlIGRldnVlbHZlbiBzaSBleGlzdGVuLgogKi8KYXN5bmMgZnVuY3Rpb24gY29udGV4dEZyb21QZWVyVGlja2VycygKICB0aWNrZXJzOiBzdHJpbmdbXSwKICBzbHVnOiBzdHJpbmcsCiAgc291cmNlOiAnZmludml6JyB8ICd0cmFkaW5ndmlldycKKTogUHJvbWlzZTxTZWN0b3JDb250ZXh0IHwgbnVsbD4gewogIGlmICh0aWNrZXJzLmxlbmd0aCA9PT0gMCkgcmV0dXJuIG51bGw7CiAgY29uc3QgcGVlckZ1bmRzID0gYXdhaXQgUHJvbWlzZS5hbGwoCiAgICB0aWNrZXJzLnNsaWNlKDAsIDgpLm1hcCgodGspID0+IGZldGNoRmludml6RnVuZGFtZW50YWxzKHRrKS5jYXRjaCgoKSA9PiBudWxsKSkKICApOwogIGNvbnN0IHBlczogbnVtYmVyW10gPSBbXTsKICBjb25zdCByb2ljczogbnVtYmVyW10gPSBbXTsKICBjb25zdCBncm93dGhzOiBudW1iZXJbXSA9IFtdOwogIGxldCB1c2VkID0gMDsKICBmb3IgKGNvbnN0IGYgb2YgcGVlckZ1bmRzKSB7CiAgICBpZiAoIWYpIGNvbnRpbnVlOwogICAgbGV0IGFueSA9IGZhbHNlOwogICAgaWYgKGYuZm9yd2FyZFBlICE9IG51bGwgJiYgZi5mb3J3YXJkUGUgPiAwKSB7IHBlcy5wdXNoKGYuZm9yd2FyZFBlKTsgYW55ID0gdHJ1ZTsgfQogICAgaWYgKGYucm9pY1BjdCAhPSBudWxsICYmIE51bWJlci5pc0Zpbml0ZShmLnJvaWNQY3QpKSB7IHJvaWNzLnB1c2goZi5yb2ljUGN0KTsgYW55ID0gdHJ1ZTsgfQogICAgaWYgKGYuZXBzTmV4dDVZUGN0ICE9IG51bGwgJiYgTnVtYmVyLmlzRmluaXRlKGYuZXBzTmV4dDVZUGN0KSkgeyBncm93dGhzLnB1c2goZi5lcHNOZXh0NVlQY3QpOyBhbnkgPSB0cnVlOyB9CiAgICBpZiAoYW55KSB1c2VkKys7CiAgfQogIGlmICh1c2VkID09PSAwKSByZXR1cm4gbnVsbDsKICByZXR1cm4gewogICAgZm9yd2FyZFBlOiBwZXMubGVuZ3RoID49IDIgPyBtZWRpYW5PZihwZXMpIDogbnVsbCwKICAgIHJvaWNQY3Q6IG1lZGlhbk9mKHJvaWNzKSwKICAgIGdyb3d0aDV5UGN0OiBtZWRpYW5PZihncm93dGhzKSwKICAgIHBlZXJzVXNlZDogdXNlZCwKICAgIGluZHVzdHJ5U2x1Zzogc2x1ZywKICAgIHNvdXJjZSwKICB9Owp9Cgpjb25zdCB0dkluZHVzdHJ5Q2FjaGUgPSBuZXcgTWFwPHN0cmluZywgeyBpbmR1c3RyeTogc3RyaW5nIHwgbnVsbDsgYXQ6IG51bWJlciB9PigpOwoKLyoqCiAqIERlc2N1YnJpbWllbnRvIGRlIHBhcmVzIHbDrWEgZWwgc2Nhbm5lciBkZSBUcmFkaW5nVmlldyAocmVzcGFsZG8KICogY3VhbmRvIGVsIHNjcmVlbmVyIGRlIEZpbnZpeiBubyByZXNwb25kZSk6IGxhIGluZHVzdHJpYSBUViBkZWwKICogYWN0aXZvIHkgc3VzIG1pZW1icm9zIG3DoXMgZ3JhbmRlcyBwb3IgY2FwaXRhbGl6YWNpw7NuLiBEZXZ1ZWx2ZQogKiB0aWNrZXJzIHBlbGFkb3MgKHNpbiBtZXJjYWRvKSwgc2luIGVsIHByb3BpbyB5IHNpbiBjbGFzZXMKICogZHVwbGljYWRhcyBkZSBsYSBtaXNtYSBlbXByZXNhIChwLiBlai4gQVNNTC9BU01MRikuCiAqLwphc3luYyBmdW5jdGlvbiBkaXNjb3ZlclBlZXJzVmlhVHJhZGluZ1ZpZXcodDogc3RyaW5nKTogUHJvbWlzZTxzdHJpbmdbXT4gewogIHRyeSB7CiAgICBsZXQgaW5kdXN0cnk6IHN0cmluZyB8IG51bGwgPSBudWxsOwogICAgY29uc3QgY2FjaGVkSW5kID0gdHZJbmR1c3RyeUNhY2hlLmdldCh0KTsKICAgIGlmIChjYWNoZWRJbmQgJiYgRGF0ZS5ub3coKSAtIGNhY2hlZEluZC5hdCA8IFNMVUdfVFRMX01TKSB7CiAgICAgIGluZHVzdHJ5ID0gY2FjaGVkSW5kLmluZHVzdHJ5OwogICAgfSBlbHNlIHsKICAgICAgY29uc3QgY2FuZGlkYXRlcyA9IFsnTkFTREFRJywgJ05ZU0UnLCAnQU1FWCddLm1hcCgoZXgpID0+IGAke2V4fToke3R9YCk7CiAgICAgIGNvbnN0IHJlcyA9IGF3YWl0IGZldGNoKCdodHRwczovL3NjYW5uZXIudHJhZGluZ3ZpZXcuY29tL2FtZXJpY2Evc2NhbicsIHsKICAgICAgICBtZXRob2Q6ICdQT1NUJywKICAgICAgICBoZWFkZXJzOiB7ICdjb250ZW50LXR5cGUnOiAnYXBwbGljYXRpb24vanNvbicsICd1c2VyLWFnZW50JzogVUEgfSwKICAgICAgICBib2R5OiBKU09OLnN0cmluZ2lmeSh7IHN5bWJvbHM6IHsgdGlja2VyczogY2FuZGlkYXRlcyB9LCBjb2x1bW5zOiBbJ2luZHVzdHJ5J10gfSksCiAgICAgICAgc2lnbmFsOiBBYm9ydFNpZ25hbC50aW1lb3V0KDYwMDApLAogICAgICB9KTsKICAgICAgaWYgKHJlcy5vaykgewogICAgICAgIGNvbnN0IGo6IGFueSA9IGF3YWl0IHJlcy5qc29uKCk7CiAgICAgICAgY29uc3Qgcm93ID0gQXJyYXkuaXNBcnJheShqPy5kYXRhKSA/IGouZGF0YS5maW5kKChkOiBhbnkpID0+IHR5cGVvZiBkPy5kPy5bMF0gPT09ICdzdHJpbmcnICYmIGQuZFswXSkgOiBudWxsOwogICAgICAgIGluZHVzdHJ5ID0gcm93ID8gU3RyaW5nKHJvdy5kWzBdKSA6IG51bGw7CiAgICAgIH0KICAgICAgdHZJbmR1c3RyeUNhY2hlLnNldCh0LCB7IGluZHVzdHJ5LCBhdDogRGF0ZS5ub3coKSB9KTsKICAgIH0KICAgIGlmICghaW5kdXN0cnkpIHJldHVybiBbXTsKICAgIGNvbnN0IHJlcyA9IGF3YWl0IGZldGNoKCdodHRwczovL3NjYW5uZXIudHJhZGluZ3ZpZXcuY29tL2FtZXJpY2Evc2NhbicsIHsKICAgICAgbWV0aG9kOiAnUE9TVCcsCiAgICAgIGhlYWRlcnM6IHsgJ2NvbnRlbnQtdHlwZSc6ICdhcHBsaWNhdGlvbi9qc29uJywgJ3VzZXItYWdlbnQnOiBVQSB9LAogICAgICBib2R5OiBKU09OLnN0cmluZ2lmeSh7CiAgICAgICAgZmlsdGVyOiBbeyBsZWZ0OiAnaW5kdXN0cnknLCBvcGVyYXRpb246ICdlcXVhbCcsIHJpZ2h0OiBpbmR1c3RyeSB9XSwKICAgICAgICBzb3J0OiB7IHNvcnRCeTogJ21hcmtldF9jYXBfYmFzaWMnLCBzb3J0T3JkZXI6ICdkZXNjJyB9LAogICAgICAgIHJhbmdlOiBbMCwgMTRdLAogICAgICAgIGNvbHVtbnM6IFsnbmFtZScsICdkZXNjcmlwdGlvbiddLAogICAgICAgIHN5bWJvbHM6IHsgcXVlcnk6IHsgdHlwZXM6IFtdIH0gfSwKICAgICAgfSksCiAgICAgIHNpZ25hbDogQWJvcnRTaWduYWwudGltZW91dCg4MDAwKSwKICAgIH0pOwogICAgaWYgKCFyZXMub2spIHJldHVybiBbXTsKICAgIGNvbnN0IGo6IGFueSA9IGF3YWl0IHJlcy5qc29uKCk7CiAgICBjb25zdCB0aWNrZXJzOiBzdHJpbmdbXSA9IFtdOwogICAgY29uc3Qgc2VlbkNvbXBhbmllcyA9IG5ldyBTZXQ8c3RyaW5nPigpOwogICAgZm9yIChjb25zdCByb3cgb2YgQXJyYXkuaXNBcnJheShqPy5kYXRhKSA/IGouZGF0YSA6IFtdKSB7CiAgICAgIGNvbnN0IHRrID0gY2xlYW5UaWNrZXIoU3RyaW5nKHJvdz8ucyA/PyAnJykpLnRvVXBwZXJDYXNlKCk7CiAgICAgIGNvbnN0IGNvbXBhbnkgPSBTdHJpbmcocm93Py5kPy5bMV0gPz8gdGspLnRvVXBwZXJDYXNlKCk7CiAgICAgIGlmICghdGsgfHwgdGsgPT09IHQgfHwgdGlja2Vycy5pbmNsdWRlcyh0aykgfHwgc2VlbkNvbXBhbmllcy5oYXMoY29tcGFueSkpIGNvbnRpbnVlOwogICAgICBzZWVuQ29tcGFuaWVzLmFkZChjb21wYW55KTsKICAgICAgdGlja2Vycy5wdXNoKHRrKTsKICAgICAgaWYgKHRpY2tlcnMubGVuZ3RoID49IDEwKSBicmVhazsKICAgIH0KICAgIHJldHVybiB0aWNrZXJzOwogIH0gY2F0Y2ggewogICAgcmV0dXJuIFtdOwogIH0KfQoKZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIGZldGNoU2VjdG9yQ29udGV4dCh0aWNrZXI6IHN0cmluZyk6IFByb21pc2U8U2VjdG9yQ29udGV4dCB8IG51bGw+IHsKICBjb25zdCB0ID0gY2xlYW5UaWNrZXIoKHRpY2tlciB8fCAnJykudG9VcHBlckNhc2UoKSkudG9VcHBlckNhc2UoKTsKICBpZiAoIXQpIHJldHVybiBudWxsOwogIGNvbnN0IHNsdWcgPSBhd2FpdCBmaW52aXpJbmR1c3RyeVNsdWcodCk7CiAgY29uc3QgY2FjaGVLZXkgPSBzbHVnID8/IGB0djoke3R9YDsKICBjb25zdCBudWxsQXQgPSBudWxsQ3R4Q2FjaGUuZ2V0KGNhY2hlS2V5KTsKICBpZiAobnVsbEF0ICYmIERhdGUubm93KCkgLSBudWxsQXQgPCBOVUxMX0NUWF9UVExfTVMpIHJldHVybiBudWxsOwogIC8vIEZvdG8gY29tcGFydGlkYSBkZWwgY29udGV4dG8gKGVubWllbmRhIHYxNCk6IHVuYSBzb2xhIHZlcnNpw7NuCiAgLy8gcG9yIGluZHVzdHJpYSBwYXJhIHRvZGFzIGxhcyBpbnN0YW5jaWFzLCBjb24gbGEgY29tcGxldGl0dWQKICAvLyBtYW5kYW5kbyBzb2JyZSBsYSBub3ZlZGFkIOKAlCB2ZXIgc2VydmVyL3NlY3RvckN0eFNuYXBzaG90LnRzLgogIGNvbnN0IGN0eCA9IGF3YWl0IGdldE9yQ29tcHV0ZVNlY3RvckN0eChjYWNoZUtleSwgKCkgPT4gY29tcHV0ZVNlY3RvckNvbnRleHQodCwgc2x1ZykpOwogIGlmIChjdHggPT0gbnVsbCkgbnVsbEN0eENhY2hlLnNldChjYWNoZUtleSwgRGF0ZS5ub3coKSk7CiAgcmV0dXJuIGN0eDsKfQoKYXN5bmMgZnVuY3Rpb24gY29tcHV0ZVNlY3RvckNvbnRleHQodDogc3RyaW5nLCBzbHVnOiBzdHJpbmcgfCBudWxsKTogUHJvbWlzZTxTZWN0b3JDb250ZXh0IHwgbnVsbD4gewogIC8vIExhcyBkb3MgcnV0YXMgZGUgZGVzY3VicmltaWVudG8gY29ycmVuIEVOIFBBUkFMRUxPOiBlbiBlbCBob3N0aW5nCiAgLy8gZWwgc2NyZWVuZXIgZGUgRmludml6IHB1ZWRlIGNvbGdhciBoYXN0YSBlbCB0aW1lb3V0IHkgcmVjacOpbiBhaMOtCiAgLy8gZW1wZXphYmEgZWwgcmVzcGFsZG8g4oCUIGVuIGluc3RhbmNpYXMgZnLDrWFzIGVsIGNvbnRleHRvIGxsZWdhYmEKICAvLyB0YXJkZSBvIG5vIGxsZWdhYmEuIFByZWZlcmVuY2lhIGRldGVybWluw61zdGljYSBhbCBhcm1hciBlbAogIC8vIHJlc3VsdGFkbzogbWFuZGEgZWwgY29udGV4dG8gZGVsIHNjcmVlbmVyIHNpIHRyYWUgUC9FIGZvcndhcmQ7CiAgLy8gc2kgbm8sIGVsIGRlIFRyYWRpbmdWaWV3OyBzaSBuaW5ndW5vIHRyYWUgUC9FLCBlbCBxdWUgZXhpc3RhLgogIGNvbnN0IGZpbnZpelJvdXRlID0gKGFzeW5jICgpOiBQcm9taXNlPFNlY3RvckNvbnRleHQgfCBudWxsPiA9PiB7CiAgICBpZiAoIXNsdWcpIHJldHVybiBudWxsOwogICAgdHJ5IHsKICAgICAgLy8gRmludml6IHJlZGlzZcOxw7MgZWwgc2NyZWVuZXI6IGxhIFVSTCBjYW7Ds25pY2EgcGFzw7MgYQogICAgICAvLyAvc2NyZWVuZXIvc3RvY2tzIGNvbiBmPWluZHVzdHJ5XzxzbHVnPiB5IGxvcyB0aWNrZXJzIHZpZW5lbiBlbgogICAgICAvLyB1biBKU09OIGVtYmViaWRvICgidGlja2VyIjoiTlZEQSIpIGVuIG9yZGVuIGRlIGNhcGl0YWxpemFjacOzbjsKICAgICAgLy8gbG9zIGVubGFjZXMgcGFzYXJvbiBhIC9xdW90ZT90PS4gU2UgcHJ1ZWJhbiBhbWJvcyBmb3JtYXRvcy4KICAgICAgY29uc3QgcmVzID0gYXdhaXQgZmV0Y2goCiAgICAgICAgYGh0dHBzOi8vZmludml6LmNvbS9zY3JlZW5lci9zdG9ja3M/dj0xMTEmZj1pbmR1c3RyeV8ke3NsdWd9Jm89LW1hcmtldGNhcGAsCiAgICAgICAgeyBoZWFkZXJzOiB7ICd1c2VyLWFnZW50JzogVUEgfSwgc2lnbmFsOiBBYm9ydFNpZ25hbC50aW1lb3V0KDUwMDApIH0KICAgICAgKTsKICAgICAgaWYgKCFyZXMub2spIHJldHVybiBudWxsOwogICAgICBjb25zdCBodG1sID0gYXdhaXQgcmVzLnRleHQoKTsKICAgICAgY29uc3QgdGlja2Vyczogc3RyaW5nW10gPSBbXTsKICAgICAgY29uc3QgcmVKc29uID0gLyJ0aWNrZXIiOiIoW0EtWjAtOS5cLV17MSwxMn0pIi9nOwogICAgICBsZXQgbTogUmVnRXhwRXhlY0FycmF5IHwgbnVsbDsKICAgICAgd2hpbGUgKChtID0gcmVKc29uLmV4ZWMoaHRtbCkpICYmIHRpY2tlcnMubGVuZ3RoIDwgMTIpIHsKICAgICAgICBjb25zdCB0ayA9IG1bMV0udG9VcHBlckNhc2UoKTsKICAgICAgICBpZiAodGsgIT09IHQgJiYgIXRpY2tlcnMuaW5jbHVkZXModGspKSB0aWNrZXJzLnB1c2godGspOwogICAgICB9CiAgICAgIGlmICh0aWNrZXJzLmxlbmd0aCA8IDIpIHsKICAgICAgICBjb25zdCByZUxpbmsgPSAvXC9xdW90ZVw/dD0oW0EtWjAtOS5cLV17MSwxMn0pL2c7CiAgICAgICAgd2hpbGUgKChtID0gcmVMaW5rLmV4ZWMoaHRtbCkpICYmIHRpY2tlcnMubGVuZ3RoIDwgMTIpIHsKICAgICAgICAgIGNvbnN0IHRrID0gbVsxXS50b1VwcGVyQ2FzZSgpOwogICAgICAgICAgaWYgKHRrICE9PSB0ICYmICF0aWNrZXJzLmluY2x1ZGVzKHRrKSkgdGlja2Vycy5wdXNoKHRrKTsKICAgICAgICB9CiAgICAgIH0KICAgICAgcmV0dXJuIGF3YWl0IGNvbnRleHRGcm9tUGVlclRpY2tlcnModGlja2Vycywgc2x1ZywgJ2ZpbnZpeicpOwogICAgfSBjYXRjaCB7CiAgICAgIHJldHVybiBudWxsOwogICAgfQogIH0pKCk7CiAgY29uc3QgdHZSb3V0ZSA9IChhc3luYyAoKTogUHJvbWlzZTxTZWN0b3JDb250ZXh0IHwgbnVsbD4gPT4gewogICAgdHJ5IHsKICAgICAgY29uc3QgdHZUaWNrZXJzID0gYXdhaXQgZGlzY292ZXJQZWVyc1ZpYVRyYWRpbmdWaWV3KHQpOwogICAgICBpZiAodHZUaWNrZXJzLmxlbmd0aCA9PT0gMCkgcmV0dXJuIG51bGw7CiAgICAgIHJldHVybiBhd2FpdCBjb250ZXh0RnJvbVBlZXJUaWNrZXJzKHR2VGlja2Vycywgc2x1ZyA/PyAndHYnLCAndHJhZGluZ3ZpZXcnKTsKICAgIH0gY2F0Y2ggewogICAgICByZXR1cm4gbnVsbDsKICAgIH0KICB9KSgpOwogIGNvbnN0IFtmaW5DdHgsIHR2Q3R4XSA9IGF3YWl0IFByb21pc2UuYWxsKFtmaW52aXpSb3V0ZSwgdHZSb3V0ZV0pOwogIHJldHVybiBmaW5DdHggIT0gbnVsbCAmJiBmaW5DdHguZm9yd2FyZFBlICE9IG51bGwKICAgID8gZmluQ3R4CiAgICA6IHR2Q3R4ICE9IG51bGwgJiYgdHZDdHguZm9yd2FyZFBlICE9IG51bGwKICAgICAgPyB0dkN0eAogICAgICA6IChmaW5DdHggPz8gdHZDdHgpOwp9Cg==
+/**
+ * Contexto del sector para el múltiplo justificado (R11,
+ * docs/VALUATION-RULES.md): las medianas de la industria de Finviz
+ * (los pares más grandes por capitalización) — P/E forward, ROIC y
+ * crecimiento de EPS a 5 años. Es la concesión «por sector» del
+ * sistema: lo que el sector vale lo pone el mercado, y la empresa se
+ * compara contra esas medianas con la fórmula justificada.
+ *
+ * Fuente primaria: Finviz (el screener da los pares y la ficha de
+ * cada par trae los tres datos), caché de 6 h por industria. Si el
+ * screener no responde (en producción se observó que Finviz no
+ * sirve esa página a las IP del hosting aunque sí sirve las fichas
+ * individuales), el DESCUBRIMIENTO de pares cae al scanner de
+ * TradingView (industria y ranking por capitalización) y las
+ * medianas se siguen calculando con las fichas de Finviz de cada
+ * par: la base de medición no cambia, solo quién nombra a los
+ * pares. Nunca lanza: sin contexto, el motor cae por su escalera de
+ * respaldo documentada (justificado propio → P/E propio → tabla).
+ *
+ * Enmienda v14 (2026-11-15): el contexto ya no vive en una caché por
+ * instancia — pasa por la foto compartida de
+ * server/sectorCtxSnapshot.ts (memoria + KV, completitud manda),
+ * porque versiones parciales del contexto entre instancias hacían
+ * saltar el Fair Value (caso TMDX: 96,94 ↔ 80,36 con precio quieto).
+ */
+import { cleanTicker } from '../shared/engine/format.js';
+import { fetchFinvizFundamentals } from './finviz.js';
+import { getOrComputeSectorCtx } from './sectorCtxSnapshot.js';
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+export interface SectorContext {
+  /** Mediana del P/E forward de los pares (sin el propio activo). */
+  forwardPe: number | null;
+  /** Mediana del ROIC % de los pares. */
+  roicPct: number | null;
+  /** Mediana del crecimiento de EPS a 5 años % de los pares. */
+  growth5yPct: number | null;
+  /** Cantidad de pares que aportaron al menos un dato. */
+  peersUsed: number;
+  /** Slug de industria de Finviz (ind_...) del que salen las medianas. */
+  industrySlug: string;
+  /** Cómo se descubrieron los pares: el screener de Finviz o, en su
+   *  defecto, el scanner de TradingView (las medianas son siempre de
+   *  fichas Finviz). */
+  source?: 'finviz' | 'tradingview';
+}
+
+const medianOf = (xs: number[]): number | null => {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+const slugCache = new Map<string, { slug: string | null; at: number }>();
+const SLUG_TTL_MS = 6 * 3600 * 1000;
+/** Caché negativa corta SOLO en memoria: sin contexto no se guarda
+ *  foto (enmienda v14) y esto evita re-raspar en cada pedido. */
+const nullCtxCache = new Map<string, number>();
+const NULL_CTX_TTL_MS = 10 * 60 * 1000;
+
+/** Slug de industria de Finviz (ind_...) desde la página de la acción. */
+export async function finvizIndustrySlug(ticker: string): Promise<string | null> {
+  const t = (ticker || '').toUpperCase();
+  const c = slugCache.get(t);
+  if (c && Date.now() - c.at < SLUG_TTL_MS) return c.slug;
+  let slug: string | null = null;
+  try {
+    const res = await fetch(`https://finviz.com/quote.ashx?t=${encodeURIComponent(t)}&p=d`, {
+      headers: { 'user-agent': UA },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const m = html.match(/f=ind_([a-z0-9_]+)/i);
+      slug = m ? m[1] : null;
+    }
+  } catch {
+    slug = null;
+  }
+  slugCache.set(t, { slug, at: Date.now() });
+  return slug;
+}
+
+/**
+ * Medianas sectoriales para un ticker: screener de su industria
+ * ordenado por capitalización, hasta 8 pares (sin el propio activo),
+ * con los fundamentales de Finviz de cada uno. Con menos de 2 pares
+ * con P/E forward válido, el P/E sectorial queda null (la escalera
+ * del motor decide); las demás medianas se devuelven si existen.
+ */
+async function contextFromPeerTickers(
+  tickers: string[],
+  slug: string,
+  source: 'finviz' | 'tradingview'
+): Promise<SectorContext | null> {
+  if (tickers.length === 0) return null;
+  const peerFunds = await Promise.all(
+    tickers.slice(0, 8).map((tk) => fetchFinvizFundamentals(tk).catch(() => null))
+  );
+  const pes: number[] = [];
+  const roics: number[] = [];
+  const growths: number[] = [];
+  let used = 0;
+  for (const f of peerFunds) {
+    if (!f) continue;
+    let any = false;
+    if (f.forwardPe != null && f.forwardPe > 0) { pes.push(f.forwardPe); any = true; }
+    if (f.roicPct != null && Number.isFinite(f.roicPct)) { roics.push(f.roicPct); any = true; }
+    if (f.epsNext5YPct != null && Number.isFinite(f.epsNext5YPct)) { growths.push(f.epsNext5YPct); any = true; }
+    if (any) used++;
+  }
+  if (used === 0) return null;
+  return {
+    forwardPe: pes.length >= 2 ? medianOf(pes) : null,
+    roicPct: medianOf(roics),
+    growth5yPct: medianOf(growths),
+    peersUsed: used,
+    industrySlug: slug,
+    source,
+  };
+}
+
+const tvIndustryCache = new Map<string, { industry: string | null; at: number }>();
+
+/**
+ * Descubrimiento de pares vía el scanner de TradingView (respaldo
+ * cuando el screener de Finviz no responde): la industria TV del
+ * activo y sus miembros más grandes por capitalización. Devuelve
+ * tickers pelados (sin mercado), sin el propio y sin clases
+ * duplicadas de la misma empresa (p. ej. ASML/ASMLF).
+ */
+async function discoverPeersViaTradingView(t: string): Promise<string[]> {
+  try {
+    let industry: string | null = null;
+    const cachedInd = tvIndustryCache.get(t);
+    if (cachedInd && Date.now() - cachedInd.at < SLUG_TTL_MS) {
+      industry = cachedInd.industry;
+    } else {
+      const candidates = ['NASDAQ', 'NYSE', 'AMEX'].map((ex) => `${ex}:${t}`);
+      const res = await fetch('https://scanner.tradingview.com/america/scan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': UA },
+        body: JSON.stringify({ symbols: { tickers: candidates }, columns: ['industry'] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const j: any = await res.json();
+        const row = Array.isArray(j?.data) ? j.data.find((d: any) => typeof d?.d?.[0] === 'string' && d.d[0]) : null;
+        industry = row ? String(row.d[0]) : null;
+      }
+      tvIndustryCache.set(t, { industry, at: Date.now() });
+    }
+    if (!industry) return [];
+    const res = await fetch('https://scanner.tradingview.com/america/scan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'user-agent': UA },
+      body: JSON.stringify({
+        filter: [{ left: 'industry', operation: 'equal', right: industry }],
+        sort: { sortBy: 'market_cap_basic', sortOrder: 'desc' },
+        range: [0, 14],
+        columns: ['name', 'description'],
+        symbols: { query: { types: [] } },
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const j: any = await res.json();
+    const tickers: string[] = [];
+    const seenCompanies = new Set<string>();
+    for (const row of Array.isArray(j?.data) ? j.data : []) {
+      const tk = cleanTicker(String(row?.s ?? '')).toUpperCase();
+      const company = String(row?.d?.[1] ?? tk).toUpperCase();
+      if (!tk || tk === t || tickers.includes(tk) || seenCompanies.has(company)) continue;
+      seenCompanies.add(company);
+      tickers.push(tk);
+      if (tickers.length >= 10) break;
+    }
+    return tickers;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSectorContext(ticker: string): Promise<SectorContext | null> {
+  const t = cleanTicker((ticker || '').toUpperCase()).toUpperCase();
+  if (!t) return null;
+  const slug = await finvizIndustrySlug(t);
+  const cacheKey = slug ?? `tv:${t}`;
+  const nullAt = nullCtxCache.get(cacheKey);
+  if (nullAt && Date.now() - nullAt < NULL_CTX_TTL_MS) return null;
+  // Foto compartida del contexto (enmienda v14): una sola versión
+  // por industria para todas las instancias, con la completitud
+  // mandando sobre la novedad — ver server/sectorCtxSnapshot.ts.
+  const ctx = await getOrComputeSectorCtx(cacheKey, () => computeSectorContext(t, slug));
+  if (ctx == null) nullCtxCache.set(cacheKey, Date.now());
+  return ctx;
+}
+
+async function computeSectorContext(t: string, slug: string | null): Promise<SectorContext | null> {
+  // Las dos rutas de descubrimiento corren EN PARALELO: en el hosting
+  // el screener de Finviz puede colgar hasta el timeout y recién ahí
+  // empezaba el respaldo — en instancias frías el contexto llegaba
+  // tarde o no llegaba. Preferencia determinística al armar el
+  // resultado: manda el contexto del screener si trae P/E forward;
+  // si no, el de TradingView; si ninguno trae P/E, el que exista.
+  const finvizRoute = (async (): Promise<SectorContext | null> => {
+    if (!slug) return null;
+    try {
+      // Finviz rediseñó el screener: la URL canónica pasó a
+      // /screener/stocks con f=industry_<slug> y los tickers vienen en
+      // un JSON embebido ("ticker":"NVDA") en orden de capitalización;
+      // los enlaces pasaron a /quote?t=. Se prueban ambos formatos.
+      const res = await fetch(
+        `https://finviz.com/screener/stocks?v=111&f=industry_${slug}&o=-marketcap`,
+        { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(5000) }
+      );
+      if (!res.ok) return null;
+      const html = await res.text();
+      const tickers: string[] = [];
+      const reJson = /"ticker":"([A-Z0-9.\-]{1,12})"/g;
+      let m: RegExpExecArray | null;
+      while ((m = reJson.exec(html)) && tickers.length < 12) {
+        const tk = m[1].toUpperCase();
+        if (tk !== t && !tickers.includes(tk)) tickers.push(tk);
+      }
+      if (tickers.length < 2) {
+        const reLink = /\/quote\?t=([A-Z0-9.\-]{1,12})/g;
+        while ((m = reLink.exec(html)) && tickers.length < 12) {
+          const tk = m[1].toUpperCase();
+          if (tk !== t && !tickers.includes(tk)) tickers.push(tk);
+        }
+      }
+      return await contextFromPeerTickers(tickers, slug, 'finviz');
+    } catch {
+      return null;
+    }
+  })();
+  const tvRoute = (async (): Promise<SectorContext | null> => {
+    try {
+      const tvTickers = await discoverPeersViaTradingView(t);
+      if (tvTickers.length === 0) return null;
+      return await contextFromPeerTickers(tvTickers, slug ?? 'tv', 'tradingview');
+    } catch {
+      return null;
+    }
+  })();
+  const [finCtx, tvCtx] = await Promise.all([finvizRoute, tvRoute]);
+  return finCtx != null && finCtx.forwardPe != null
+    ? finCtx
+    : tvCtx != null && tvCtx.forwardPe != null
+      ? tvCtx
+      : (finCtx ?? tvCtx);
+}

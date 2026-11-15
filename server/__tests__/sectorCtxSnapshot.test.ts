@@ -1,1 +1,141 @@
-aW1wb3J0IHsgZGVzY3JpYmUsIGV4cGVjdCwgaXQsIHZpIH0gZnJvbSAndml0ZXN0JzsKaW1wb3J0IHsKICBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlciwKICBzZWN0b3JDdHhDb21wbGV0ZW5lc3MsCiAgU0VDVE9SX0NUWF9GUkVTSF9NUywKICBTRUNUT1JfQ1RYX0tFRVBfTVMsCiAgdHlwZSBTZWN0b3JDdHhLdlN0b3JlLAogIHR5cGUgU2VjdG9yQ3R4U25hcHNob3RFbnRyeSwKfSBmcm9tICcuLi9zZWN0b3JDdHhTbmFwc2hvdC5qcyc7CmltcG9ydCB0eXBlIHsgU2VjdG9yQ29udGV4dCB9IGZyb20gJy4uL3NlY3RvckNvbnRleHQuanMnOwoKLy8gU1BFQy0wMDYsIGVubWllbmRhIHYxNDogZWwgY29udGV4dG8gc2VjdG9yaWFsIGVzIFVOQSBmb3RvIHBvcgovLyBpbmR1c3RyaWEgY29tcGFydGlkYSBlbnRyZSBpbnN0YW5jaWFzLCB5IGxhIENPTVBMRVRJVFVEIG1hbmRhCi8vIHNvYnJlIGxhIG5vdmVkYWQg4oCUIGVsIGRlZmVjdG8gZGVsIGNhc28gVE1EWCAoMjAyNi0xMS0xNSkgZnVlIHF1ZQovLyB1bmEgY29ycmlkYSBzaW4gbGEgbWVkaWFuYSBkZSBjcmVjaW1pZW50byBkZWwgc2VjdG9yIGRlcnJ1bWJhYmEKLy8gZWwgYWp1c3RlIGRlbCBtw7psdGlwbG8gKDEsNiDihpIgMSwwKSB5IGVsIEZWIHNhbHRhYmEgOTYsOTQg4oaSIDgwLDM2LgoKY29uc3QgQ09NUExFVEU6IFNlY3RvckNvbnRleHQgPSB7CiAgZm9yd2FyZFBlOiAyMi4wLAogIHJvaWNQY3Q6IDcuMiwKICBncm93dGg1eVBjdDogOS43LAogIHBlZXJzVXNlZDogNiwKICBpbmR1c3RyeVNsdWc6ICdtZWRpY2FsZGV2aWNlcycsCiAgc291cmNlOiAndHJhZGluZ3ZpZXcnLAp9Owpjb25zdCBQQVJUSUFMX05PX0dST1dUSDogU2VjdG9yQ29udGV4dCA9IHsgLi4uQ09NUExFVEUsIGdyb3d0aDV5UGN0OiBudWxsLCBmb3J3YXJkUGU6IDIxLjg3IH07CmNvbnN0IFBBUlRJQUxfTk9fUk9JQzogU2VjdG9yQ29udGV4dCA9IHsgLi4uQ09NUExFVEUsIHJvaWNQY3Q6IG51bGwgfTsKY29uc3QgVDAgPSAxXzcwMF8wMDBfMDAwXzAwMDsKCmZ1bmN0aW9uIGZha2VLdihzZWVkOiBSZWNvcmQ8c3RyaW5nLCBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5PiA9IHt9KSB7CiAgY29uc3Qgc3RvcmUgPSBuZXcgTWFwKE9iamVjdC5lbnRyaWVzKHNlZWQpKTsKICBjb25zdCBrdjogU2VjdG9yQ3R4S3ZTdG9yZSA9IHsKICAgIGdldDogdmkuZm4oYXN5bmMgKGs6IHN0cmluZykgPT4gc3RvcmUuZ2V0KGspID8/IG51bGwpLAogICAgc2V0OiB2aS5mbihhc3luYyAoazogc3RyaW5nLCBlOiBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5KSA9PiB7CiAgICAgIHN0b3JlLnNldChrLCBlKTsKICAgIH0pLAogIH07CiAgcmV0dXJuIHsga3YsIHN0b3JlIH07Cn0KCmRlc2NyaWJlKCdzZWN0b3JDdHhDb21wbGV0ZW5lc3MnLCAoKSA9PiB7CiAgaXQoJ2N1ZW50YSBsb3MgY2FtcG9zIHByZXNlbnRlcycsICgpID0+IHsKICAgIGV4cGVjdChzZWN0b3JDdHhDb21wbGV0ZW5lc3MoQ09NUExFVEUpKS50b0JlKDMpOwogICAgZXhwZWN0KHNlY3RvckN0eENvbXBsZXRlbmVzcyhQQVJUSUFMX05PX0dST1dUSCkpLnRvQmUoMik7CiAgICBleHBlY3Qoc2VjdG9yQ3R4Q29tcGxldGVuZXNzKG51bGwpKS50b0JlKC0xKTsKICB9KTsKfSk7CgpkZXNjcmliZSgnY3JlYXRlU2VjdG9yQ3R4UmVzb2x2ZXIgwrcgZm90byBjb21wYXJ0aWRhIGRlbCBjb250ZXh0byBzZWN0b3JpYWwnLCAoKSA9PiB7CiAgaXQoJ2RlbnRybyBkZSBsYSB2ZW50YW5hIGZyZXNjYSBubyByZWNvbXB1dGEnLCBhc3luYyAoKSA9PiB7CiAgICBjb25zdCB7IGt2IH0gPSBmYWtlS3YoKTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwIH0pOwogICAgY29uc3QgY29tcHV0ZSA9IHZpLmZuKGFzeW5jICgpID0+IENPTVBMRVRFKTsKICAgIGF3YWl0IHJlc29sdmUoJ21lZGljYWxkZXZpY2VzJywgY29tcHV0ZSk7CiAgICBhd2FpdCByZXNvbHZlKCdtZWRpY2FsZGV2aWNlcycsIGNvbXB1dGUpOwogICAgZXhwZWN0KGNvbXB1dGUpLnRvSGF2ZUJlZW5DYWxsZWRUaW1lcygxKTsKICB9KTsKCiAgaXQoJ3VuYSBpbnN0YW5jaWEgbnVldmEgbGVlIGRlbCBLViBlbCBjb250ZXh0byBxdWUgY29tcHV0w7Mgb3RyYScsIGFzeW5jICgpID0+IHsKICAgIGNvbnN0IHsga3YgfSA9IGZha2VLdigpOwogICAgY29uc3QgcjEgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwIH0pOwogICAgYXdhaXQgcjEoJ21lZGljYWxkZXZpY2VzJywgYXN5bmMgKCkgPT4gQ09NUExFVEUpOwogICAgY29uc3QgcjIgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwICsgNjBfMDAwIH0pOwogICAgY29uc3QgY29tcHV0ZTIgPSB2aS5mbihhc3luYyAoKSA9PiBQQVJUSUFMX05PX0dST1dUSCk7CiAgICBhd2FpdCBleHBlY3QocjIoJ21lZGljYWxkZXZpY2VzJywgY29tcHV0ZTIpKS5yZXNvbHZlcy50b0VxdWFsKENPTVBMRVRFKTsKICAgIGV4cGVjdChjb21wdXRlMikubm90LnRvSGF2ZUJlZW5DYWxsZWQoKTsKICB9KTsKCiAgaXQoJ0xBIFJFR0xBIERFTCBDQVNPIFRNRFg6IHVuIGPDs21wdXRvIHBhcmNpYWwgTk8gZGVzcGxhemEgYWwgY29udGV4dG8gY29tcGxldG8gZ3VhcmRhZG8nLCBhc3luYyAoKSA9PiB7CiAgICBjb25zdCB7IGt2IH0gPSBmYWtlS3YoewogICAgICBtZWRpY2FsZGV2aWNlczogeyBjdHg6IENPTVBMRVRFLCBhdDogVDAgfSwKICAgIH0pOwogICAgLy8gTGEgZm90byBndWFyZGFkYSB5YSB2ZW5jacOzIGxhIHZlbnRhbmEgZnJlc2NhOiB0b2NhIHJlY29tcHV0YXIsCiAgICAvLyBwZXJvIGxhIGNvcnJpZGEgbnVldmEgdHJhZSBlbCBjb250ZXh0byBTSU4gY3JlY2ltaWVudG8uCiAgICBjb25zdCByZXNvbHZlID0gY3JlYXRlU2VjdG9yQ3R4UmVzb2x2ZXIoewogICAgICBrdiwKICAgICAgbm93OiAoKSA9PiBUMCArIFNFQ1RPUl9DVFhfRlJFU0hfTVMgKyAxMDAwLAogICAgfSk7CiAgICBjb25zdCBvdXQgPSBhd2FpdCByZXNvbHZlKCdtZWRpY2FsZGV2aWNlcycsIGFzeW5jICgpID0+IFBBUlRJQUxfTk9fR1JPV1RIKTsKICAgIGV4cGVjdChvdXQpLnRvRXF1YWwoQ09NUExFVEUpOwogIH0pOwoKICBpdCgndW4gY8OzbXB1dG8gaWd1YWwgZGUgY29tcGxldG8gU8ONIHJlZW1wbGF6YSBhbCBndWFyZGFkbyB2ZW5jaWRvJywgYXN5bmMgKCkgPT4gewogICAgY29uc3QgeyBrdiB9ID0gZmFrZUt2KHsKICAgICAgbWVkaWNhbGRldmljZXM6IHsgY3R4OiBDT01QTEVURSwgYXQ6IFQwIH0sCiAgICB9KTsKICAgIGNvbnN0IGZyZXNoOiBTZWN0b3JDb250ZXh0ID0geyAuLi5DT01QTEVURSwgZm9yd2FyZFBlOiAyMy41IH07CiAgICBjb25zdCByZXNvbHZlID0gY3JlYXRlU2VjdG9yQ3R4UmVzb2x2ZXIoewogICAgICBrdiwKICAgICAgbm93OiAoKSA9PiBUMCArIFNFQ1RPUl9DVFhfRlJFU0hfTVMgKyAxMDAwLAogICAgfSk7CiAgICBhd2FpdCBleHBlY3QocmVzb2x2ZSgnbWVkaWNhbGRldmljZXMnLCBhc3luYyAoKSA9PiBmcmVzaCkpLnJlc29sdmVzLnRvRXF1YWwoZnJlc2gpOwogIH0pOwoKICBpdCgndW4gY8OzbXB1dG8gbcOhcyBjb21wbGV0byByZWVtcGxhemEgYSB1bmEgZm90byBwYXJjaWFsIGd1YXJkYWRhJywgYXN5bmMgKCkgPT4gewogICAgY29uc3QgeyBrdiB9ID0gZmFrZUt2KHsKICAgICAgbWVkaWNhbGRldmljZXM6IHsgY3R4OiBQQVJUSUFMX05PX1JPSUMsIGF0OiBUMCB9LAogICAgfSk7CiAgICBjb25zdCByZXNvbHZlID0gY3JlYXRlU2VjdG9yQ3R4UmVzb2x2ZXIoewogICAgICBrdiwKICAgICAgbm93OiAoKSA9PiBUMCArIFNFQ1RPUl9DVFhfRlJFU0hfTVMgKyAxMDAwLAogICAgfSk7CiAgICBhd2FpdCBleHBlY3QocmVzb2x2ZSgnbWVkaWNhbGRldmljZXMnLCBhc3luYyAoKSA9PiBDT01QTEVURSkpLnJlc29sdmVzLnRvRXF1YWwoQ09NUExFVEUpOwogIH0pOwoKICBpdCgncGFzYWRhIGxhIHZlbnRhbmEgZGUgZ3VhcmRhICgyNCBoKSwgbWFuZGEgZWwgY8OzbXB1dG8gbnVldm8gYXVucXVlIHNlYSBwYXJjaWFsJywgYXN5bmMgKCkgPT4gewogICAgY29uc3QgeyBrdiB9ID0gZmFrZUt2KHsKICAgICAgbWVkaWNhbGRldmljZXM6IHsgY3R4OiBDT01QTEVURSwgYXQ6IFQwIH0sCiAgICB9KTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcih7CiAgICAgIGt2LAogICAgICBub3c6ICgpID0+IFQwICsgU0VDVE9SX0NUWF9LRUVQX01TICsgMTAwMCwKICAgIH0pOwogICAgYXdhaXQgZXhwZWN0KAogICAgICByZXNvbHZlKCdtZWRpY2FsZGV2aWNlcycsIGFzeW5jICgpID0+IFBBUlRJQUxfTk9fR1JPV1RIKQogICAgKS5yZXNvbHZlcy50b0VxdWFsKFBBUlRJQUxfTk9fR1JPV1RIKTsKICB9KTsKCiAgaXQoJ3NpbiBuYWRhIGd1YXJkYWRvIHkgY8OzbXB1dG8gbnVsbywgZGV2dWVsdmUgbnVsbCBzaW4gZ3VhcmRhciBmb3RvJywgYXN5bmMgKCkgPT4gewogICAgY29uc3QgeyBrdiwgc3RvcmUgfSA9IGZha2VLdigpOwogICAgY29uc3QgcmVzb2x2ZSA9IGNyZWF0ZVNlY3RvckN0eFJlc29sdmVyKHsga3YsIG5vdzogKCkgPT4gVDAgfSk7CiAgICBhd2FpdCBleHBlY3QocmVzb2x2ZSgnbWVkaWNhbGRldmljZXMnLCBhc3luYyAoKSA9PiBudWxsKSkucmVzb2x2ZXMudG9CZU51bGwoKTsKICAgIGV4cGVjdChzdG9yZS5zaXplKS50b0JlKDApOwogIH0pOwoKICBpdCgncGVkaWRvcyBjb25jdXJyZW50ZXMgY29tcGFydGVuIHVuIHNvbG8gY8OzbXB1dG8nLCBhc3luYyAoKSA9PiB7CiAgICBjb25zdCB7IGt2IH0gPSBmYWtlS3YoKTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwIH0pOwogICAgbGV0IHJlbGVhc2UhOiAodjogU2VjdG9yQ29udGV4dCkgPT4gdm9pZDsKICAgIGNvbnN0IGNvbXB1dGUgPSB2aS5mbigKICAgICAgKCkgPT4gbmV3IFByb21pc2U8U2VjdG9yQ29udGV4dD4oKHJlcykgPT4gKHJlbGVhc2UgPSByZXMpKQogICAgKTsKICAgIGNvbnN0IHAxID0gcmVzb2x2ZSgnbWVkaWNhbGRldmljZXMnLCBjb21wdXRlKTsKICAgIGNvbnN0IHAyID0gcmVzb2x2ZSgnbWVkaWNhbGRldmljZXMnLCBjb21wdXRlKTsKICAgIGF3YWl0IG5ldyBQcm9taXNlKChyKSA9PiBzZXRUaW1lb3V0KHIsIDEwKSk7CiAgICByZWxlYXNlKENPTVBMRVRFKTsKICAgIGF3YWl0IGV4cGVjdChwMSkucmVzb2x2ZXMudG9FcXVhbChDT01QTEVURSk7CiAgICBhd2FpdCBleHBlY3QocDIpLnJlc29sdmVzLnRvRXF1YWwoQ09NUExFVEUpOwogICAgZXhwZWN0KGNvbXB1dGUpLnRvSGF2ZUJlZW5DYWxsZWRUaW1lcygxKTsKICB9KTsKfSk7Cg==
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createSectorCtxResolver,
+  sectorCtxCompleteness,
+  SECTOR_CTX_FRESH_MS,
+  SECTOR_CTX_KEEP_MS,
+  type SectorCtxKvStore,
+  type SectorCtxSnapshotEntry,
+} from '../sectorCtxSnapshot.js';
+import type { SectorContext } from '../sectorContext.js';
+
+// SPEC-006, enmienda v14: el contexto sectorial es UNA foto por
+// industria compartida entre instancias, y la COMPLETITUD manda
+// sobre la novedad — el defecto del caso TMDX (2026-11-15) fue que
+// una corrida sin la mediana de crecimiento del sector derrumbaba
+// el ajuste del múltiplo (1,6 → 1,0) y el FV saltaba 96,94 → 80,36.
+
+const COMPLETE: SectorContext = {
+  forwardPe: 22.0,
+  roicPct: 7.2,
+  growth5yPct: 9.7,
+  peersUsed: 6,
+  industrySlug: 'medicaldevices',
+  source: 'tradingview',
+};
+const PARTIAL_NO_GROWTH: SectorContext = { ...COMPLETE, growth5yPct: null, forwardPe: 21.87 };
+const PARTIAL_NO_ROIC: SectorContext = { ...COMPLETE, roicPct: null };
+const T0 = 1_700_000_000_000;
+
+function fakeKv(seed: Record<string, SectorCtxSnapshotEntry> = {}) {
+  const store = new Map(Object.entries(seed));
+  const kv: SectorCtxKvStore = {
+    get: vi.fn(async (k: string) => store.get(k) ?? null),
+    set: vi.fn(async (k: string, e: SectorCtxSnapshotEntry) => {
+      store.set(k, e);
+    }),
+  };
+  return { kv, store };
+}
+
+describe('sectorCtxCompleteness', () => {
+  it('cuenta los campos presentes', () => {
+    expect(sectorCtxCompleteness(COMPLETE)).toBe(3);
+    expect(sectorCtxCompleteness(PARTIAL_NO_GROWTH)).toBe(2);
+    expect(sectorCtxCompleteness(null)).toBe(-1);
+  });
+});
+
+describe('createSectorCtxResolver · foto compartida del contexto sectorial', () => {
+  it('dentro de la ventana fresca no recomputa', async () => {
+    const { kv } = fakeKv();
+    const resolve = createSectorCtxResolver({ kv, now: () => T0 });
+    const compute = vi.fn(async () => COMPLETE);
+    await resolve('medicaldevices', compute);
+    await resolve('medicaldevices', compute);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it('una instancia nueva lee del KV el contexto que computó otra', async () => {
+    const { kv } = fakeKv();
+    const r1 = createSectorCtxResolver({ kv, now: () => T0 });
+    await r1('medicaldevices', async () => COMPLETE);
+    const r2 = createSectorCtxResolver({ kv, now: () => T0 + 60_000 });
+    const compute2 = vi.fn(async () => PARTIAL_NO_GROWTH);
+    await expect(r2('medicaldevices', compute2)).resolves.toEqual(COMPLETE);
+    expect(compute2).not.toHaveBeenCalled();
+  });
+
+  it('LA REGLA DEL CASO TMDX: un cómputo parcial NO desplaza al contexto completo guardado', async () => {
+    const { kv } = fakeKv({
+      medicaldevices: { ctx: COMPLETE, at: T0 },
+    });
+    // La foto guardada ya venció la ventana fresca: toca recomputar,
+    // pero la corrida nueva trae el contexto SIN crecimiento.
+    const resolve = createSectorCtxResolver({
+      kv,
+      now: () => T0 + SECTOR_CTX_FRESH_MS + 1000,
+    });
+    const out = await resolve('medicaldevices', async () => PARTIAL_NO_GROWTH);
+    expect(out).toEqual(COMPLETE);
+  });
+
+  it('un cómputo igual de completo SÍ reemplaza al guardado vencido', async () => {
+    const { kv } = fakeKv({
+      medicaldevices: { ctx: COMPLETE, at: T0 },
+    });
+    const fresh: SectorContext = { ...COMPLETE, forwardPe: 23.5 };
+    const resolve = createSectorCtxResolver({
+      kv,
+      now: () => T0 + SECTOR_CTX_FRESH_MS + 1000,
+    });
+    await expect(resolve('medicaldevices', async () => fresh)).resolves.toEqual(fresh);
+  });
+
+  it('un cómputo más completo reemplaza a una foto parcial guardada', async () => {
+    const { kv } = fakeKv({
+      medicaldevices: { ctx: PARTIAL_NO_ROIC, at: T0 },
+    });
+    const resolve = createSectorCtxResolver({
+      kv,
+      now: () => T0 + SECTOR_CTX_FRESH_MS + 1000,
+    });
+    await expect(resolve('medicaldevices', async () => COMPLETE)).resolves.toEqual(COMPLETE);
+  });
+
+  it('pasada la ventana de guarda (24 h), manda el cómputo nuevo aunque sea parcial', async () => {
+    const { kv } = fakeKv({
+      medicaldevices: { ctx: COMPLETE, at: T0 },
+    });
+    const resolve = createSectorCtxResolver({
+      kv,
+      now: () => T0 + SECTOR_CTX_KEEP_MS + 1000,
+    });
+    await expect(
+      resolve('medicaldevices', async () => PARTIAL_NO_GROWTH)
+    ).resolves.toEqual(PARTIAL_NO_GROWTH);
+  });
+
+  it('sin nada guardado y cómputo nulo, devuelve null sin guardar foto', async () => {
+    const { kv, store } = fakeKv();
+    const resolve = createSectorCtxResolver({ kv, now: () => T0 });
+    await expect(resolve('medicaldevices', async () => null)).resolves.toBeNull();
+    expect(store.size).toBe(0);
+  });
+
+  it('pedidos concurrentes comparten un solo cómputo', async () => {
+    const { kv } = fakeKv();
+    const resolve = createSectorCtxResolver({ kv, now: () => T0 });
+    let release!: (v: SectorContext) => void;
+    const compute = vi.fn(
+      () => new Promise<SectorContext>((res) => (release = res))
+    );
+    const p1 = resolve('medicaldevices', compute);
+    const p2 = resolve('medicaldevices', compute);
+    await new Promise((r) => setTimeout(r, 10));
+    release(COMPLETE);
+    await expect(p1).resolves.toEqual(COMPLETE);
+    await expect(p2).resolves.toEqual(COMPLETE);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+});

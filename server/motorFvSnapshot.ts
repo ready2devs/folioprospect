@@ -1,1 +1,188 @@
-LyoqCiAqIFNuYXBzaG90IENPTVBBUlRJRE8gZGVsIEZhaXIgVmFsdWUgZGVsIG1vdG9yIHBvciBhY3Rpdm8gKFNQRUMtMDA2LAogKiBlbm1pZW5kYSB2MTMpLgogKgogKiBFbCBkZWZlY3RvIHF1ZSBjb3JyaWdlOiBsYSBmaWNoYSAoL2FwaS9hc3NldCkgeSBsYXMgc2lnbGFzIGRlIGxhCiAqIHdhdGNobGlzdCAoL2FwaS93YXRjaGxpc3QvdmVyZGljdHMpIGxsYW1hYmFuIENBREEgVU5BIHBvciBzdSBsYWRvIGEKICogYnVpbGRBc3NldE9wdGltaXplckZ2LCBlbiBtb21lbnRvcyBkaXN0aW50b3MgeSDigJQgZW4gVmVyY2VsIOKAlCBzb2JyZQogKiBpbnN0YW5jaWFzIHNlcnZlcmxlc3MgZGlzdGludGFzLCBjYWRhIHVuYSBjb24gc3VzIGNhY2jDqXMgZGUgZnVlbnRlcwogKiAoRmludml6LCBjb250ZXh0byBzZWN0b3JpYWwsIFRyYWRpbmdWaWV3LCBZYWhvbykgZW4gdW4gZXN0YWRvCiAqIGRpc3RpbnRvLiBFbCBwaXBlbGluZSBkZSBGViBubyBlcyBkZXRlcm1pbsOtc3RpY28gZW50cmUgY29ycmlkYXM6CiAqIHVuYSBmdWVudGUgcXVlIHRhcmRhIG8gY2FlIGNhbWJpYSBsYXMgcGF0YXMgcXVlIGZvcm1hbiBlbCBGViB5IGVsCiAqIG7Dum1lcm8gc2FsdGEgKGNhc28gcmVhbCAyMDI2LTExLTE1OiBUTURYIMKrVsK7IGVuIGxhIHdhdGNobGlzdCBjb24gbGEKICogZmljaGEgZW4gTUFOVEVORVIgeSBGViBVUyQ5Niw5NDsgTVJWTCwgUEREIHkgQUFPSSB0YW1iacOpbiBkaWZpcmllcm9uCiAqIGVudHJlIGxvcyBkb3MgZW5kcG9pbnRzIGVuIGxhIG1pc21hIGF1ZGl0b3LDrWEsIHkgc2UgZGllcm9uIHZ1ZWx0YQogKiBtaW51dG9zIGRlc3B1w6lzKS4gTGEgZW5taWVuZGEgdjEwIGhhYsOtYSB1bmlmaWNhZG8gbGEgUkVHTEEgeSBsYQogKiB2ZW50YW5hIGRlIGNhY2jDqSwgcGVybyBubyBsYSBDT01QVVRBQ0nDk046IGRvcyBjb3JyaWRhcyBzZXBhcmFkYXMKICogcG9kw61hbiBwcm9kdWNpciBkb3MgRlYgZGlzdGludG9zIHBhcmEgZWwgbWlzbW8gYWN0aXZvLgogKgogKiBBaG9yYSBoYXkgVU5BIFNPTEEgY29tcHV0YWNpw7NuIHBvciBhY3Rpdm8geSB2ZW50YW5hLCBjb21wYXJ0aWRhOgogKiBlbCBwcmltZXIgY8OhbGN1bG8gc2UgZ3VhcmRhIGVuIG1lbW9yaWEgZGUgbGEgaW5zdGFuY2lhIHkgZW4gZWwgS1YKICogZHVyYWJsZSAoVXBzdGFzaCwgY2xhdmUgcHJvcGlhIHBvciBzw61tYm9sbywgY29uIHZlbmNpbWllbnRvKSB5CiAqIEFNQk9TIGVuZHBvaW50cyBsbyBsZWVuLiBEZW50cm8gZGUgbGEgdmVudGFuYSwgbGEgZmljaGEgeSBsYSBzaWdsYQogKiBzYWxlbiBkZWwgbWlzbW8gRlYgc8OtIG8gc8OtLCBlbiBjdWFscXVpZXIgaW5zdGFuY2lhOyBlbCB2ZXJlZGljdG8gc2UKICogZGVyaXZhIGVuIGNhZGEgcGVkaWRvIGNvbiBlbCBwcmVjaW8gdml2byB5IGVzZSBGViBzbmFwc2hvdC4KICoKICogU2luIEtWIGNvbmZpZ3VyYWRvIChkZXNhcnJvbGxvIGxvY2FsKSBtYW5kYSBsYSBtZW1vcmlhIGRlIGxhCiAqIGluc3RhbmNpYSwgcXVlIGlndWFsIHVuaWZpY2EgbG9zIGRvcyBlbmRwb2ludHMgZGVsIHByb2Nlc28uCiAqIE51bmNhIHNlIGNhY2hlYSB1biByZXN1bHRhZG8gbnVsbzogc2kgZWwgbW90b3Igbm8gcHJvZHVqbyBGViwgZWwKICogcHLDs3hpbW8gcGVkaWRvIHJlaW50ZW50YSBlbiB2ZXogZGUgY29uZ2VsYXIgZWwgwqtzaW4gZGF0b8K7LgogKi8KaW1wb3J0IHR5cGUgeyBNb3RvckZ2VmlldyB9IGZyb20gJy4uL3NoYXJlZC9lbmdpbmUvaW5kZXguanMnOwoKLyoqIFZlbnRhbmEgZGVsIHNuYXBzaG90OiBsYSBtaXNtYSBkZWwgcmVzdWx0YWRvIGRlbCBvcHRpbWl6YWRvcgogKiAgKGBDQUNIRV9NU2AgZW4gc2VydmVyL29wdGltaXplckRhdGEudHMpLiAqLwpleHBvcnQgY29uc3QgTU9UT1JfRlZfVFRMX01TID0gMTUgKiA2MCAqIDEwMDA7CgpleHBvcnQgaW50ZXJmYWNlIE1vdG9yRnZTbmFwc2hvdEVudHJ5IHsKICB2aWV3OiBNb3RvckZ2VmlldzsKICBhdDogbnVtYmVyOwp9CgpmdW5jdGlvbiBpc1ZhbGlkVmlldyh2OiBhbnkpOiB2IGlzIE1vdG9yRnZWaWV3IHsKICByZXR1cm4gKAogICAgdiAhPSBudWxsICYmCiAgICB0eXBlb2YgdiA9PT0gJ29iamVjdCcgJiYKICAgIE51bWJlci5pc0Zpbml0ZSh2LmZ2KSAmJiB2LmZ2ID4gMCAmJgogICAgTnVtYmVyLmlzRmluaXRlKHYuZnZQZXNpbWlzdGEpICYmIHYuZnZQZXNpbWlzdGEgPiAwICYmCiAgICBOdW1iZXIuaXNGaW5pdGUodi5mdk9wdGltaXN0YSkgJiYgdi5mdk9wdGltaXN0YSA+IDAKICApOwp9CgovKiogQ2FjaMOpIEVOIE1FTU9SSUEgZGVsIHNuYXBzaG90ICh1bmEgaW5zdGFuY2lhKS4gTG8gdmVuY2lkbyBzZSBwb2RhCiAqICBhbCBsZWVyLiAqLwpleHBvcnQgY2xhc3MgTW90b3JGdk1lbW9yeUNhY2hlIHsKICBwcml2YXRlIHJlYWRvbmx5IGVudHJpZXMgPSBuZXcgTWFwPHN0cmluZywgTW90b3JGdlNuYXBzaG90RW50cnk+KCk7CgogIGNvbnN0cnVjdG9yKHByaXZhdGUgcmVhZG9ubHkgdHRsTXM6IG51bWJlciA9IE1PVE9SX0ZWX1RUTF9NUykge30KCiAgZ2V0KHN5bWJvbDogc3RyaW5nLCBub3c6IG51bWJlciA9IERhdGUubm93KCkpOiBNb3RvckZ2VmlldyB8IG51bGwgewogICAgY29uc3QgZSA9IHRoaXMuZW50cmllcy5nZXQoc3ltYm9sKTsKICAgIGlmICghZSkgcmV0dXJuIG51bGw7CiAgICBpZiAobm93IC0gZS5hdCA+PSB0aGlzLnR0bE1zKSB7CiAgICAgIHRoaXMuZW50cmllcy5kZWxldGUoc3ltYm9sKTsKICAgICAgcmV0dXJuIG51bGw7CiAgICB9CiAgICByZXR1cm4gZS52aWV3OwogIH0KCiAgc2V0KHN5bWJvbDogc3RyaW5nLCB2aWV3OiBNb3RvckZ2Vmlldywgbm93OiBudW1iZXIgPSBEYXRlLm5vdygpKTogdm9pZCB7CiAgICB0aGlzLmVudHJpZXMuc2V0KHN5bWJvbCwgeyB2aWV3LCBhdDogbm93IH0pOwogIH0KCiAgZ2V0IHNpemUoKTogbnVtYmVyIHsKICAgIHJldHVybiB0aGlzLmVudHJpZXMuc2l6ZTsKICB9Cn0KCi8qKiBBbG1hY8OpbiBkdXJhYmxlIG3DrW5pbW8gKFVwc3Rhc2ggUmVkaXMgdsOtYSBSRVNULCBjb21vIHNlcnZlci9kYi50cykuICovCmV4cG9ydCBpbnRlcmZhY2UgTW90b3JGdkt2U3RvcmUgewogIGdldChzeW1ib2w6IHN0cmluZyk6IFByb21pc2U8TW90b3JGdlNuYXBzaG90RW50cnkgfCBudWxsPjsKICBzZXQoc3ltYm9sOiBzdHJpbmcsIGVudHJ5OiBNb3RvckZ2U25hcHNob3RFbnRyeSk6IFByb21pc2U8dm9pZD47Cn0KCmNvbnN0IEtWX1VSTCA9IHByb2Nlc3MuZW52LktWX1JFU1RfQVBJX1VSTCB8fCBwcm9jZXNzLmVudi5VUFNUQVNIX1JFRElTX1JFU1RfVVJMIHx8ICcnOwpjb25zdCBLVl9UT0tFTiA9IHByb2Nlc3MuZW52LktWX1JFU1RfQVBJX1RPS0VOIHx8IHByb2Nlc3MuZW52LlVQU1RBU0hfUkVESVNfUkVTVF9UT0tFTiB8fCAnJzsKCmNvbnN0IGt2S2V5ID0gKHN5bWJvbDogc3RyaW5nKTogc3RyaW5nID0+IGBmb2xpb3Byb3NwZWN0OmZ2OiR7c3ltYm9sfWA7CgovKiogS1YgcmVhbDsgc2luIGNyZWRlbmNpYWxlcywgdW4gYWxtYWPDqW4gdmFjw61vIChzb2xvIG1lbW9yaWEpLiAqLwpleHBvcnQgY29uc3QgbW90b3JGdkt2U3RvcmU6IE1vdG9yRnZLdlN0b3JlID0gewogIGFzeW5jIGdldChzeW1ib2wpIHsKICAgIGlmICghS1ZfVVJMIHx8ICFLVl9UT0tFTikgcmV0dXJuIG51bGw7CiAgICB0cnkgewogICAgICBjb25zdCByZXMgPSBhd2FpdCBmZXRjaChgJHtLVl9VUkx9L2dldC8ke2VuY29kZVVSSUNvbXBvbmVudChrdktleShzeW1ib2wpKX1gLCB7CiAgICAgICAgaGVhZGVyczogeyBBdXRob3JpemF0aW9uOiBgQmVhcmVyICR7S1ZfVE9LRU59YCB9LAogICAgICAgIHNpZ25hbDogQWJvcnRTaWduYWwudGltZW91dCg1MDAwKSwKICAgICAgfSk7CiAgICAgIGlmICghcmVzLm9rKSByZXR1cm4gbnVsbDsKICAgICAgY29uc3QgZGF0YTogYW55ID0gYXdhaXQgcmVzLmpzb24oKTsKICAgICAgaWYgKCFkYXRhPy5yZXN1bHQpIHJldHVybiBudWxsOwogICAgICBjb25zdCBwYXJzZWQgPSB0eXBlb2YgZGF0YS5yZXN1bHQgPT09ICdzdHJpbmcnID8gSlNPTi5wYXJzZShkYXRhLnJlc3VsdCkgOiBkYXRhLnJlc3VsdDsKICAgICAgaWYgKCFwYXJzZWQgfHwgdHlwZW9mIHBhcnNlZC5hdCAhPT0gJ251bWJlcicgfHwgIWlzVmFsaWRWaWV3KHBhcnNlZC52aWV3KSkgcmV0dXJuIG51bGw7CiAgICAgIHJldHVybiBwYXJzZWQgYXMgTW90b3JGdlNuYXBzaG90RW50cnk7CiAgICB9IGNhdGNoIHsKICAgICAgcmV0dXJuIG51bGw7CiAgICB9CiAgfSwKICBhc3luYyBzZXQoc3ltYm9sLCBlbnRyeSkgewogICAgaWYgKCFLVl9VUkwgfHwgIUtWX1RPS0VOKSByZXR1cm47CiAgICBjb25zdCB2YWx1ZSA9IEpTT04uc3RyaW5naWZ5KGVudHJ5KTsKICAgIHRyeSB7CiAgICAgIC8vIENvbiB2ZW5jaW1pZW50byBlbiBlbCBwcm9waW8gS1YgKEVYIGVuIHNlZ3VuZG9zLCA9IFRUTCk6IGxhCiAgICAgIC8vIGNsYXZlIHZpZWphIG5vIHNvYnJldml2ZSBhIGxhIHZlbnRhbmEgYXVucXVlIG5hZGllIGxhIGxlYS4KICAgICAgY29uc3QgcmVzID0gYXdhaXQgZmV0Y2goCiAgICAgICAgYCR7S1ZfVVJMfS9zZXQvJHtlbmNvZGVVUklDb21wb25lbnQoa3ZLZXkoc3ltYm9sKSl9LyR7ZW5jb2RlVVJJQ29tcG9uZW50KHZhbHVlKX0vRVgvJHtNYXRoLmZsb29yKE1PVE9SX0ZWX1RUTF9NUyAvIDEwMDApfWAsCiAgICAgICAgeyBtZXRob2Q6ICdQT1NUJywgaGVhZGVyczogeyBBdXRob3JpemF0aW9uOiBgQmVhcmVyICR7S1ZfVE9LRU59YCB9LCBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoNTAwMCkgfQogICAgICApOwogICAgICBpZiAocmVzLm9rKSByZXR1cm47CiAgICAgIC8vIFJlc3BhbGRvIHNpbiBFWCAobGEgZnJlc2N1cmEgbGEganV6Z2EgZWwgYGF0YCBhbCBsZWVyKS4KICAgICAgYXdhaXQgZmV0Y2goYCR7S1ZfVVJMfS9zZXQvJHtlbmNvZGVVUklDb21wb25lbnQoa3ZLZXkoc3ltYm9sKSl9YCwgewogICAgICAgIG1ldGhvZDogJ1BPU1QnLAogICAgICAgIGhlYWRlcnM6IHsgQXV0aG9yaXphdGlvbjogYEJlYXJlciAke0tWX1RPS0VOfWAgfSwKICAgICAgICBib2R5OiB2YWx1ZSwKICAgICAgICBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoNTAwMCksCiAgICAgIH0pOwogICAgfSBjYXRjaCB7CiAgICAgIC8vIGJlc3QgZWZmb3J0OiBsYSBtZW1vcmlhIGRlIGxhIGluc3RhbmNpYSB5YSB0aWVuZSBlbCBzbmFwc2hvdAogICAgfQogIH0sCn07CgpleHBvcnQgaW50ZXJmYWNlIE1vdG9yRnZSZXNvbHZlckRlcHMgewogIG1lbW9yeT86IE1vdG9yRnZNZW1vcnlDYWNoZTsKICBrdj86IE1vdG9yRnZLdlN0b3JlOwogIHR0bE1zPzogbnVtYmVyOwogIG5vdz86ICgpID0+IG51bWJlcjsKfQoKLyoqCiAqIFJlc3VlbHZlIGVsIEZWIGRlbCBtb3RvciBkZSB1biBhY3Rpdm8gZGVzZGUgZWwgc25hcHNob3QgY29tcGFydGlkbzoKICogbWVtb3JpYSDihpIgS1YgZHVyYWJsZSDihpIgY29tcHV0YWNpw7NuICh1bmEgc29sYSBwb3Igc8OtbWJvbG8geSB2ZW50YW5hCiAqIGVuIGxhIGluc3RhbmNpYTogbG9zIHBlZGlkb3MgY29uY3VycmVudGVzIGNvbXBhcnRlbiBlbCBjw6FsY3VsbyBlbgogKiBjdXJzbykuIGBjb21wdXRlYCBkZXZ1ZWx2ZSBsYSB2aXN0YSBkZWwgbW90b3IgbyBudWxsIChubyBzZQogKiBjYWNoZWEpLiBMbyBjb21wdXRhZG8gc2UgZ3VhcmRhIGVuIG1lbW9yaWEgeSBlbiBLVi4KICovCmV4cG9ydCBmdW5jdGlvbiBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIoZGVwczogTW90b3JGdlJlc29sdmVyRGVwcyA9IHt9KSB7CiAgY29uc3QgbWVtb3J5ID0gZGVwcy5tZW1vcnkgPz8gbmV3IE1vdG9yRnZNZW1vcnlDYWNoZShkZXBzLnR0bE1zID8/IE1PVE9SX0ZWX1RUTF9NUyk7CiAgY29uc3Qga3YgPSBkZXBzLmt2ID8/IG1vdG9yRnZLdlN0b3JlOwogIGNvbnN0IHR0bE1zID0gZGVwcy50dGxNcyA/PyBNT1RPUl9GVl9UVExfTVM7CiAgY29uc3Qgbm93ID0gZGVwcy5ub3cgPz8gKCgpID0+IERhdGUubm93KCkpOwogIGNvbnN0IGluZmxpZ2h0ID0gbmV3IE1hcDxzdHJpbmcsIFByb21pc2U8TW90b3JGdlZpZXcgfCBudWxsPj4oKTsKCiAgcmV0dXJuIGFzeW5jIGZ1bmN0aW9uIHJlc29sdmVNb3RvckZ2KAogICAgc3ltYm9sOiBzdHJpbmcsCiAgICBjb21wdXRlOiAoKSA9PiBQcm9taXNlPE1vdG9yRnZWaWV3IHwgbnVsbD4KICApOiBQcm9taXNlPE1vdG9yRnZWaWV3IHwgbnVsbD4gewogICAgY29uc3QgaGl0ID0gbWVtb3J5LmdldChzeW1ib2wsIG5vdygpKTsKICAgIGlmIChoaXQpIHJldHVybiBoaXQ7CgogICAgY29uc3Qgc3RvcmVkID0gYXdhaXQga3YuZ2V0KHN5bWJvbCkuY2F0Y2goKCkgPT4gbnVsbCk7CiAgICBpZiAoc3RvcmVkICYmIG5vdygpIC0gc3RvcmVkLmF0IDwgdHRsTXMgJiYgaXNWYWxpZFZpZXcoc3RvcmVkLnZpZXcpKSB7CiAgICAgIG1lbW9yeS5zZXQoc3ltYm9sLCBzdG9yZWQudmlldywgc3RvcmVkLmF0KTsKICAgICAgcmV0dXJuIHN0b3JlZC52aWV3OwogICAgfQoKICAgIGNvbnN0IHJ1bm5pbmcgPSBpbmZsaWdodC5nZXQoc3ltYm9sKTsKICAgIGlmIChydW5uaW5nKSByZXR1cm4gcnVubmluZzsKCiAgICBjb25zdCBwID0gKGFzeW5jICgpOiBQcm9taXNlPE1vdG9yRnZWaWV3IHwgbnVsbD4gPT4gewogICAgICB0cnkgewogICAgICAgIGNvbnN0IHZpZXcgPSBhd2FpdCBjb21wdXRlKCk7CiAgICAgICAgaWYgKCF2aWV3IHx8ICFpc1ZhbGlkVmlldyh2aWV3KSkgcmV0dXJuIG51bGw7CiAgICAgICAgY29uc3QgYXQgPSBub3coKTsKICAgICAgICBtZW1vcnkuc2V0KHN5bWJvbCwgdmlldywgYXQpOwogICAgICAgIGF3YWl0IGt2LnNldChzeW1ib2wsIHsgdmlldywgYXQgfSkuY2F0Y2goKCkgPT4gdW5kZWZpbmVkKTsKICAgICAgICByZXR1cm4gdmlldzsKICAgICAgfSBmaW5hbGx5IHsKICAgICAgICBpbmZsaWdodC5kZWxldGUoc3ltYm9sKTsKICAgICAgfQogICAgfSkoKTsKICAgIGluZmxpZ2h0LnNldChzeW1ib2wsIHApOwogICAgcmV0dXJuIHA7CiAgfTsKfQoKLyoqIFJlc29sdmVkb3Igc2luZ2xldG9uIGRlbCBzZXJ2aWRvcjogbG8gY29tcGFydGVuIC9hcGkvYXNzZXQgeQogKiAgL2FwaS93YXRjaGxpc3QvdmVyZGljdHMgKHNlcnZlci9yb3V0ZXMudHMpLiAqLwpleHBvcnQgY29uc3QgZ2V0T3JDb21wdXRlTW90b3JGdiA9IGNyZWF0ZU1vdG9yRnZSZXNvbHZlcigpOwo=
+/**
+ * Snapshot COMPARTIDO del Fair Value del motor por activo (SPEC-006,
+ * enmienda v13).
+ *
+ * El defecto que corrige: la ficha (/api/asset) y las siglas de la
+ * watchlist (/api/watchlist/verdicts) llamaban CADA UNA por su lado a
+ * buildAssetOptimizerFv, en momentos distintos y — en Vercel — sobre
+ * instancias serverless distintas, cada una con sus cachés de fuentes
+ * (Finviz, contexto sectorial, TradingView, Yahoo) en un estado
+ * distinto. El pipeline de FV no es determinístico entre corridas:
+ * una fuente que tarda o cae cambia las patas que forman el FV y el
+ * número salta (caso real 2026-11-15: TMDX «V» en la watchlist con la
+ * ficha en MANTENER y FV US$96,94; MRVL, PDD y AAOI también difirieron
+ * entre los dos endpoints en la misma auditoría, y se dieron vuelta
+ * minutos después). La enmienda v10 había unificado la REGLA y la
+ * ventana de caché, pero no la COMPUTACIÓN: dos corridas separadas
+ * podían producir dos FV distintos para el mismo activo.
+ *
+ * Ahora hay UNA SOLA computación por activo y ventana, compartida:
+ * el primer cálculo se guarda en memoria de la instancia y en el KV
+ * durable (Upstash, clave propia por símbolo, con vencimiento) y
+ * AMBOS endpoints lo leen. Dentro de la ventana, la ficha y la sigla
+ * salen del mismo FV sí o sí, en cualquier instancia; el veredicto se
+ * deriva en cada pedido con el precio vivo y ese FV snapshot.
+ *
+ * Sin KV configurado (desarrollo local) manda la memoria de la
+ * instancia, que igual unifica los dos endpoints del proceso.
+ * Nunca se cachea un resultado nulo: si el motor no produjo FV, el
+ * próximo pedido reintenta en vez de congelar el «sin dato».
+ */
+import type { MotorFvView } from '../shared/engine/index.js';
+
+/** Ventana del snapshot: la misma del resultado del optimizador
+ *  (`CACHE_MS` en server/optimizerData.ts). */
+export const MOTOR_FV_TTL_MS = 15 * 60 * 1000;
+
+export interface MotorFvSnapshotEntry {
+  view: MotorFvView;
+  at: number;
+}
+
+function isValidView(v: any): v is MotorFvView {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    Number.isFinite(v.fv) && v.fv > 0 &&
+    Number.isFinite(v.fvPesimista) && v.fvPesimista > 0 &&
+    Number.isFinite(v.fvOptimista) && v.fvOptimista > 0
+  );
+}
+
+/** Caché EN MEMORIA del snapshot (una instancia). Lo vencido se poda
+ *  al leer. */
+export class MotorFvMemoryCache {
+  private readonly entries = new Map<string, MotorFvSnapshotEntry>();
+
+  constructor(private readonly ttlMs: number = MOTOR_FV_TTL_MS) {}
+
+  get(symbol: string, now: number = Date.now()): MotorFvView | null {
+    const e = this.entries.get(symbol);
+    if (!e) return null;
+    if (now - e.at >= this.ttlMs) {
+      this.entries.delete(symbol);
+      return null;
+    }
+    return e.view;
+  }
+
+  set(symbol: string, view: MotorFvView, now: number = Date.now()): void {
+    this.entries.set(symbol, { view, at: now });
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+/** Almacén durable mínimo (Upstash Redis vía REST, como server/db.ts). */
+export interface MotorFvKvStore {
+  get(symbol: string): Promise<MotorFvSnapshotEntry | null>;
+  set(symbol: string, entry: MotorFvSnapshotEntry): Promise<void>;
+}
+
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+
+const kvKey = (symbol: string): string => `folioprospect:fv:${symbol}`;
+
+/** KV real; sin credenciales, un almacén vacío (solo memoria). */
+export const motorFvKvStore: MotorFvKvStore = {
+  async get(symbol) {
+    if (!KV_URL || !KV_TOKEN) return null;
+    try {
+      const res = await fetch(`${KV_URL}/get/${encodeURIComponent(kvKey(symbol))}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const data: any = await res.json();
+      if (!data?.result) return null;
+      const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+      if (!parsed || typeof parsed.at !== 'number' || !isValidView(parsed.view)) return null;
+      return parsed as MotorFvSnapshotEntry;
+    } catch {
+      return null;
+    }
+  },
+  async set(symbol, entry) {
+    if (!KV_URL || !KV_TOKEN) return;
+    const value = JSON.stringify(entry);
+    try {
+      // Con vencimiento en el propio KV (EX en segundos, = TTL): la
+      // clave vieja no sobrevive a la ventana aunque nadie la lea.
+      const res = await fetch(
+        `${KV_URL}/set/${encodeURIComponent(kvKey(symbol))}/${encodeURIComponent(value)}/EX/${Math.floor(MOTOR_FV_TTL_MS / 1000)}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${KV_TOKEN}` }, signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) return;
+      // Respaldo sin EX (la frescura la juzga el `at` al leer).
+      await fetch(`${KV_URL}/set/${encodeURIComponent(kvKey(symbol))}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${KV_TOKEN}` },
+        body: value,
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      // best effort: la memoria de la instancia ya tiene el snapshot
+    }
+  },
+};
+
+export interface MotorFvResolverDeps {
+  memory?: MotorFvMemoryCache;
+  kv?: MotorFvKvStore;
+  ttlMs?: number;
+  now?: () => number;
+}
+
+/**
+ * Resuelve el FV del motor de un activo desde el snapshot compartido:
+ * memoria → KV durable → computación (una sola por símbolo y ventana
+ * en la instancia: los pedidos concurrentes comparten el cálculo en
+ * curso). `compute` devuelve la vista del motor o null (no se
+ * cachea). Lo computado se guarda en memoria y en KV.
+ */
+export function createMotorFvResolver(deps: MotorFvResolverDeps = {}) {
+  const memory = deps.memory ?? new MotorFvMemoryCache(deps.ttlMs ?? MOTOR_FV_TTL_MS);
+  const kv = deps.kv ?? motorFvKvStore;
+  const ttlMs = deps.ttlMs ?? MOTOR_FV_TTL_MS;
+  const now = deps.now ?? (() => Date.now());
+  const inflight = new Map<string, Promise<MotorFvView | null>>();
+
+  return async function resolveMotorFv(
+    symbol: string,
+    compute: () => Promise<MotorFvView | null>
+  ): Promise<MotorFvView | null> {
+    const hit = memory.get(symbol, now());
+    if (hit) return hit;
+
+    const stored = await kv.get(symbol).catch(() => null);
+    if (stored && now() - stored.at < ttlMs && isValidView(stored.view)) {
+      memory.set(symbol, stored.view, stored.at);
+      return stored.view;
+    }
+
+    const running = inflight.get(symbol);
+    if (running) return running;
+
+    const p = (async (): Promise<MotorFvView | null> => {
+      try {
+        const view = await compute();
+        if (!view || !isValidView(view)) return null;
+        const at = now();
+        memory.set(symbol, view, at);
+        await kv.set(symbol, { view, at }).catch(() => undefined);
+        return view;
+      } finally {
+        inflight.delete(symbol);
+      }
+    })();
+    inflight.set(symbol, p);
+    return p;
+  };
+}
+
+/** Resolvedor singleton del servidor: lo comparten /api/asset y
+ *  /api/watchlist/verdicts (server/routes.ts). */
+export const getOrComputeMotorFv = createMotorFvResolver();

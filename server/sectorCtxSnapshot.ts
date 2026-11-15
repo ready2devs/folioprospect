@@ -1,1 +1,217 @@
-LyoqCiAqIEZvdG8gY29tcGFydGlkYSBkZWwgQ09OVEVYVE8gU0VDVE9SSUFMIChTUEVDLTAwNiwgZW5taWVuZGEgdjE0KS4KICoKICogRWwgY29udGV4dG8gKG1lZGlhbmFzIGRlIFAvRSBmb3J3YXJkLCBST0lDIHkgY3JlY2ltaWVudG8gZGUgbG9zCiAqIHBhcmVzIGRlIGxhIGluZHVzdHJpYSkgc2UgYXJtYSBlbiB2aXZvIHJhc3BhbmRvIEZpbnZpei9UcmFkaW5nVmlldwogKiB5IGVzIGVsIGluc3VtbyBtw6FzIGZyw6FnaWwgZGVsIEZhaXIgVmFsdWU6IGxhIHBhdGEgZGUgbcO6bHRpcGxvcyBlcwogKiBQL0UgZGVsIHNlY3RvciDDlyBhanVzdGUgZW1wcmVzYS9zZWN0b3IgKHRvcGUgMSw2KSwgeSBzaSBlbiB1bmEKICogY29ycmlkYSBsYSBtZWRpYW5hIGRlIGNyZWNpbWllbnRvIGRlbCBzZWN0b3Igbm8gbGxlZ2EsIGVsIGFqdXN0ZQogKiBjYWUgYSAxLDAgeSBlbCBtw7psdGlwbG8gc2UgZGVzcGxvbWEgKGNhc28gVE1EWCwgMjAyNi0xMS0xNTogZWwgRlYKICogc2FsdMOzIGRlIFVTJDk2LDk0IGEgVVMkODAsMzYgY29uIGVsIHByZWNpbyBxdWlldG8sIHBvcnF1ZSBkaXN0aW50YXMKICogaW5zdGFuY2lhcyBzZXJ2ZXJsZXNzIGp1bnRhYmFuIHZlcnNpb25lcyBkaXN0aW50YXMg4oCUIGNvbXBsZXRhcyBvCiAqIHBhcmNpYWxlcyDigJQgZGVsIG1pc21vIGNvbnRleHRvKS4KICoKICogRXN0ZSBtw7NkdWxvIGxlIGRhIGFsIGNvbnRleHRvIGVsIG1pc21vIHRyYXRhbWllbnRvIHF1ZSBsYSB2MTMgbGUKICogZGlvIGFsIEZWOiBVTkEgZm90byBwb3IgaW5kdXN0cmlhLCBjb21wYXJ0aWRhIGVudHJlIGluc3RhbmNpYXMKICogKG1lbW9yaWEgKyBLViBkdXJhYmxlKSwgY29uIGRvcyByZWdsYXMgZGUgZXN0YWJpbGlkYWQ6CiAqICAxLiBWZW50YW5hIGRlIGZyZXNjdXJhOiBkZW50cm8gZGUgbGFzIDYgaCBzZSBzaXJ2ZSBsYSBmb3RvCiAqICAgICBndWFyZGFkYSBzaW4gcmVjb21wdXRhci4KICogIDIuIENvbXBsZXRpdHVkIG1hbmRhOiB1bmEgZm90byBDT01QTEVUQSAobG9zIHRyZXMgY2FtcG9zKSBubyBsYQogKiAgICAgZGVzcGxhemEgdW5hIHBhcmNpYWwgbcOhcyBudWV2YTsgdW5hIHBhcmNpYWwgc29sbyBzZSBzaXJ2ZSBzaQogKiAgICAgbm8gaGF5IG5hZGEgbWVqb3IgZ3VhcmRhZG8gZGUgbGFzIMO6bHRpbWFzIDI0IGguIFJlY2nDqW4gdW4KICogICAgIGPDs21wdXRvIGFsIG1lbm9zIHRhbiBjb21wbGV0byBjb21vIGxvIGd1YXJkYWRvIGxvIHJlZW1wbGF6YS4KICogU2luIEtWIGNvbmZpZ3VyYWRvIChkZXNhcnJvbGxvIGxvY2FsKSwgbGEgbWVtb3JpYSBkZSBsYSBpbnN0YW5jaWEKICogc29zdGllbmUgbGFzIG1pc21hcyByZWdsYXMgZGVudHJvIGRlbCBwcm9jZXNvLgogKi8KaW1wb3J0IHR5cGUgeyBTZWN0b3JDb250ZXh0IH0gZnJvbSAnLi9zZWN0b3JDb250ZXh0LmpzJzsKCmV4cG9ydCBjb25zdCBTRUNUT1JfQ1RYX0ZSRVNIX01TID0gNiAqIDM2MDAgKiAxMDAwOwpleHBvcnQgY29uc3QgU0VDVE9SX0NUWF9LRUVQX01TID0gMjQgKiAzNjAwICogMTAwMDsKY29uc3QgS1ZfS0VZX1BSRUZJWCA9ICdmb2xpb3Byb3NwZWN0OnNlY3RvcmN0eDonOwoKZXhwb3J0IGludGVyZmFjZSBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5IHsKICBjdHg6IFNlY3RvckNvbnRleHQ7CiAgYXQ6IG51bWJlcjsKfQoKLyoqIENvbXBsZXRpdHVkIDDigJMzOiBjdcOhbnRvcyBkZSBsb3MgdHJlcyBjYW1wb3MgZGUgbWVkaWFuYXMgdHJhZS4gKi8KZXhwb3J0IGZ1bmN0aW9uIHNlY3RvckN0eENvbXBsZXRlbmVzcyhjdHg6IFNlY3RvckNvbnRleHQgfCBudWxsKTogbnVtYmVyIHsKICBpZiAoIWN0eCkgcmV0dXJuIC0xOwogIHJldHVybiAoCiAgICAoY3R4LmZvcndhcmRQZSAhPSBudWxsICYmIGN0eC5mb3J3YXJkUGUgPiAwID8gMSA6IDApICsKICAgIChjdHgucm9pY1BjdCAhPSBudWxsICYmIE51bWJlci5pc0Zpbml0ZShjdHgucm9pY1BjdCkgPyAxIDogMCkgKwogICAgKGN0eC5ncm93dGg1eVBjdCAhPSBudWxsICYmIE51bWJlci5pc0Zpbml0ZShjdHguZ3Jvd3RoNXlQY3QpID8gMSA6IDApCiAgKTsKfQoKZnVuY3Rpb24gaXNWYWxpZEN0eChjdHg6IHVua25vd24pOiBjdHggaXMgU2VjdG9yQ29udGV4dCB7CiAgaWYgKHR5cGVvZiBjdHggIT09ICdvYmplY3QnIHx8IGN0eCA9PT0gbnVsbCkgcmV0dXJuIGZhbHNlOwogIGNvbnN0IGMgPSBjdHggYXMgU2VjdG9yQ29udGV4dDsKICByZXR1cm4gdHlwZW9mIGMucGVlcnNVc2VkID09PSAnbnVtYmVyJyAmJiB0eXBlb2YgYy5pbmR1c3RyeVNsdWcgPT09ICdzdHJpbmcnOwp9CgpleHBvcnQgY2xhc3MgU2VjdG9yQ3R4TWVtb3J5Q2FjaGUgewogIHByaXZhdGUgbWFwID0gbmV3IE1hcDxzdHJpbmcsIFNlY3RvckN0eFNuYXBzaG90RW50cnk+KCk7CgogIGdldChrZXk6IHN0cmluZyk6IFNlY3RvckN0eFNuYXBzaG90RW50cnkgfCBudWxsIHsKICAgIHJldHVybiB0aGlzLm1hcC5nZXQoa2V5KSA/PyBudWxsOwogIH0KCiAgc2V0KGtleTogc3RyaW5nLCBlbnRyeTogU2VjdG9yQ3R4U25hcHNob3RFbnRyeSk6IHZvaWQgewogICAgdGhpcy5tYXAuc2V0KGtleSwgZW50cnkpOwogIH0KfQoKZXhwb3J0IGludGVyZmFjZSBTZWN0b3JDdHhLdlN0b3JlIHsKICBnZXQoa2V5OiBzdHJpbmcpOiBQcm9taXNlPFNlY3RvckN0eFNuYXBzaG90RW50cnkgfCBudWxsPjsKICBzZXQoa2V5OiBzdHJpbmcsIGVudHJ5OiBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5LCB0dGxTZWNvbmRzOiBudW1iZXIpOiBQcm9taXNlPHZvaWQ+Owp9CgpmdW5jdGlvbiBrdkNvbmZpZygpOiB7IHVybDogc3RyaW5nOyB0b2tlbjogc3RyaW5nIH0gfCBudWxsIHsKICBjb25zdCB1cmwgPSBwcm9jZXNzLmVudi5LVl9SRVNUX0FQSV9VUkwgfHwgcHJvY2Vzcy5lbnYuVVBTVEFTSF9SRURJU19SRVNUX1VSTDsKICBjb25zdCB0b2tlbiA9IHByb2Nlc3MuZW52LktWX1JFU1RfQVBJX1RPS0VOIHx8IHByb2Nlc3MuZW52LlVQU1RBU0hfUkVESVNfUkVTVF9UT0tFTjsKICByZXR1cm4gdXJsICYmIHRva2VuID8geyB1cmw6IHVybC5yZXBsYWNlKC9cLyQvLCAnJyksIHRva2VuIH0gOiBudWxsOwp9CgpleHBvcnQgY29uc3Qgc2VjdG9yQ3R4S3ZTdG9yZTogU2VjdG9yQ3R4S3ZTdG9yZSA9IHsKICBhc3luYyBnZXQoa2V5KSB7CiAgICBjb25zdCBjZmcgPSBrdkNvbmZpZygpOwogICAgaWYgKCFjZmcpIHJldHVybiBudWxsOwogICAgdHJ5IHsKICAgICAgY29uc3QgcmVzID0gYXdhaXQgZmV0Y2goYCR7Y2ZnLnVybH0vZ2V0LyR7ZW5jb2RlVVJJQ29tcG9uZW50KEtWX0tFWV9QUkVGSVggKyBrZXkpfWAsIHsKICAgICAgICBoZWFkZXJzOiB7IEF1dGhvcml6YXRpb246IGBCZWFyZXIgJHtjZmcudG9rZW59YCB9LAogICAgICAgIHNpZ25hbDogQWJvcnRTaWduYWwudGltZW91dCg1MDAwKSwKICAgICAgfSk7CiAgICAgIGlmICghcmVzLm9rKSByZXR1cm4gbnVsbDsKICAgICAgY29uc3QgajogYW55ID0gYXdhaXQgcmVzLmpzb24oKS5jYXRjaCgoKSA9PiBudWxsKTsKICAgICAgaWYgKHR5cGVvZiBqPy5yZXN1bHQgIT09ICdzdHJpbmcnKSByZXR1cm4gbnVsbDsKICAgICAgY29uc3QgcGFyc2VkID0gSlNPTi5wYXJzZShqLnJlc3VsdCk7CiAgICAgIGlmICgKICAgICAgICBwYXJzZWQgJiYKICAgICAgICB0eXBlb2YgcGFyc2VkLmF0ID09PSAnbnVtYmVyJyAmJgogICAgICAgIGlzVmFsaWRDdHgocGFyc2VkLmN0eCkKICAgICAgKSB7CiAgICAgICAgcmV0dXJuIHsgY3R4OiBwYXJzZWQuY3R4LCBhdDogcGFyc2VkLmF0IH07CiAgICAgIH0KICAgICAgcmV0dXJuIG51bGw7CiAgICB9IGNhdGNoIHsKICAgICAgcmV0dXJuIG51bGw7CiAgICB9CiAgfSwKICBhc3luYyBzZXQoa2V5LCBlbnRyeSwgdHRsU2Vjb25kcykgewogICAgY29uc3QgY2ZnID0ga3ZDb25maWcoKTsKICAgIGlmICghY2ZnKSByZXR1cm47CiAgICBjb25zdCB2YWx1ZSA9IGVuY29kZVVSSUNvbXBvbmVudChKU09OLnN0cmluZ2lmeShlbnRyeSkpOwogICAgY29uc3QgZnVsbEtleSA9IGVuY29kZVVSSUNvbXBvbmVudChLVl9LRVlfUFJFRklYICsga2V5KTsKICAgIHRyeSB7CiAgICAgIGNvbnN0IHJlcyA9IGF3YWl0IGZldGNoKGAke2NmZy51cmx9L3NldC8ke2Z1bGxLZXl9LyR7dmFsdWV9L0VYLyR7dHRsU2Vjb25kc31gLCB7CiAgICAgICAgaGVhZGVyczogeyBBdXRob3JpemF0aW9uOiBgQmVhcmVyICR7Y2ZnLnRva2VufWAgfSwKICAgICAgICBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoNTAwMCksCiAgICAgIH0pOwogICAgICBpZiAoIXJlcy5vaykgdGhyb3cgbmV3IEVycm9yKCdrdiBzZXQgbm90IG9rJyk7CiAgICB9IGNhdGNoIHsKICAgICAgdHJ5IHsKICAgICAgICBhd2FpdCBmZXRjaChgJHtjZmcudXJsfS9zZXQvJHtmdWxsS2V5fS8ke3ZhbHVlfWAsIHsKICAgICAgICAgIGhlYWRlcnM6IHsgQXV0aG9yaXphdGlvbjogYEJlYXJlciAke2NmZy50b2tlbn1gIH0sCiAgICAgICAgICBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoNTAwMCksCiAgICAgICAgfSk7CiAgICAgIH0gY2F0Y2ggewogICAgICAgIC8qIHNpbiBLViBlbCBjb250ZXh0byBzaWd1ZSBlbiBtZW1vcmlhICovCiAgICAgIH0KICAgIH0KICB9LAp9OwoKZXhwb3J0IGludGVyZmFjZSBTZWN0b3JDdHhSZXNvbHZlckRlcHMgewogIG1lbW9yeT86IFNlY3RvckN0eE1lbW9yeUNhY2hlOwogIGt2PzogU2VjdG9yQ3R4S3ZTdG9yZTsKICBmcmVzaE1zPzogbnVtYmVyOwogIGtlZXBNcz86IG51bWJlcjsKICBub3c/OiAoKSA9PiBudW1iZXI7Cn0KCmV4cG9ydCB0eXBlIFNlY3RvckN0eFJlc29sdmVyID0gKAogIGtleTogc3RyaW5nLAogIGNvbXB1dGU6ICgpID0+IFByb21pc2U8U2VjdG9yQ29udGV4dCB8IG51bGw+CikgPT4gUHJvbWlzZTxTZWN0b3JDb250ZXh0IHwgbnVsbD47CgovKioKICogUmVzb2x2ZWRvciBjb24gaW55ZWNjacOzbiBkZSBkZXBlbmRlbmNpYXMgKHRlc3RlYWJsZSk6IG1lbW9yaWEg4oaSCiAqIEtWIOKGkiBjw7NtcHV0bywgY29uIHZ1ZWxvIMO6bmljbyBwb3IgY2xhdmUgeSBsYSByZWdsYSBkZSBjb21wbGV0aXR1ZAogKiBhbCBndWFyZGFyIHkgYWwgc2VydmlyLgogKi8KZXhwb3J0IGZ1bmN0aW9uIGNyZWF0ZVNlY3RvckN0eFJlc29sdmVyKGRlcHM6IFNlY3RvckN0eFJlc29sdmVyRGVwcyA9IHt9KTogU2VjdG9yQ3R4UmVzb2x2ZXIgewogIGNvbnN0IG1lbW9yeSA9IGRlcHMubWVtb3J5ID8/IG5ldyBTZWN0b3JDdHhNZW1vcnlDYWNoZSgpOwogIGNvbnN0IGt2ID0gZGVwcy5rdiA/PyBzZWN0b3JDdHhLdlN0b3JlOwogIGNvbnN0IGZyZXNoTXMgPSBkZXBzLmZyZXNoTXMgPz8gU0VDVE9SX0NUWF9GUkVTSF9NUzsKICBjb25zdCBrZWVwTXMgPSBkZXBzLmtlZXBNcyA/PyBTRUNUT1JfQ1RYX0tFRVBfTVM7CiAgY29uc3Qgbm93ID0gZGVwcy5ub3cgPz8gRGF0ZS5ub3c7CiAgY29uc3QgaW5mbGlnaHQgPSBuZXcgTWFwPHN0cmluZywgUHJvbWlzZTxTZWN0b3JDb250ZXh0IHwgbnVsbD4+KCk7CgogIGNvbnN0IGJldHRlck9mID0gKAogICAgYTogU2VjdG9yQ3R4U25hcHNob3RFbnRyeSB8IG51bGwsCiAgICBiOiBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5IHwgbnVsbAogICk6IFNlY3RvckN0eFNuYXBzaG90RW50cnkgfCBudWxsID0+IHsKICAgIGlmICghYSkgcmV0dXJuIGI7CiAgICBpZiAoIWIpIHJldHVybiBhOwogICAgY29uc3QgY2EgPSBzZWN0b3JDdHhDb21wbGV0ZW5lc3MoYS5jdHgpOwogICAgY29uc3QgY2IgPSBzZWN0b3JDdHhDb21wbGV0ZW5lc3MoYi5jdHgpOwogICAgaWYgKGNhICE9PSBjYikgcmV0dXJuIGNhID4gY2IgPyBhIDogYjsKICAgIHJldHVybiBhLmF0ID49IGIuYXQgPyBhIDogYjsKICB9OwoKICByZXR1cm4gYXN5bmMgZnVuY3Rpb24gcmVzb2x2ZVNlY3RvckN0eChrZXksIGNvbXB1dGUpIHsKICAgIGNvbnN0IHQgPSBub3coKTsKICAgIGNvbnN0IG1lbSA9IG1lbW9yeS5nZXQoa2V5KTsKICAgIC8vIEF0YWpvIHNvbG8gcGFyYSBsYSBmb3RvIENPTVBMRVRBIHkgZnJlc2NhOiB1bmEgcGFyY2lhbCBlbgogICAgLy8gbWVtb3JpYSBubyB0YXBhIHVuYSBjb21wbGV0YSBxdWUgb3RyYSBpbnN0YW5jaWEgaGF5YSBndWFyZGFkby4KICAgIGlmIChtZW0gJiYgdCAtIG1lbS5hdCA8IGZyZXNoTXMgJiYgc2VjdG9yQ3R4Q29tcGxldGVuZXNzKG1lbS5jdHgpID09PSAzKSB7CiAgICAgIHJldHVybiBtZW0uY3R4OwogICAgfQogICAgY29uc3Qgc3RvcmVkID0gYmV0dGVyT2YobWVtLCBhd2FpdCBrdi5nZXQoa2V5KS5jYXRjaCgoKSA9PiBudWxsKSk7CiAgICBpZiAoc3RvcmVkICYmIHQgLSBzdG9yZWQuYXQgPCBmcmVzaE1zKSB7CiAgICAgIG1lbW9yeS5zZXQoa2V5LCBzdG9yZWQpOwogICAgICByZXR1cm4gc3RvcmVkLmN0eDsKICAgIH0KICAgIGNvbnN0IHBlbmRpbmcgPSBpbmZsaWdodC5nZXQoa2V5KTsKICAgIGlmIChwZW5kaW5nKSByZXR1cm4gcGVuZGluZzsKICAgIGNvbnN0IHAgPSAoYXN5bmMgKCk6IFByb21pc2U8U2VjdG9yQ29udGV4dCB8IG51bGw+ID0+IHsKICAgICAgdHJ5IHsKICAgICAgICBjb25zdCBjb21wdXRlZCA9IGF3YWl0IGNvbXB1dGUoKTsKICAgICAgICBjb25zdCBjb21wdXRlZEVudHJ5OiBTZWN0b3JDdHhTbmFwc2hvdEVudHJ5IHwgbnVsbCA9CiAgICAgICAgICBjb21wdXRlZCAmJiBpc1ZhbGlkQ3R4KGNvbXB1dGVkKSA/IHsgY3R4OiBjb21wdXRlZCwgYXQ6IG5vdygpIH0gOiBudWxsOwogICAgICAgIC8vIENvbXBsZXRpdHVkIG1hbmRhOiBsbyBndWFyZGFkbyAo4omkIGtlZXBNcykgc29sbyBzZSBkZXNwbGF6YQogICAgICAgIC8vIHBvciB1biBjw7NtcHV0byBhbCBtZW5vcyB0YW4gY29tcGxldG87IHNpIGVsIGPDs21wdXRvIG51ZXZvCiAgICAgICAgLy8gZXMgbcOhcyBwb2JyZSwgc2Ugc2lndWUgc2lydmllbmRvIGxvIGd1YXJkYWRvLgogICAgICAgIGNvbnN0IHdpbm5lciA9CiAgICAgICAgICBzdG9yZWQgJiYgbm93KCkgLSBzdG9yZWQuYXQgPCBrZWVwTXMKICAgICAgICAgICAgPyBiZXR0ZXJPZihzdG9yZWQsIGNvbXB1dGVkRW50cnkpCiAgICAgICAgICAgIDogKGNvbXB1dGVkRW50cnkgPz8gc3RvcmVkKTsKICAgICAgICBpZiAod2lubmVyKSB7CiAgICAgICAgICBtZW1vcnkuc2V0KGtleSwgd2lubmVyKTsKICAgICAgICAgIGNvbnN0IHR0bFNlY29uZHMgPSBNYXRoLm1heCgKICAgICAgICAgICAgNjAsCiAgICAgICAgICAgIE1hdGgucm91bmQoKHdpbm5lci5hdCArIGtlZXBNcyAtIG5vdygpKSAvIDEwMDApCiAgICAgICAgICApOwogICAgICAgICAgYXdhaXQga3Yuc2V0KGtleSwgd2lubmVyLCB0dGxTZWNvbmRzKS5jYXRjaCgoKSA9PiB1bmRlZmluZWQpOwogICAgICAgICAgcmV0dXJuIHdpbm5lci5jdHg7CiAgICAgICAgfQogICAgICAgIHJldHVybiBjb21wdXRlZDsKICAgICAgfSBmaW5hbGx5IHsKICAgICAgICBpbmZsaWdodC5kZWxldGUoa2V5KTsKICAgICAgfQogICAgfSkoKTsKICAgIGluZmxpZ2h0LnNldChrZXksIHApOwogICAgcmV0dXJuIHA7CiAgfTsKfQoKY29uc3Qgc2hhcmVkUmVzb2x2ZXIgPSBjcmVhdGVTZWN0b3JDdHhSZXNvbHZlcigpOwoKLyoqIFB1bnRvIGRlIGVudHJhZGEgZGVsIHNlcnZpZG9yOiBsYSBmb3RvIGNvbXBhcnRpZGEgZGVsIGNvbnRleHRvLiAqLwpleHBvcnQgZnVuY3Rpb24gZ2V0T3JDb21wdXRlU2VjdG9yQ3R4KAogIGtleTogc3RyaW5nLAogIGNvbXB1dGU6ICgpID0+IFByb21pc2U8U2VjdG9yQ29udGV4dCB8IG51bGw+Cik6IFByb21pc2U8U2VjdG9yQ29udGV4dCB8IG51bGw+IHsKICByZXR1cm4gc2hhcmVkUmVzb2x2ZXIoa2V5LCBjb21wdXRlKTsKfQo=
+/**
+ * Foto compartida del CONTEXTO SECTORIAL (SPEC-006, enmienda v14).
+ *
+ * El contexto (medianas de P/E forward, ROIC y crecimiento de los
+ * pares de la industria) se arma en vivo raspando Finviz/TradingView
+ * y es el insumo más frágil del Fair Value: la pata de múltiplos es
+ * P/E del sector × ajuste empresa/sector (tope 1,6), y si en una
+ * corrida la mediana de crecimiento del sector no llega, el ajuste
+ * cae a 1,0 y el múltiplo se desploma (caso TMDX, 2026-11-15: el FV
+ * saltó de US$96,94 a US$80,36 con el precio quieto, porque distintas
+ * instancias serverless juntaban versiones distintas — completas o
+ * parciales — del mismo contexto).
+ *
+ * Este módulo le da al contexto el mismo tratamiento que la v13 le
+ * dio al FV: UNA foto por industria, compartida entre instancias
+ * (memoria + KV durable), con dos reglas de estabilidad:
+ *  1. Ventana de frescura: dentro de las 6 h se sirve la foto
+ *     guardada sin recomputar.
+ *  2. Completitud manda: una foto COMPLETA (los tres campos) no la
+ *     desplaza una parcial más nueva; una parcial solo se sirve si
+ *     no hay nada mejor guardado de las últimas 24 h. Recién un
+ *     cómputo al menos tan completo como lo guardado lo reemplaza.
+ * Sin KV configurado (desarrollo local), la memoria de la instancia
+ * sostiene las mismas reglas dentro del proceso.
+ */
+import type { SectorContext } from './sectorContext.js';
+
+export const SECTOR_CTX_FRESH_MS = 6 * 3600 * 1000;
+export const SECTOR_CTX_KEEP_MS = 24 * 3600 * 1000;
+const KV_KEY_PREFIX = 'folioprospect:sectorctx:';
+
+export interface SectorCtxSnapshotEntry {
+  ctx: SectorContext;
+  at: number;
+}
+
+/** Completitud 0–3: cuántos de los tres campos de medianas trae. */
+export function sectorCtxCompleteness(ctx: SectorContext | null): number {
+  if (!ctx) return -1;
+  return (
+    (ctx.forwardPe != null && ctx.forwardPe > 0 ? 1 : 0) +
+    (ctx.roicPct != null && Number.isFinite(ctx.roicPct) ? 1 : 0) +
+    (ctx.growth5yPct != null && Number.isFinite(ctx.growth5yPct) ? 1 : 0)
+  );
+}
+
+function isValidCtx(ctx: unknown): ctx is SectorContext {
+  if (typeof ctx !== 'object' || ctx === null) return false;
+  const c = ctx as SectorContext;
+  return typeof c.peersUsed === 'number' && typeof c.industrySlug === 'string';
+}
+
+export class SectorCtxMemoryCache {
+  private map = new Map<string, SectorCtxSnapshotEntry>();
+
+  get(key: string): SectorCtxSnapshotEntry | null {
+    return this.map.get(key) ?? null;
+  }
+
+  set(key: string, entry: SectorCtxSnapshotEntry): void {
+    this.map.set(key, entry);
+  }
+}
+
+export interface SectorCtxKvStore {
+  get(key: string): Promise<SectorCtxSnapshotEntry | null>;
+  set(key: string, entry: SectorCtxSnapshotEntry, ttlSeconds: number): Promise<void>;
+}
+
+function kvConfig(): { url: string; token: string } | null {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  return url && token ? { url: url.replace(/\/$/, ''), token } : null;
+}
+
+export const sectorCtxKvStore: SectorCtxKvStore = {
+  async get(key) {
+    const cfg = kvConfig();
+    if (!cfg) return null;
+    try {
+      const res = await fetch(`${cfg.url}/get/${encodeURIComponent(KV_KEY_PREFIX + key)}`, {
+        headers: { Authorization: `Bearer ${cfg.token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const j: any = await res.json().catch(() => null);
+      if (typeof j?.result !== 'string') return null;
+      const parsed = JSON.parse(j.result);
+      if (
+        parsed &&
+        typeof parsed.at === 'number' &&
+        isValidCtx(parsed.ctx)
+      ) {
+        return { ctx: parsed.ctx, at: parsed.at };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
+  async set(key, entry, ttlSeconds) {
+    const cfg = kvConfig();
+    if (!cfg) return;
+    const value = encodeURIComponent(JSON.stringify(entry));
+    const fullKey = encodeURIComponent(KV_KEY_PREFIX + key);
+    try {
+      const res = await fetch(`${cfg.url}/set/${fullKey}/${value}/EX/${ttlSeconds}`, {
+        headers: { Authorization: `Bearer ${cfg.token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error('kv set not ok');
+    } catch {
+      try {
+        await fetch(`${cfg.url}/set/${fullKey}/${value}`, {
+          headers: { Authorization: `Bearer ${cfg.token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch {
+        /* sin KV el contexto sigue en memoria */
+      }
+    }
+  },
+};
+
+export interface SectorCtxResolverDeps {
+  memory?: SectorCtxMemoryCache;
+  kv?: SectorCtxKvStore;
+  freshMs?: number;
+  keepMs?: number;
+  now?: () => number;
+}
+
+export type SectorCtxResolver = (
+  key: string,
+  compute: () => Promise<SectorContext | null>
+) => Promise<SectorContext | null>;
+
+/**
+ * Resolvedor con inyección de dependencias (testeable): memoria →
+ * KV → cómputo, con vuelo único por clave y la regla de completitud
+ * al guardar y al servir.
+ */
+export function createSectorCtxResolver(deps: SectorCtxResolverDeps = {}): SectorCtxResolver {
+  const memory = deps.memory ?? new SectorCtxMemoryCache();
+  const kv = deps.kv ?? sectorCtxKvStore;
+  const freshMs = deps.freshMs ?? SECTOR_CTX_FRESH_MS;
+  const keepMs = deps.keepMs ?? SECTOR_CTX_KEEP_MS;
+  const now = deps.now ?? Date.now;
+  const inflight = new Map<string, Promise<SectorContext | null>>();
+
+  const betterOf = (
+    a: SectorCtxSnapshotEntry | null,
+    b: SectorCtxSnapshotEntry | null
+  ): SectorCtxSnapshotEntry | null => {
+    if (!a) return b;
+    if (!b) return a;
+    const ca = sectorCtxCompleteness(a.ctx);
+    const cb = sectorCtxCompleteness(b.ctx);
+    if (ca !== cb) return ca > cb ? a : b;
+    return a.at >= b.at ? a : b;
+  };
+
+  return async function resolveSectorCtx(key, compute) {
+    const t = now();
+    const mem = memory.get(key);
+    // Atajo solo para la foto COMPLETA y fresca: una parcial en
+    // memoria no tapa una completa que otra instancia haya guardado.
+    if (mem && t - mem.at < freshMs && sectorCtxCompleteness(mem.ctx) === 3) {
+      return mem.ctx;
+    }
+    const stored = betterOf(mem, await kv.get(key).catch(() => null));
+    if (stored && t - stored.at < freshMs) {
+      memory.set(key, stored);
+      return stored.ctx;
+    }
+    const pending = inflight.get(key);
+    if (pending) return pending;
+    const p = (async (): Promise<SectorContext | null> => {
+      try {
+        const computed = await compute();
+        const computedEntry: SectorCtxSnapshotEntry | null =
+          computed && isValidCtx(computed) ? { ctx: computed, at: now() } : null;
+        // Completitud manda: lo guardado (≤ keepMs) solo se desplaza
+        // por un cómputo al menos tan completo; si el cómputo nuevo
+        // es más pobre, se sigue sirviendo lo guardado.
+        const winner =
+          stored && now() - stored.at < keepMs
+            ? betterOf(stored, computedEntry)
+            : (computedEntry ?? stored);
+        if (winner) {
+          memory.set(key, winner);
+          const ttlSeconds = Math.max(
+            60,
+            Math.round((winner.at + keepMs - now()) / 1000)
+          );
+          await kv.set(key, winner, ttlSeconds).catch(() => undefined);
+          return winner.ctx;
+        }
+        return computed;
+      } finally {
+        inflight.delete(key);
+      }
+    })();
+    inflight.set(key, p);
+    return p;
+  };
+}
+
+const sharedResolver = createSectorCtxResolver();
+
+/** Punto de entrada del servidor: la foto compartida del contexto. */
+export function getOrComputeSectorCtx(
+  key: string,
+  compute: () => Promise<SectorContext | null>
+): Promise<SectorContext | null> {
+  return sharedResolver(key, compute);
+}

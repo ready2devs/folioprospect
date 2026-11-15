@@ -1,1 +1,112 @@
-aW1wb3J0IHsgZGVzY3JpYmUsIGV4cGVjdCwgaXQsIHZpIH0gZnJvbSAndml0ZXN0JzsKaW1wb3J0IHsKICBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIsCiAgTW90b3JGdk1lbW9yeUNhY2hlLAogIE1PVE9SX0ZWX1RUTF9NUywKICB0eXBlIE1vdG9yRnZLdlN0b3JlLAogIHR5cGUgTW90b3JGdlNuYXBzaG90RW50cnksCn0gZnJvbSAnLi4vbW90b3JGdlNuYXBzaG90LmpzJzsKaW1wb3J0IHR5cGUgeyBNb3RvckZ2VmlldyB9IGZyb20gJy4uLy4uL3NoYXJlZC9lbmdpbmUvaW5kZXguanMnOwoKLy8gU1BFQy0wMDYsIGVubWllbmRhIHYxMzogbGEgZmljaGEgeSBsYSBzaWdsYSBkZSBsYSB3YXRjaGxpc3QgbGVlbiBlbAovLyBNSVNNTyBzbmFwc2hvdCBkZSBGViBkZWwgbW90b3IuIEVzdGFzIHBydWViYXMgZmlqYW4gZWwgY29udHJhdG8gZGVsCi8vIHJlc29sdmVkb3IgY29tcGFydGlkbzogdW5hIHNvbGEgY29tcHV0YWNpw7NuIHBvciBhY3Rpdm8geSB2ZW50YW5hLAovLyBjb21wYXJ0aWRhIGVudHJlIMKrZW5kcG9pbnRzwrsgKGRvcyBsbGFtYWRhcyBjdWFsZXNxdWllcmEpLCBjb24gZWwKLy8gS1YgZHVyYWJsZSBjb21vIHB1ZW50ZSBlbnRyZSBpbnN0YW5jaWFzIHkgc2luIGNvbmdlbGFyIG51bG9zLgoKY29uc3QgVklFVzogTW90b3JGdlZpZXcgPSB7IGZ2OiA5Ni45NCwgZnZQZXNpbWlzdGE6IDg3LjUyLCBmdk9wdGltaXN0YTogMTA2LjM3LCB1bmNlcnRhaW50eTogJ0V4dHJlbWUnIH07CmNvbnN0IFZJRVcyOiBNb3RvckZ2VmlldyA9IHsgZnY6IDcwLjAsIGZ2UGVzaW1pc3RhOiA2MC4wLCBmdk9wdGltaXN0YTogODAuMCwgdW5jZXJ0YWludHk6ICdIaWdoJyB9Owpjb25zdCBUMCA9IDFfNzAwXzAwMF8wMDBfMDAwOwoKZnVuY3Rpb24gZmFrZUt2KHNlZWQ6IFJlY29yZDxzdHJpbmcsIE1vdG9yRnZTbmFwc2hvdEVudHJ5PiA9IHt9KSB7CiAgY29uc3Qgc3RvcmUgPSBuZXcgTWFwKE9iamVjdC5lbnRyaWVzKHNlZWQpKTsKICBjb25zdCBrdjogTW90b3JGdkt2U3RvcmUgPSB7CiAgICBnZXQ6IHZpLmZuKGFzeW5jIChzOiBzdHJpbmcpID0+IHN0b3JlLmdldChzKSA/PyBudWxsKSwKICAgIHNldDogdmkuZm4oYXN5bmMgKHM6IHN0cmluZywgZTogTW90b3JGdlNuYXBzaG90RW50cnkpID0+IHsKICAgICAgc3RvcmUuc2V0KHMsIGUpOwogICAgfSksCiAgfTsKICByZXR1cm4geyBrdiwgc3RvcmUgfTsKfQoKZGVzY3JpYmUoJ01vdG9yRnZNZW1vcnlDYWNoZScsICgpID0+IHsKICBpdCgnc2lydmUgZGVudHJvIGRlIGxhIHZlbnRhbmEgeSB2ZW5jZSBhIGxvcyAxNSBtaW4nLCAoKSA9PiB7CiAgICBjb25zdCBjID0gbmV3IE1vdG9yRnZNZW1vcnlDYWNoZSgpOwogICAgYy5zZXQoJ05BU0RBUTpUTURYJywgVklFVywgVDApOwogICAgZXhwZWN0KGMuZ2V0KCdOQVNEQVE6VE1EWCcsIFQwICsgTU9UT1JfRlZfVFRMX01TIC0gMSkpLnRvRXF1YWwoVklFVyk7CiAgICBleHBlY3QoYy5nZXQoJ05BU0RBUTpUTURYJywgVDAgKyBNT1RPUl9GVl9UVExfTVMpKS50b0JlTnVsbCgpOwogIH0pOwp9KTsKCmRlc2NyaWJlKCdjcmVhdGVNb3RvckZ2UmVzb2x2ZXIgwrcgc25hcHNob3QgY29tcGFydGlkbyBmaWNoYeKGlHdhdGNobGlzdCcsICgpID0+IHsKICBpdCgnZG9zIGxlY3R1cmFzIGVuIGxhIHZlbnRhbmEgY29tcGFydGVuIFVOQSBjb21wdXRhY2nDs24geSBkZXZ1ZWx2ZW4gZWwgbWlzbW8gRlYnLCBhc3luYyAoKSA9PiB7CiAgICBjb25zdCB7IGt2IH0gPSBmYWtlS3YoKTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIoeyBrdiwgbm93OiAoKSA9PiBUMCB9KTsKICAgIGNvbnN0IGNvbXB1dGUgPSB2aS5mbihhc3luYyAoKSA9PiBWSUVXKTsKICAgIGNvbnN0IGEgPSBhd2FpdCByZXNvbHZlKCdOQVNEQVE6VE1EWCcsIGNvbXB1dGUpOyAvLyDCq2ZpY2hhwrsKICAgIGNvbnN0IGIgPSBhd2FpdCByZXNvbHZlKCdOQVNEQVE6VE1EWCcsIGNvbXB1dGUpOyAvLyDCq3dhdGNobGlzdMK7CiAgICBleHBlY3QoYSkudG9FcXVhbChWSUVXKTsKICAgIGV4cGVjdChiKS50b0VxdWFsKFZJRVcpOwogICAgZXhwZWN0KGNvbXB1dGUpLnRvSGF2ZUJlZW5DYWxsZWRUaW1lcygxKTsKICAgIGV4cGVjdChrdi5zZXQpLnRvSGF2ZUJlZW5DYWxsZWRUaW1lcygxKTsKICB9KTsKCiAgaXQoJ3VuYSDCq2luc3RhbmNpYcK7IG51ZXZhIGxlZSBkZWwgS1YgbG8gcXVlIGNvbXB1dMOzIGxhIG90cmEsIHNpbiByZWNvbXB1dGFyJywgYXN5bmMgKCkgPT4gewogICAgY29uc3QgeyBrdiB9ID0gZmFrZUt2KCk7CiAgICBjb25zdCByMSA9IGNyZWF0ZU1vdG9yRnZSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwIH0pOwogICAgYXdhaXQgcjEoJ05BU0RBUTpUTURYJywgYXN5bmMgKCkgPT4gVklFVyk7CiAgICBjb25zdCByMiA9IGNyZWF0ZU1vdG9yRnZSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IFQwICsgNjBfMDAwIH0pOwogICAgY29uc3QgY29tcHV0ZTIgPSB2aS5mbihhc3luYyAoKSA9PiBWSUVXMik7CiAgICBhd2FpdCBleHBlY3QocjIoJ05BU0RBUTpUTURYJywgY29tcHV0ZTIpKS5yZXNvbHZlcy50b0VxdWFsKFZJRVcpOwogICAgZXhwZWN0KGNvbXB1dGUyKS5ub3QudG9IYXZlQmVlbkNhbGxlZCgpOwogIH0pOwoKICBpdCgndmVuY2lkYSBsYSB2ZW50YW5hLCByZWNvbXB1dGEgeSBlbCBudWV2byBGViBtYW5kYScsIGFzeW5jICgpID0+IHsKICAgIGNvbnN0IHsga3YgfSA9IGZha2VLdigpOwogICAgbGV0IG5vdyA9IFQwOwogICAgY29uc3QgcmVzb2x2ZSA9IGNyZWF0ZU1vdG9yRnZSZXNvbHZlcih7IGt2LCBub3c6ICgpID0+IG5vdyB9KTsKICAgIGF3YWl0IHJlc29sdmUoJ05BU0RBUTpUTURYJywgYXN5bmMgKCkgPT4gVklFVyk7CiAgICBub3cgPSBUMCArIE1PVE9SX0ZWX1RUTF9NUyArIDE7CiAgICBhd2FpdCBleHBlY3QocmVzb2x2ZSgnTkFTREFROlRNRFgnLCBhc3luYyAoKSA9PiBWSUVXMikpLnJlc29sdmVzLnRvRXF1YWwoVklFVzIpOwogIH0pOwoKICBpdCgndW5hIGVudHJhZGEgZGUgS1YgdmVuY2lkYSBvIGludsOhbGlkYSBubyBzZSBzaXJ2ZScsIGFzeW5jICgpID0+IHsKICAgIGNvbnN0IHsga3YgfSA9IGZha2VLdih7CiAgICAgICdOQVNEQVE6VE1EWCc6IHsgdmlldzogVklFVywgYXQ6IFQwIC0gTU9UT1JfRlZfVFRMX01TIC0gMSB9LAogICAgICAnTkFTREFROk1VJzogeyB2aWV3OiB7IGZ2OiAtNSwgZnZQZXNpbWlzdGE6IDAsIGZ2T3B0aW1pc3RhOiAwLCB1bmNlcnRhaW50eTogbnVsbCB9IGFzIGFueSwgYXQ6IFQwIH0sCiAgICB9KTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIoeyBrdiwgbm93OiAoKSA9PiBUMCB9KTsKICAgIGF3YWl0IGV4cGVjdChyZXNvbHZlKCdOQVNEQVE6VE1EWCcsIGFzeW5jICgpID0+IFZJRVcyKSkucmVzb2x2ZXMudG9FcXVhbChWSUVXMik7CiAgICBhd2FpdCBleHBlY3QocmVzb2x2ZSgnTkFTREFROk1VJywgYXN5bmMgKCkgPT4gVklFVykpLnJlc29sdmVzLnRvRXF1YWwoVklFVyk7CiAgfSk7CgogIGl0KCd1biBjw6FsY3VsbyBudWxvIE5PIHNlIGNhY2hlYTogZWwgcHLDs3hpbW8gcGVkaWRvIHJlaW50ZW50YScsIGFzeW5jICgpID0+IHsKICAgIGNvbnN0IHsga3YsIHN0b3JlIH0gPSBmYWtlS3YoKTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIoeyBrdiwgbm93OiAoKSA9PiBUMCB9KTsKICAgIGNvbnN0IGNvbXB1dGUgPSB2aQogICAgICAuZm48KCkgPT4gUHJvbWlzZTxNb3RvckZ2VmlldyB8IG51bGw+PigpCiAgICAgIC5tb2NrUmVzb2x2ZWRWYWx1ZU9uY2UobnVsbCkKICAgICAgLm1vY2tSZXNvbHZlZFZhbHVlT25jZShWSUVXKTsKICAgIGF3YWl0IGV4cGVjdChyZXNvbHZlKCdOQVNEQVE6VE1EWCcsIGNvbXB1dGUpKS5yZXNvbHZlcy50b0JlTnVsbCgpOwogICAgYXdhaXQgZXhwZWN0KHJlc29sdmUoJ05BU0RBUTpUTURYJywgY29tcHV0ZSkpLnJlc29sdmVzLnRvRXF1YWwoVklFVyk7CiAgICBleHBlY3QoY29tcHV0ZSkudG9IYXZlQmVlbkNhbGxlZFRpbWVzKDIpOwogICAgZXhwZWN0KHN0b3JlLmhhcygnTkFTREFROlRNRFgnKSkudG9CZSh0cnVlKTsKICB9KTsKCiAgaXQoJ3BlZGlkb3MgY29uY3VycmVudGVzIGRlbCBtaXNtbyBzw61tYm9sbyBjb21wYXJ0ZW4gZWwgY8OhbGN1bG8gZW4gY3Vyc28nLCBhc3luYyAoKSA9PiB7CiAgICBjb25zdCB7IGt2IH0gPSBmYWtlS3YoKTsKICAgIGNvbnN0IHJlc29sdmUgPSBjcmVhdGVNb3RvckZ2UmVzb2x2ZXIoeyBrdiwgbm93OiAoKSA9PiBUMCB9KTsKICAgIGxldCByZWxlYXNlITogKHY6IE1vdG9yRnZWaWV3KSA9PiB2b2lkOwogICAgY29uc3QgY29tcHV0ZSA9IHZpLmZuKAogICAgICAoKSA9PiBuZXcgUHJvbWlzZTxNb3RvckZ2Vmlldz4oKHJlcykgPT4gKHJlbGVhc2UgPSByZXMpKQogICAgKTsKICAgIGNvbnN0IHAxID0gcmVzb2x2ZSgnTkFTREFROlRNRFgnLCBjb21wdXRlKTsKICAgIGNvbnN0IHAyID0gcmVzb2x2ZSgnTkFTREFROlRNRFgnLCBjb21wdXRlKTsKICAgIC8vIERlamFyIGNvcnJlciBsYXMgY29udGludWFjaW9uZXMgKG1lbW9yaWEg4oaSIEtWIOKGkiBjw6FsY3VsbyBlbiBjdXJzbykuCiAgICBhd2FpdCBuZXcgUHJvbWlzZSgocikgPT4gc2V0VGltZW91dChyLCAxMCkpOwogICAgcmVsZWFzZShWSUVXKTsKICAgIGF3YWl0IGV4cGVjdChwMSkucmVzb2x2ZXMudG9FcXVhbChWSUVXKTsKICAgIGF3YWl0IGV4cGVjdChwMikucmVzb2x2ZXMudG9FcXVhbChWSUVXKTsKICAgIGV4cGVjdChjb21wdXRlKS50b0hhdmVCZWVuQ2FsbGVkVGltZXMoMSk7CiAgfSk7Cn0pOwo=
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createMotorFvResolver,
+  MotorFvMemoryCache,
+  MOTOR_FV_TTL_MS,
+  type MotorFvKvStore,
+  type MotorFvSnapshotEntry,
+} from '../motorFvSnapshot.js';
+import type { MotorFvView } from '../../shared/engine/index.js';
+
+// SPEC-006, enmienda v13: la ficha y la sigla de la watchlist leen el
+// MISMO snapshot de FV del motor. Estas pruebas fijan el contrato del
+// resolvedor compartido: una sola computación por activo y ventana,
+// compartida entre «endpoints» (dos llamadas cualesquiera), con el
+// KV durable como puente entre instancias y sin congelar nulos.
+
+const VIEW: MotorFvView = { fv: 96.94, fvPesimista: 87.52, fvOptimista: 106.37, uncertainty: 'Extreme' };
+const VIEW2: MotorFvView = { fv: 70.0, fvPesimista: 60.0, fvOptimista: 80.0, uncertainty: 'High' };
+const T0 = 1_700_000_000_000;
+
+function fakeKv(seed: Record<string, MotorFvSnapshotEntry> = {}) {
+  const store = new Map(Object.entries(seed));
+  const kv: MotorFvKvStore = {
+    get: vi.fn(async (s: string) => store.get(s) ?? null),
+    set: vi.fn(async (s: string, e: MotorFvSnapshotEntry) => {
+      store.set(s, e);
+    }),
+  };
+  return { kv, store };
+}
+
+describe('MotorFvMemoryCache', () => {
+  it('sirve dentro de la ventana y vence a los 15 min', () => {
+    const c = new MotorFvMemoryCache();
+    c.set('NASDAQ:TMDX', VIEW, T0);
+    expect(c.get('NASDAQ:TMDX', T0 + MOTOR_FV_TTL_MS - 1)).toEqual(VIEW);
+    expect(c.get('NASDAQ:TMDX', T0 + MOTOR_FV_TTL_MS)).toBeNull();
+  });
+});
+
+describe('createMotorFvResolver · snapshot compartido ficha↔watchlist', () => {
+  it('dos lecturas en la ventana comparten UNA computación y devuelven el mismo FV', async () => {
+    const { kv } = fakeKv();
+    const resolve = createMotorFvResolver({ kv, now: () => T0 });
+    const compute = vi.fn(async () => VIEW);
+    const a = await resolve('NASDAQ:TMDX', compute); // «ficha»
+    const b = await resolve('NASDAQ:TMDX', compute); // «watchlist»
+    expect(a).toEqual(VIEW);
+    expect(b).toEqual(VIEW);
+    expect(compute).toHaveBeenCalledTimes(1);
+    expect(kv.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('una «instancia» nueva lee del KV lo que computó la otra, sin recomputar', async () => {
+    const { kv } = fakeKv();
+    const r1 = createMotorFvResolver({ kv, now: () => T0 });
+    await r1('NASDAQ:TMDX', async () => VIEW);
+    const r2 = createMotorFvResolver({ kv, now: () => T0 + 60_000 });
+    const compute2 = vi.fn(async () => VIEW2);
+    await expect(r2('NASDAQ:TMDX', compute2)).resolves.toEqual(VIEW);
+    expect(compute2).not.toHaveBeenCalled();
+  });
+
+  it('vencida la ventana, recomputa y el nuevo FV manda', async () => {
+    const { kv } = fakeKv();
+    let now = T0;
+    const resolve = createMotorFvResolver({ kv, now: () => now });
+    await resolve('NASDAQ:TMDX', async () => VIEW);
+    now = T0 + MOTOR_FV_TTL_MS + 1;
+    await expect(resolve('NASDAQ:TMDX', async () => VIEW2)).resolves.toEqual(VIEW2);
+  });
+
+  it('una entrada de KV vencida o inválida no se sirve', async () => {
+    const { kv } = fakeKv({
+      'NASDAQ:TMDX': { view: VIEW, at: T0 - MOTOR_FV_TTL_MS - 1 },
+      'NASDAQ:MU': { view: { fv: -5, fvPesimista: 0, fvOptimista: 0, uncertainty: null } as any, at: T0 },
+    });
+    const resolve = createMotorFvResolver({ kv, now: () => T0 });
+    await expect(resolve('NASDAQ:TMDX', async () => VIEW2)).resolves.toEqual(VIEW2);
+    await expect(resolve('NASDAQ:MU', async () => VIEW)).resolves.toEqual(VIEW);
+  });
+
+  it('un cálculo nulo NO se cachea: el próximo pedido reintenta', async () => {
+    const { kv, store } = fakeKv();
+    const resolve = createMotorFvResolver({ kv, now: () => T0 });
+    const compute = vi
+      .fn<() => Promise<MotorFvView | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(VIEW);
+    await expect(resolve('NASDAQ:TMDX', compute)).resolves.toBeNull();
+    await expect(resolve('NASDAQ:TMDX', compute)).resolves.toEqual(VIEW);
+    expect(compute).toHaveBeenCalledTimes(2);
+    expect(store.has('NASDAQ:TMDX')).toBe(true);
+  });
+
+  it('pedidos concurrentes del mismo símbolo comparten el cálculo en curso', async () => {
+    const { kv } = fakeKv();
+    const resolve = createMotorFvResolver({ kv, now: () => T0 });
+    let release!: (v: MotorFvView) => void;
+    const compute = vi.fn(
+      () => new Promise<MotorFvView>((res) => (release = res))
+    );
+    const p1 = resolve('NASDAQ:TMDX', compute);
+    const p2 = resolve('NASDAQ:TMDX', compute);
+    // Dejar correr las continuaciones (memoria → KV → cálculo en curso).
+    await new Promise((r) => setTimeout(r, 10));
+    release(VIEW);
+    await expect(p1).resolves.toEqual(VIEW);
+    await expect(p2).resolves.toEqual(VIEW);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+});

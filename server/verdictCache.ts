@@ -1,1 +1,58 @@
-LyoqCiAqIENhY2jDqSBFTiBNRU1PUklBIGRlIHNpZ2xhcyBkZSB2ZXJlZGljdG8gZGUgbGEgd2F0Y2hsaXN0IChTUEVDLTAwNiwKICogZW5taWVuZGEgdjEwKS4gU1VQRVJBREEgcG9yIGxhIGVubWllbmRhIHYxMyAoMjAyNi0xMS0xNSk6IGVsCiAqIGVuZHBvaW50IHlhIG5vIGNhY2hlYSBzaWdsYXMg4oCUIGRlcml2YSBjYWRhIHVuYSBlbiBlbCBtb21lbnRvIGRlc2RlCiAqIGVsIHNuYXBzaG90IGNvbXBhcnRpZG8gZGUgRlYgKHNlcnZlci9tb3RvckZ2U25hcHNob3QudHMpLCBxdWUgZXMKICogbG8gcXVlIGxhIGZpY2hhIHRhbWJpw6luIGxlZS4gRXN0YSBjbGFzZSBxdWVkYSBzb2xvIGNvbW8gcmVmZXJlbmNpYQogKiBoaXN0w7NyaWNhIHkgcG9yIHN1cyB0ZXN0czsgbm8gZXN0w6EgZW4gZWwgY2FtaW5vIGRlIHNlcnZpY2lvLgogKgogKiBSZWVtcGxhemEgYSBsYSB2aWVqYSBjYWNow6kgUEVSU0lTVElEQSBwb3IgZMOtYSAoYGRiLnZlcmRpY3RDYWNoZWApOgogKiBhcXVlbGxhIGNvbmdlbGFiYSBsYSBzaWdsYSBlbiBlbCBwcmltZXIgY8OhbGN1bG8gZGVsIGTDrWEgeSBwb2TDrWEKICogY29udHJhZGVjaXIgZHVyYW50ZSBob3JhcyBlbCB2ZXJlZGljdG8gZGUgbGEgZmljaGEsIHF1ZSByZWNhbGN1bGEKICogY29uIGxhIHZlbnRhbmEgY29ydGEgZGVsIG9wdGltaXphZG9yIChjYXNvIHJlYWw6IFRNRFggwqtWwrsgZW4gbGEKICogd2F0Y2hsaXN0IGNvbiBsYSBmaWNoYSBlbiBNQU5URU5FUikuIEFob3JhIGVsIGVuZHBvaW50IGNhbGN1bGEKICogc2llbXByZSBwb3IgZWwgbWlzbW8gY2FtaW5vIGRlIGxhIGZpY2hhIHkgZ3VhcmRhIGVsIHJlc3VsdGFkbyBhY8OhCiAqIHBvciAxNSBtaW51dG9zIOKAlCBsYSBtaXNtYSB2ZW50YW5hIGRlIGBDQUNIRV9NU2AgZGVsIG9wdGltaXphZG9yIOKAlAogKiBwYXJhIHF1ZSBzaWdsYSB5IGZpY2hhIHNhbGdhbiBkZWwgbWlzbW8gc25hcHNob3QgeSBsYSB0YW5kYSBkZSBsYQogKiB3YXRjaGxpc3Qgbm8gcmVjYWxjdWxlIHPDrW1ib2xvIHBvciBzw61tYm9sbyBlbiBjYWRhIGFwZXJ0dXJhLgogKgogKiBFcyBlc3RhZG8gZWbDrW1lcm8gZGVsIHByb2Nlc286IG5vIHNlIHBlcnNpc3RlIG5pIHNlIHNpbmNyb25pemEKICogZW50cmUgaW5zdGFuY2lhczsgYWwgdmVuY2VyLCBsYSBzaWdsYSBzZSByZWNhbGN1bGEuCiAqLwoKLyoqIFVuYSBzaWdsYSBkZSB2ZXJlZGljdG8geWEgY2FsY3VsYWRhLiBgdmVyZGljdDogbnVsbGAgeQogKiAgYHNpZ2xhOiAn4oCUJ2AgPSBlbCBtb3RvciBubyBwcm9kdWNlIGV2YWx1YWNpw7NuIHBhcmEgZWwgYWN0aXZvLiAqLwpleHBvcnQgaW50ZXJmYWNlIFdhdGNobGlzdFZlcmRpY3QgewogIHNpZ2xhOiBzdHJpbmc7CiAgdmVyZGljdDogc3RyaW5nIHwgbnVsbDsKfQoKLyoqIFZlbnRhbmEgZGUgbGEgY2FjaMOpOiBsYSBtaXNtYSBkZWwgcmVzdWx0YWRvIGRlbCBvcHRpbWl6YWRvcgogKiAgKGBDQUNIRV9NU2AgZW4gc2VydmVyL29wdGltaXplckRhdGEudHMpLiAqLwpleHBvcnQgY29uc3QgVkVSRElDVF9DQUNIRV9UVExfTVMgPSAxNSAqIDYwICogMTAwMDsKCmV4cG9ydCBjbGFzcyBWZXJkaWN0TWVtb3J5Q2FjaGUgewogIHByaXZhdGUgcmVhZG9ubHkgZW50cmllcyA9IG5ldyBNYXA8c3RyaW5nLCB7IHZhbHVlOiBXYXRjaGxpc3RWZXJkaWN0OyBhdDogbnVtYmVyIH0+KCk7CgogIGNvbnN0cnVjdG9yKHByaXZhdGUgcmVhZG9ubHkgdHRsTXM6IG51bWJlciA9IFZFUkRJQ1RfQ0FDSEVfVFRMX01TKSB7fQoKICAvKiogTGEgZW50cmFkYSB2aWdlbnRlIGRlbCBzw61tYm9sbywgbyBudWxsIHNpIG5vIGhheSBvIHZlbmNpw7MKICAgKiAgKGxvIHZlbmNpZG8gc2UgcG9kYSBhbCBsZWVyKS4gKi8KICBnZXQoc3ltYm9sOiBzdHJpbmcsIG5vdzogbnVtYmVyID0gRGF0ZS5ub3coKSk6IFdhdGNobGlzdFZlcmRpY3QgfCBudWxsIHsKICAgIGNvbnN0IGUgPSB0aGlzLmVudHJpZXMuZ2V0KHN5bWJvbCk7CiAgICBpZiAoIWUpIHJldHVybiBudWxsOwogICAgaWYgKG5vdyAtIGUuYXQgPj0gdGhpcy50dGxNcykgewogICAgICB0aGlzLmVudHJpZXMuZGVsZXRlKHN5bWJvbCk7CiAgICAgIHJldHVybiBudWxsOwogICAgfQogICAgcmV0dXJuIGUudmFsdWU7CiAgfQoKICBzZXQoc3ltYm9sOiBzdHJpbmcsIHZhbHVlOiBXYXRjaGxpc3RWZXJkaWN0LCBub3c6IG51bWJlciA9IERhdGUubm93KCkpOiB2b2lkIHsKICAgIHRoaXMuZW50cmllcy5zZXQoc3ltYm9sLCB7IHZhbHVlLCBhdDogbm93IH0pOwogIH0KCiAgZ2V0IHNpemUoKTogbnVtYmVyIHsKICAgIHJldHVybiB0aGlzLmVudHJpZXMuc2l6ZTsKICB9Cn0K
+/**
+ * Caché EN MEMORIA de siglas de veredicto de la watchlist (SPEC-006,
+ * enmienda v10). SUPERADA por la enmienda v13 (2026-11-15): el
+ * endpoint ya no cachea siglas — deriva cada una en el momento desde
+ * el snapshot compartido de FV (server/motorFvSnapshot.ts), que es
+ * lo que la ficha también lee. Esta clase queda solo como referencia
+ * histórica y por sus tests; no está en el camino de servicio.
+ *
+ * Reemplaza a la vieja caché PERSISTIDA por día (`db.verdictCache`):
+ * aquella congelaba la sigla en el primer cálculo del día y podía
+ * contradecir durante horas el veredicto de la ficha, que recalcula
+ * con la ventana corta del optimizador (caso real: TMDX «V» en la
+ * watchlist con la ficha en MANTENER). Ahora el endpoint calcula
+ * siempre por el mismo camino de la ficha y guarda el resultado acá
+ * por 15 minutos — la misma ventana de `CACHE_MS` del optimizador —
+ * para que sigla y ficha salgan del mismo snapshot y la tanda de la
+ * watchlist no recalcule símbolo por símbolo en cada apertura.
+ *
+ * Es estado efímero del proceso: no se persiste ni se sincroniza
+ * entre instancias; al vencer, la sigla se recalcula.
+ */
+
+/** Una sigla de veredicto ya calculada. `verdict: null` y
+ *  `sigla: '—'` = el motor no produce evaluación para el activo. */
+export interface WatchlistVerdict {
+  sigla: string;
+  verdict: string | null;
+}
+
+/** Ventana de la caché: la misma del resultado del optimizador
+ *  (`CACHE_MS` en server/optimizerData.ts). */
+export const VERDICT_CACHE_TTL_MS = 15 * 60 * 1000;
+
+export class VerdictMemoryCache {
+  private readonly entries = new Map<string, { value: WatchlistVerdict; at: number }>();
+
+  constructor(private readonly ttlMs: number = VERDICT_CACHE_TTL_MS) {}
+
+  /** La entrada vigente del símbolo, o null si no hay o venció
+   *  (lo vencido se poda al leer). */
+  get(symbol: string, now: number = Date.now()): WatchlistVerdict | null {
+    const e = this.entries.get(symbol);
+    if (!e) return null;
+    if (now - e.at >= this.ttlMs) {
+      this.entries.delete(symbol);
+      return null;
+    }
+    return e.value;
+  }
+
+  set(symbol: string, value: WatchlistVerdict, now: number = Date.now()): void {
+    this.entries.set(symbol, { value, at: now });
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
