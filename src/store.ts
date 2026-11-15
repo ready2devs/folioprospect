@@ -33,6 +33,7 @@ import {
   resolveAssetBackTarget,
   type MainView,
 } from './backNavigation';
+import { mergeAssetDetailPreservingExtras } from './assetDetailMerge';
 
 export type { ArgFxQuote, ArgFxResponse, NwSettings };
 
@@ -431,7 +432,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         return;
       }
-      set({ assetDetail, loading: false });
+      set({
+        assetDetail: mergeAssetDetailPreservingExtras(get().assetDetail, assetDetail),
+        loading: false,
+      });
     } catch {
       set({
         assetDetail: null,
@@ -660,6 +664,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         // Only replace the current detail with a valid payload; a failed
         // background refresh must not wipe a good screen (or crash it).
+        // Un payload válido pero degradado (sin Finviz) tampoco puede
+        // borrar ratios ya conocidos: se fusiona sobre el detalle actual.
         if (
           assetDetail &&
           assetDetail.meta &&
@@ -667,7 +673,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           typeof assetDetail.quote.price === 'number' &&
           Number.isFinite(assetDetail.quote.price)
         ) {
-          set({ assetDetail });
+          set({
+            assetDetail: mergeAssetDetailPreservingExtras(get().assetDetail, assetDetail),
+          });
         }
       }
     } catch {

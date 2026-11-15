@@ -10,6 +10,7 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const FAILURE_CACHE_TTL_MS = 60 * 1000;
 const cache = new Map<string, { value: FinvizFundamentals | null; expiresAt: number }>();
 
 /**
@@ -60,6 +61,14 @@ export async function fetchFinvizFundamentals(
     result = null;
   }
 
-  cache.set(ticker, { value: result, expiresAt: now + CACHE_TTL_MS });
+  // Solo el éxito merece la caché larga. Cachear un null por 30 min
+  // envenenaba la instancia que justo falló (timeout/HTML inesperado):
+  // como Vercel reparte pedidos entre instancias, la ficha alternaba
+  // entre ratios completos y «—». El fallo se recuerda como máximo
+  // 60 s para no martillar a Finviz, y después se reintenta.
+  cache.set(ticker, {
+    value: result,
+    expiresAt: Date.now() + (result ? CACHE_TTL_MS : FAILURE_CACHE_TTL_MS),
+  });
   return result;
 }

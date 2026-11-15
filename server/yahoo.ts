@@ -1319,7 +1319,14 @@ export async function fetchAssetExtras(
             businessSummary: await translateToSpanish(String(ap.longBusinessSummary || '')),
           };
           const merged = applyFinviz(extras, finviz);
-          extrasCache.set(symbol, { value: merged, expiresAt: now + 10 * 60 * 1000 });
+          // Si esta instancia no consiguió Finviz, el resultado queda
+          // degradado: se cachea solo 60 s (como la ruta fallback) para
+          // reintentar pronto en vez de servir extras sin ratios por
+          // 10 min. Con Finviz, la caché completa dura 10 min.
+          extrasCache.set(symbol, {
+            value: merged,
+            expiresAt: Date.now() + (merged.finviz ? 10 * 60 * 1000 : 60 * 1000),
+          });
           return merged;
         }
       }
