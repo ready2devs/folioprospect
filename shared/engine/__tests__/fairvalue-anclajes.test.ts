@@ -95,6 +95,55 @@ describe('múltiplo justificado (R11)', () => {
     expect(jm.adjustment).toBeCloseTo(1.6, 6);
   });
 
+  it('v16: sin ROIC del sector, el ajuste refleja SOLO el crecimiento (dimensión desconocida = neutra)', () => {
+    // Al sector se le presta el ROIC de la empresa: J(sector) =
+    // (1 − 1/25)/0,09 = 10,67; J(empresa) = (1 − 4/25)/0,06 = 14;
+    // ajuste 1,3125 ⇒ múltiplo 22 × 1,3125 = 28,875. Antes el
+    // ajuste se anulaba entero y el múltiplo era 22 pelado.
+    const jm = justifiedMultiple({
+      sectorForwardPe: 22,
+      capitalReturnPct: 25,
+      longRunGrowthPct: 4,
+      sectorCapitalReturnPct: null,
+      sectorLongRunGrowthPct: 1,
+      ownForwardPe: 36,
+    });
+    expect(jm.basis).toBe('sectorAjustado');
+    expect(jm.adjustment).toBeCloseTo(1.3125, 4);
+    expect(jm.multiple).toBeCloseTo(28.875, 4);
+  });
+
+  it('v16: sin ROIC de la empresa, el ajuste refleja SOLO el crecimiento (simétrico)', () => {
+    // A la empresa se le presta el ROIC del sector: J(empresa) =
+    // (1 − 4/12)/0,06 = 11,11; J(sector) = (1 − 1/12)/0,09 = 10,19;
+    // ajuste ≈ 1,0909 ⇒ múltiplo ≈ 24.
+    const jm = justifiedMultiple({
+      sectorForwardPe: 22,
+      capitalReturnPct: null,
+      longRunGrowthPct: 4,
+      sectorCapitalReturnPct: 12,
+      sectorLongRunGrowthPct: 1,
+      ownForwardPe: 36,
+    });
+    expect(jm.basis).toBe('sectorAjustado');
+    expect(jm.adjustment).toBeCloseTo(11.1111 / 10.1852, 3);
+    expect(jm.multiple).toBeCloseTo(24, 3);
+  });
+
+  it('v16: sin ROIC de ningún lado no hay ajuste: manda el P/E del sector pelado', () => {
+    const jm = justifiedMultiple({
+      sectorForwardPe: 22,
+      capitalReturnPct: null,
+      longRunGrowthPct: 4,
+      sectorCapitalReturnPct: null,
+      sectorLongRunGrowthPct: 1,
+      ownForwardPe: 36,
+    });
+    expect(jm.basis).toBe('sector');
+    expect(jm.adjustment).toBeNull();
+    expect(jm.multiple).toBeCloseTo(22, 6);
+  });
+
   it('sin ROIC computable no hay ajuste: manda el P/E del sector pelado', () => {
     const ev = evaluateMultiplesComponent({
       currentPrice: 100,

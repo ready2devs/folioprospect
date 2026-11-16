@@ -461,6 +461,28 @@ export function justifiedMultiple(args: {
     args.sectorCapitalReturnPct,
     args.sectorLongRunGrowthPct
   );
+  // Dimensión desconocida = NEUTRA (v16, 2026-11-15): si a un lado
+  // le falta el retorno sobre el capital (sin dato o no positivo),
+  // se le presta el del otro lado y el ajuste refleja SOLO la
+  // dimensión conocida (el crecimiento). Antes, un solo dato
+  // sectorial faltante anulaba el ajuste entero y el múltiplo caía
+  // al P/E del sector pelado (caso TMDX: ajuste 1,6 → 1,0 y el FV
+  // de US$96,94 a US$80,36 con el precio quieto). Si el justificado
+  // es nulo por imposibilidad de la fórmula con los datos presentes
+  // (retorno ≤ crecimiento), no se presta nada: es información, no
+  // un hueco. Los campos del resultado reportan los justificados
+  // EFECTIVOS (con el préstamo aplicado).
+  const usableCapital = (x: number | null | undefined): x is number => x != null && x > 0;
+  const companyJustifiedEff =
+    companyJustified ??
+    (!usableCapital(args.capitalReturnPct) && usableCapital(args.sectorCapitalReturnPct)
+      ? justifiedPeFromFundamentals(args.sectorCapitalReturnPct, args.longRunGrowthPct)
+      : null);
+  const sectorJustifiedEff =
+    sectorJustified ??
+    (!usableCapital(args.sectorCapitalReturnPct) && usableCapital(args.capitalReturnPct)
+      ? justifiedPeFromFundamentals(args.capitalReturnPct, args.sectorLongRunGrowthPct)
+      : null);
   // Regla de comparabilidad del conjunto de pares (R11): si el P/E
   // del sector más que DUPLICA al P/E forward propio, importar ese
   // múltiplo inflaría la fórmula con un régimen ajeno al activo (una
@@ -479,15 +501,15 @@ export function justifiedMultiple(args: {
   const out: JustifiedMultipleResult = {
     multiple: null,
     basis: null,
-    companyJustified,
-    sectorJustified,
+    companyJustified: companyJustifiedEff,
+    sectorJustified: sectorJustifiedEff,
     adjustment: null,
     sectorPe,
     sectorComparable,
   };
-  if (sectorPe != null && sectorComparable && companyJustified != null && sectorJustified != null) {
+  if (sectorPe != null && sectorComparable && companyJustifiedEff != null && sectorJustifiedEff != null) {
     out.adjustment = clamp(
-      companyJustified / sectorJustified,
+      companyJustifiedEff / sectorJustifiedEff,
       JUSTIFIED_ADJUSTMENT_MIN,
       JUSTIFIED_ADJUSTMENT_MAX
     );
@@ -500,8 +522,8 @@ export function justifiedMultiple(args: {
     out.basis = 'sector';
     return out;
   }
-  if (companyJustified != null) {
-    out.multiple = clamp(companyJustified, JUSTIFIED_ABSOLUTE_MIN, JUSTIFIED_ABSOLUTE_MAX);
+  if (companyJustifiedEff != null) {
+    out.multiple = clamp(companyJustifiedEff, JUSTIFIED_ABSOLUTE_MIN, JUSTIFIED_ABSOLUTE_MAX);
     out.basis = 'fundamental';
     return out;
   }
