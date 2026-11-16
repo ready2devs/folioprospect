@@ -6,15 +6,15 @@
  * sistema: lo que el sector vale lo pone el mercado, y la empresa se
  * compara contra esas medianas con la fórmula justificada.
  *
- * Fuente primaria: Finviz (el screener da los pares y la ficha de
- * cada par trae los tres datos), caché de 6 h por industria. Si el
- * screener no responde (en producción se observó que Finviz no
- * sirve esa página a las IP del hosting aunque sí sirve las fichas
- * individuales), el DESCUBRIMIENTO de pares cae al scanner de
- * TradingView (industria y ranking por capitalización) y las
- * medianas se siguen calculando con las fichas de Finviz de cada
- * par: la base de medición no cambia, solo quién nombra a los
- * pares. Nunca lanza: sin contexto, el motor cae por su escalera de
+ * Descubrimiento de pares: el screener de Finviz y, en paralelo,
+ * el scanner de TradingView (industria y ranking por
+ * capitalización) — en producción se observó que Finviz no sirve
+ * la página del screener a las IP del hosting aunque sí sirve las
+ * fichas individuales. Medición de cada par (v16): la ficha de
+ * Finviz es la fuente primaria de cada métrica y Yahoo respalda
+ * donde Finviz no trae el dato, métrica por métrica y par por par;
+ * el retorno sobre el capital acepta el ROE como respaldo del
+ * ROIC. Nunca lanza: sin contexto, el motor cae por su escalera de
  * respaldo documentada (justificado propio → P/E propio → tabla).
  *
  * Enmienda v14 (2026-11-15): el contexto ya no vive en una caché por
@@ -25,6 +25,7 @@
  */
 import { cleanTicker } from '../shared/engine/format.js';
 import { fetchFinvizFundamentals } from './finviz.js';
+import { fetchAssetExtras } from './yahoo.js';
 import { getOrComputeSectorCtx } from './sectorCtxSnapshot.js';
 
 const UA =
@@ -45,6 +46,62 @@ export interface SectorContext {
    *  defecto, el scanner de TradingView (las medianas son siempre de
    *  fichas Finviz). */
   source?: 'finviz' | 'tradingview';
+  /** Muestras que alimentaron cada mediana (v16): cuántos valores
+   *  por métrica y cuántos del retorno sobre el capital salieron del
+   *  respaldo ROE (cuando el par no trajo ROIC). Observabilidad de
+   *  la reparación multi-fuente; no entra en ningún cálculo. */
+  samples?: { pe: number; growth: number; capital: number; capitalFromRoe: number };
+}
+
+/** Medición de UN par, ya fusionada entre fuentes (v16): Finviz es
+ *  la fuente primaria de cada métrica y Yahoo (los «extras» del
+ *  activo) respalda donde Finviz no trae el dato — la doctrina R0
+ *  aplicada por par: ampliar la muestra y reparar el dato en vez de
+ *  perder al par entero. El retorno sobre el capital acepta el ROE
+ *  como respaldo del ROIC, la misma convención que el motor aplica
+ *  del lado de la empresa. */
+export interface SectorPeerRecord {
+  forwardPe: number | null;
+  growth5yPct: number | null;
+  capitalReturnPct: number | null;
+  capitalFromRoe: boolean;
+}
+
+/** Arma el contexto desde las mediciones por par: medianas por
+ *  métrica sobre la muestra disponible de cada una (una métrica
+ *  puede tener muestra aunque otra no). El P/E sectorial exige ≥2
+ *  valores, como siempre; con ningún par útil no hay contexto. */
+export function sectorContextFromPeerRecords(
+  records: SectorPeerRecord[],
+  slug: string,
+  source: 'finviz' | 'tradingview'
+): SectorContext | null {
+  const pes: number[] = [];
+  const capitals: number[] = [];
+  const growths: number[] = [];
+  let capitalFromRoe = 0;
+  let used = 0;
+  for (const r of records) {
+    let any = false;
+    if (r.forwardPe != null && r.forwardPe > 0) { pes.push(r.forwardPe); any = true; }
+    if (r.capitalReturnPct != null && Number.isFinite(r.capitalReturnPct)) {
+      capitals.push(r.capitalReturnPct);
+      if (r.capitalFromRoe) capitalFromRoe++;
+      any = true;
+    }
+    if (r.growth5yPct != null && Number.isFinite(r.growth5yPct)) { growths.push(r.growth5yPct); any = true; }
+    if (any) used++;
+  }
+  if (used === 0) return null;
+  return {
+    forwardPe: pes.length >= 2 ? medianOf(pes) : null,
+    roicPct: medianOf(capitals),
+    growth5yPct: medianOf(growths),
+    peersUsed: used,
+    industrySlug: slug,
+    source,
+    samples: { pe: pes.length, growth: growths.length, capital: capitals.length, capitalFromRoe },
+  };
 }
 
 const medianOf = (xs: number[]): number | null => {
@@ -97,30 +154,28 @@ async function contextFromPeerTickers(
   source: 'finviz' | 'tradingview'
 ): Promise<SectorContext | null> {
   if (tickers.length === 0) return null;
-  const peerFunds = await Promise.all(
-    tickers.slice(0, 8).map((tk) => fetchFinvizFundamentals(tk).catch(() => null))
+  // v16 — medición multi-fuente por par: la ficha de Finviz y los
+  // extras de Yahoo en paralelo; cada métrica toma Finviz si está y
+  // Yahoo si falta (los extras ya fusionan Finviz-primario, así que
+  // el respaldo es exactamente el hueco). Antes un par sin el dato
+  // en Finviz no aportaba a esa mediana, y medianas enteras quedaban
+  // vacías (el crecimiento de TMDX) aunque Yahoo sí lo publicara.
+  const records = await Promise.all(
+    tickers.slice(0, 8).map(async (tk): Promise<SectorPeerRecord> => {
+      const [f, x] = await Promise.all([
+        fetchFinvizFundamentals(tk).catch(() => null),
+        fetchAssetExtras(tk, 0).catch(() => null),
+      ]);
+      const roic = f?.roicPct ?? x?.roicPct ?? null;
+      return {
+        forwardPe: f?.forwardPe ?? x?.forwardPE ?? null,
+        growth5yPct: f?.epsNext5YPct ?? x?.epsNext5YGrowthPct ?? null,
+        capitalReturnPct: roic ?? x?.roePct ?? null,
+        capitalFromRoe: roic == null && x?.roePct != null,
+      };
+    })
   );
-  const pes: number[] = [];
-  const roics: number[] = [];
-  const growths: number[] = [];
-  let used = 0;
-  for (const f of peerFunds) {
-    if (!f) continue;
-    let any = false;
-    if (f.forwardPe != null && f.forwardPe > 0) { pes.push(f.forwardPe); any = true; }
-    if (f.roicPct != null && Number.isFinite(f.roicPct)) { roics.push(f.roicPct); any = true; }
-    if (f.epsNext5YPct != null && Number.isFinite(f.epsNext5YPct)) { growths.push(f.epsNext5YPct); any = true; }
-    if (any) used++;
-  }
-  if (used === 0) return null;
-  return {
-    forwardPe: pes.length >= 2 ? medianOf(pes) : null,
-    roicPct: medianOf(roics),
-    growth5yPct: medianOf(growths),
-    peersUsed: used,
-    industrySlug: slug,
-    source,
-  };
+  return sectorContextFromPeerRecords(records, slug, source);
 }
 
 const tvIndustryCache = new Map<string, { industry: string | null; at: number }>();
