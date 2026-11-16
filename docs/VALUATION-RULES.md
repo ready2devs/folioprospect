@@ -562,8 +562,31 @@ esta escalera (la primera que computa, manda):
    descubre los pares (industria y capitalización) y las medianas
    se siguen calculando con las fichas de Finviz — cambia quién
    nombra a los pares, no la base de medición.
-2. **Sector pelado**: si el ajuste no es computable (falta ROIC o
-   crecimiento de algún lado), manda el P/E forward del sector.
+   **Adenda 2026-11-15 (v16) — medición multi-fuente por par:** la
+   ficha de Finviz sigue siendo la fuente primaria de cada
+   métrica, pero donde un par no trae el dato en Finviz, Yahoo
+   respalda ESA métrica de ESE par (P/E forward, crecimiento de
+   EPS a 5 años de su tendencia de ganancias; y el ROE respalda al
+   ROIC, la convención que la fórmula ya declara: `R` = ROIC con
+   respaldo ROE). Es la doctrina R0 aplicada por par y por métrica:
+   ampliar la muestra y reparar el dato en vez de perder al par
+   entero — antes, medianas sectoriales enteras quedaban vacías
+   (el crecimiento de la industria de TMDX) aunque Yahoo sí
+   publicara el dato. El contexto registra cuántas muestras
+   alimentaron cada mediana y cuántas del capital salieron del
+   respaldo ROE (`samples`), como observabilidad.
+   **Y dimensión desconocida = neutra:** si a un lado (empresa o
+   sector) le falta el retorno sobre el capital, se le presta el
+   del otro lado y el ajuste refleja SOLO la dimensión conocida
+   (el crecimiento). Antes un solo dato faltante anulaba el
+   ajuste entero y el múltiplo caía al P/E del sector pelado
+   (TMDX: ajuste 1,6 → 1,0; FV US$96,94 → US$80,36 con el precio
+   quieto). Si el justificado es nulo por imposibilidad de la
+   fórmula con los datos presentes (R ≤ g), no se presta nada.
+2. **Sector pelado**: si el ajuste no es computable (ningún lado
+   puede computar su J: falta el retorno sobre el capital de
+   AMBOS lados o la fórmula es imposible), manda el P/E forward
+   del sector.
 3. **Justificado por fundamentos propios**: sin sector, `J` de la
    empresa acotado a [3×, 45×].
 4. **P/E propio recomputado** (precio ÷ EPS reparado).
