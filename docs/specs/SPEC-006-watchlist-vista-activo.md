@@ -553,3 +553,34 @@ se publican juntas, como pidió el dueño.
   Una foto buena ya no la congela una corrida degradada.
 - **Tests:** `server/__tests__/motorFvSnapshot.test.ts` suma la
   regla del caso TMDX, la guarda de 24 h y el cómputo nulo.
+
+## 15. Enmienda v16 (2026-11-15) — contexto sectorial multi-fuente y ajuste sin colapso
+
+Pedido del dueño: investigar otras fuentes para los datos
+sectoriales cuando faltan («mientras más fuentes mejor, porque se
+pueden sacar promedios o medianas») y atender los dos retoques
+evaluados al publicar la v15.
+
+- **Medición multi-fuente por par** (`server/sectorContext.ts`):
+  cada par se mide con su ficha de Finviz (primaria) y con los
+  extras de Yahoo en paralelo; cada métrica toma Finviz si está y
+  Yahoo si falta (P/E forward; crecimiento de EPS a 5 años de la
+  tendencia de ganancias de Yahoo). El retorno sobre el capital
+  acepta el ROE como respaldo del ROIC (la convención que el
+  motor ya aplica del lado de la empresa). El armado de medianas
+  es la función pura `sectorContextFromPeerRecords`, con tests
+  (`server/__tests__/sectorContext.test.ts`); el contexto expone
+  `samples` (muestras por métrica y cuántas del capital salieron
+  del respaldo ROE) como observabilidad. Doctrina en
+  docs/VALUATION-RULES.md, Pata 2, adenda v16.
+- **Dimensión desconocida = neutra** (`justifiedMultiple` en
+  shared/engine/fairvalue.ts): si a un lado le falta el retorno
+  sobre el capital, se le presta el del otro y el ajuste refleja
+  solo el crecimiento, en vez de anularse entero (el colapso
+  1,6 → 1,0 del caso TMDX). Con tests en
+  `fairvalue-anclajes.test.ts` (ambos sentidos y el caso sin
+  retorno de ningún lado, que sigue en P/E pelado).
+- **Tope del ajuste (1,6):** se MIDIO cuántos activos de la
+  watchlist quedan clavados en el tope; el número va en el reporte
+  al dueño y el tope NO se cambia sin su decisión (es una
+  constante de la doctrina R11, no un arreglo de datos).
